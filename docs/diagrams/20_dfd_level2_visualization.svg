@@ -1,0 +1,673 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1050 580"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg46"
+   sodipodi:docname="20_dfd_level2_visualization.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview46"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.78793103"
+     inkscape:cx="375.03282"
+     inkscape:cy="349.01532"
+     inkscape:window-width="2048"
+     inkscape:window-height="1125"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg46" />
+  <defs
+     id="defs2">
+    <marker
+       id="v1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="v2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#7c3aed"
+         id="path2" />
+    </marker>
+    <marker
+       id="v1-2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M 0,0 V 6 L 7,3 Z"
+         fill="#334155"
+         id="path1-9" />
+    </marker>
+  </defs>
+  <text
+     x="525"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text2"
+     style="font-size:26.6667px">DFD Level 2 — Process 7.0: Attack Graph Visualization</text>
+  <text
+     x="525"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text3"
+     style="font-size:21.3333px">Graph construction from correlated detections, interactive HTML rendering, and web serving</text>
+  <!-- Boundary -->
+  <rect
+     x="170"
+     y="60"
+     width="710"
+     height="440"
+     rx="10"
+     fill="#ede9fe"
+     stroke="#7c3aed"
+     stroke-width="2"
+     stroke-dasharray="8,4"
+     id="rect3" />
+  <text
+     x="525"
+     y="82"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text4"
+     style="font-size:17.3333px">Process 7.0: Attack Graph Visualization</text>
+  <!-- ══ INPUT ══ -->
+  <rect
+     x="12.243555"
+     y="161.34613"
+     width="120"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect4" />
+  <text
+     x="72.243553"
+     y="179.34613"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text5"
+     style="font-size:12px">From 6.0</text>
+  <text
+     x="72.243553"
+     y="192.34613"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text6"
+     style="font-size:8px">DETECTION_MADE</text>
+  <line
+     x1="138.97423"
+     y1="182.69226"
+     x2="231.14044"
+     y2="182.69226"
+     stroke="#334155"
+     stroke-width="1.81429"
+     marker-end="url(#v1)"
+     id="line6"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <!-- ══ P7.1: Classify Detection Type ══ -->
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.15348;stroke-dasharray:none"
+     id="rect46"
+     width="134.85042"
+     height="55.9673"
+     x="462.92883"
+     y="423.17941"
+     rx="5.4840875" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.07677;stroke-dasharray:none"
+     id="rect46-3"
+     width="126.67767"
+     height="55.409428"
+     x="465.36823"
+     y="318.40683"
+     rx="5.1517186" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.48305;stroke-dasharray:none"
+     id="rect46-6"
+     width="158.63464"
+     height="63.252605"
+     x="222.28752"
+     y="314.43082"
+     rx="6.4513426" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.25692;stroke-dasharray:none"
+     id="rect46-7"
+     width="133.45915"
+     height="62.113922"
+     x="462.84302"
+     y="209.90881"
+     rx="5.4275074" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.19605;stroke-dasharray:none"
+     id="rect46-5"
+     width="133.96872"
+     height="58.585102"
+     x="233.52122"
+     y="156.93048"
+     rx="5.4482307" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.08686;stroke-dasharray:none"
+     id="rect46-35"
+     width="125.5524"
+     height="56.450733"
+     x="465.89896"
+     y="115.59445"
+     rx="5.1059566" />
+  <text
+     x="243.4624"
+     y="168.06418"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text7">7.1</text>
+  <text
+     x="300"
+     y="187"
+     font-size="9"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text8"
+     style="font-size:12px">Classify Detection</text>
+  <text
+     x="300"
+     y="200"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text9"
+     style="font-size:9.33333px">lateral_movement | dns_exfil</text>
+  <!-- ══ P7.2: Build Graph Nodes ══ -->
+  <text
+     x="476.60339"
+     y="127.61546"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text10">7.2</text>
+  <text
+     x="530"
+     y="147"
+     font-size="9"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text11"
+     style="font-size:12px">Build Graph Nodes</text>
+  <text
+     x="530"
+     y="161"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text12"
+     style="font-size:9.33333px">hosts, severity, node_type</text>
+  <!-- ══ P7.3: Build Graph Edges ══ -->
+  <text
+     x="472.11627"
+     y="221.10257"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text13">7.3</text>
+  <text
+     x="530"
+     y="236"
+     font-size="9"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text14"
+     style="font-size:12px">Build Graph Edges</text>
+  <text
+     x="530"
+     y="250"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text15"
+     style="font-size:9.33333px">LM: src→dst host edge</text>
+  <text
+     x="530"
+     y="260"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text16"
+     style="font-size:9.33333px">DNS: host→EXTERNAL edge</text>
+  <!-- P7.1 → P7.2 -->
+  <line
+     x1="373.7533"
+     y1="172.71536"
+     x2="460.91318"
+     y2="142.59238"
+     stroke="#334155"
+     stroke-width="3.15358"
+     marker-end="url(#v1)"
+     id="line16"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="381.98779"
+     y="133.93599"
+     font-size="7px"
+     fill="#334155"
+     id="text17"
+     style="font-size:12px">source_entity</text>
+  <!-- P7.1 → P7.3 -->
+  <line
+     x1="373.4754"
+     y1="201.66806"
+     x2="458.37045"
+     y2="241.53656"
+     stroke="#334155"
+     stroke-width="3.32217"
+     marker-end="url(#v1)"
+     id="line17"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="339.53473"
+     y="251.76242"
+     font-size="7px"
+     fill="#334155"
+     id="text18"
+     style="font-size:12px">technique, confidence</text>
+  <!-- ══ D11: NetworkX DiGraph (in-memory) ══ -->
+  <g
+     transform="translate(685.03283,174.95624)"
+     id="g20">
+    <line
+       x1="0"
+       y1="0"
+       x2="150"
+       y2="0"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       id="line18" />
+    <line
+       x1="0"
+       y1="20"
+       x2="150"
+       y2="20"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       id="line19" />
+    <text
+       x="8"
+       y="14"
+       font-size="8px"
+       font-weight="bold"
+       fill="#5b21b6"
+       id="text19">D11</text>
+    <text
+       x="35"
+       y="14"
+       font-size="8px"
+       fill="#5b21b6"
+       id="text20"
+       style="font-size:12px">NetworkX DiGraph (mem)</text>
+  </g>
+  <!-- P7.2 ↔ D11 -->
+  <line
+     x1="683.56824"
+     y1="173.40514"
+     x2="594.23871"
+     y2="144.49065"
+     stroke="#7c3aed"
+     stroke-width="6.91604"
+     stroke-dasharray="4, 3"
+     id="line20"
+     style="stroke-width:3;stroke-dasharray:6,3;stroke-dashoffset:0" />
+  <line
+     x1="679.88306"
+     y1="198.14194"
+     x2="599.26379"
+     y2="242.15204"
+     stroke="#7c3aed"
+     stroke-width="8.10583"
+     stroke-dasharray="4, 3"
+     id="line20-6"
+     style="stroke-width:3;stroke-dasharray:6,3;stroke-dashoffset:0" />
+  <text
+     x="621.64569"
+     y="145.18472"
+     font-size="7px"
+     fill="#5b21b6"
+     id="text21"
+     style="font-size:12px">add_node()</text>
+  <!-- P7.3 ↔ D11 -->
+  <text
+     x="626.83679"
+     y="240.06004"
+     font-size="7px"
+     fill="#5b21b6"
+     id="text22"
+     style="font-size:12px">add_edge()</text>
+  <!-- ══ P7.4: Serialize to JSON ══ -->
+  <text
+     x="475.4267"
+     y="329.82715"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text23">7.4</text>
+  <text
+     x="530"
+     y="347"
+     font-size="9"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text24"
+     style="font-size:12px">Serialize to JSON</text>
+  <text
+     x="530"
+     y="360"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text25"
+     style="font-size:9.33333px">nx.node_link_data(graph)</text>
+  <!-- P7.3 → P7.4 -->
+  <line
+     x1="530"
+     y1="273.42233"
+     x2="530"
+     y2="316.98032"
+     stroke="#334155"
+     stroke-width="1.42891"
+     marker-end="url(#v1)"
+     id="line25"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="538.01971"
+     y="290"
+     font-size="7"
+     fill="#334155"
+     id="text26"
+     style="font-size:12px">completed graph</text>
+  <!-- ══ P7.5: Render Interactive HTML ══ -->
+  <text
+     x="230.83151"
+     y="328.09628"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text27">7.5</text>
+  <text
+     x="302.5383"
+     y="341.4617"
+     font-size="9"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text28"
+     style="font-size:12px">Render HTML (pyvis)</text>
+  <text
+     x="302.5383"
+     y="355.4617"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text29"
+     style="font-size:9.33333px">color by severity, directed edges</text>
+  <text
+     x="302.5383"
+     y="365.4617"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text30"
+     style="font-size:9.33333px">clickable nodes, technique labels</text>
+  <!-- P7.4 → P7.5 -->
+  <line
+     x1="462.28665"
+     y1="346.34573"
+     x2="384.15536"
+     y2="346.34573"
+     stroke="#334155"
+     stroke-width="2.50567"
+     marker-end="url(#v1)"
+     id="line30"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="399.05908"
+     y="331.09628"
+     font-size="7"
+     fill="#334155"
+     id="text31"
+     style="font-size:12px">graph data</text>
+  <!-- ══ D12: Generated HTML files ══ -->
+  <g
+     transform="translate(200,427.69147)"
+     id="g33">
+    <line
+       x1="0"
+       y1="0"
+       x2="160"
+       y2="0"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       id="line31" />
+    <line
+       x1="0"
+       y1="20"
+       x2="160"
+       y2="20"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       id="line32" />
+    <text
+       x="8"
+       y="14"
+       font-size="8px"
+       font-weight="bold"
+       fill="#5b21b6"
+       id="text32">D12</text>
+    <text
+       x="35"
+       y="14"
+       font-size="8px"
+       fill="#5b21b6"
+       id="text33"
+       style="font-size:12px">data/graphs/*.html (disk)</text>
+  </g>
+  <!-- P7.5 → D12 -->
+  <line
+     x1="296.82715"
+     y1="380.24945"
+     x2="296.82715"
+     y2="425.69147"
+     stroke="#7c3aed"
+     stroke-width="1.57917"
+     marker-end="url(#v2)"
+     id="line33"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="303.57767"
+     y="399.26913"
+     font-size="7"
+     fill="#5b21b6"
+     id="text34"
+     style="font-size:12px">save_graph()</text>
+  <!-- ══ P7.6: Serve via Web (FastAPI) ══ -->
+  <text
+     x="473.10614"
+     y="434.56467"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text35">7.6</text>
+  <text
+     x="529.36542"
+     y="451.28885"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text36"
+     style="font-size:12px">Serve Web (port 8080)</text>
+  <text
+     x="529.36542"
+     y="464.28885"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text37"
+     style="font-size:9.33333px">visualization/web.py (FastAPI)</text>
+  <!-- D12 → P7.6 -->
+  <line
+     x1="366.3165"
+     y1="440.7756"
+     x2="461.8345"
+     y2="452.25842"
+     stroke="#334155"
+     stroke-width="1.64228"
+     marker-end="url(#v1)"
+     id="line37"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="367.94312"
+     y="471.97812"
+     font-size="7"
+     fill="#334155"
+     id="text38"
+     style="font-size:12px">read HTML files</text>
+  <!-- ══ OUTPUTS ══ -->
+  <!-- SOC Analyst -->
+  <rect
+     x="909.67255"
+     y="432.65851"
+     width="120"
+     height="40"
+     rx="5"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect38" />
+  <text
+     x="969.67255"
+     y="450.65851"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text39"
+     style="font-size:12px">SOC Analyst</text>
+  <text
+     x="969.67255"
+     y="463.65851"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text40"
+     style="font-size:8px">Browser</text>
+  <line
+     x1="600.5152"
+     y1="453.14661"
+     x2="905.28174"
+     y2="453.14661"
+     stroke="#334155"
+     stroke-width="0.0486275"
+     marker-end="url(#v1)"
+     id="line40"
+     style="stroke-width:2.98684;stroke-dasharray:none" />
+  <line
+     x1="595.17993"
+     y1="347.65549"
+     x2="906.22839"
+     y2="347.65549"
+     stroke="#334155"
+     stroke-width="0.0486275"
+     marker-end="url(#v1-2)"
+     id="line40-1"
+     style="stroke-width:3.01746;stroke-dasharray:none;marker-end:url(#v1-2)" />
+  <text
+     x="735.93225"
+     y="437.49612"
+     font-size="7px"
+     fill="#334155"
+     id="text41"
+     style="font-size:12px">Interactive HTML</text>
+  <text
+     x="734.58612"
+     y="447.14999"
+     font-size="7px"
+     fill="#334155"
+     id="text42"
+     style="font-size:12px">attack graph page</text>
+  <!-- API JSON output -->
+  <rect
+     x="911.76215"
+     y="326.9711"
+     width="120"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect42" />
+  <text
+     x="971.76215"
+     y="344.9711"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text43"
+     style="font-size:12px">API Endpoint</text>
+  <text
+     x="971.76215"
+     y="357.9711"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text44"
+     style="font-size:8px">GET /attack-graph</text>
+  <text
+     x="734.23151"
+     y="341.53867"
+     font-size="7px"
+     fill="#334155"
+     id="text45"
+     style="font-size:12px">JSON graph data</text>
+  <!-- Legend -->
+</svg>

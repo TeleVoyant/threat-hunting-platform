@@ -1,0 +1,1212 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1300 1050"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg77"
+   sodipodi:docname="08_dfd_level1.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview77"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.8704762"
+     inkscape:cx="617.47811"
+     inkscape:cy="400.92997"
+     inkscape:window-width="1920"
+     inkscape:window-height="1025"
+     inkscape:window-x="0"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg77" />
+  <defs
+     id="defs3">
+    <marker
+       id="df1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="df2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#dc2626"
+         id="path2" />
+    </marker>
+    <marker
+       id="df3"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#7c3aed"
+         id="path3" />
+    </marker>
+  </defs>
+  <text
+     x="650"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text3"
+     style="font-size:26.6667px">Data Flow Diagram — Level 1</text>
+  <text
+     x="650"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text4"
+     style="font-size:18.6667px">Internal processes, data stores, and data flows with security annotations</text>
+  <!-- ══ EXTERNAL ENTITIES ══ -->
+  <!-- Corporate Laptops -->
+  <rect
+     x="20"
+     y="80"
+     width="180"
+     height="50"
+     rx="5"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="2"
+     id="rect4" />
+  <text
+     x="110"
+     y="105"
+     font-size="11"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text5"
+     style="font-size:13.3333px">Corporate Laptops</text>
+  <text
+     x="110"
+     y="120"
+     font-size="9"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text6"
+     style="font-size:12px">«external entity»</text>
+  <!-- SOC Analyst -->
+  <rect
+     x="295.71118"
+     y="837.93762"
+     width="180"
+     height="50"
+     rx="5"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="2"
+     id="rect6" />
+  <text
+     x="385.71118"
+     y="862.93762"
+     font-size="11px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text7"
+     style="font-size:13.33333333px">SOC Analyst / IT Admin</text>
+  <text
+     x="385.71118"
+     y="879.93762"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text8"
+     style="font-size:12px">«role: analyst | viewer»</text>
+  <!-- MITRE/MISP -->
+  <rect
+     x="23.107222"
+     y="227.04596"
+     width="180"
+     height="50"
+     rx="5"
+     fill="#fce7f3"
+     stroke="#be185d"
+     stroke-width="2"
+     id="rect8" />
+  <text
+     x="113.10722"
+     y="252.04596"
+     font-size="11px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#9d174d"
+     id="text9"
+     style="font-size:13.3333px">MITRE ATT&amp;CK / MISP</text>
+  <text
+     x="113.10722"
+     y="267.04596"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#be185d"
+     id="text10"
+     style="font-size:12px">«external service»</text>
+  <!-- FL Orgs -->
+  <rect
+     x="1038.5715"
+     y="748.37537"
+     width="180"
+     height="50"
+     rx="5"
+     fill="#f5f3ff"
+     stroke="#7c3aed"
+     stroke-width="2"
+     id="rect10" />
+  <text
+     x="1128.5715"
+     y="773.37537"
+     font-size="11px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text11"
+     style="font-size:13.3333px">Other FL Organizations</text>
+  <text
+     x="1128.5715"
+     y="790.37537"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#7c3aed"
+     id="text12"
+     style="font-size:12px">«external entity»</text>
+  <!-- Platform Admin -->
+  <rect
+     x="1080.8123"
+     y="373.64178"
+     width="180"
+     height="50"
+     rx="5"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="2"
+     id="rect12" />
+  <text
+     x="1171.6246"
+     y="395.39249"
+     font-size="11px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text13"
+     style="font-size:13.3333px">Platform Admin</text>
+  <text
+     x="1171.6246"
+     y="412.39249"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text14"
+     style="font-size:12px">«role: admin»</text>
+  <!-- ══ PROCESSES ══ -->
+  <!-- P1: Data Ingestion -->
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a"
+     id="rect78"
+     width="143.60001"
+     height="79.266953"
+     x="334.29977"
+     y="64.332603"
+     rx="15" />
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626"
+     id="rect78-3-0"
+     width="143.60001"
+     height="79.266953"
+     x="672.98798"
+     y="359.04266"
+     rx="15" />
+  <rect
+     style="fill:#f5f3ff;stroke:#7c3aed"
+     id="rect78-3-0-3"
+     width="143.60001"
+     height="79.266953"
+     x="854.86646"
+     y="524.82983"
+     rx="15" />
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626"
+     id="rect78-3-9"
+     width="143.60001"
+     height="79.266953"
+     x="329.4978"
+     y="213.14551"
+     rx="15" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a"
+     id="rect78-5"
+     width="143.60001"
+     height="79.266953"
+     x="45.596828"
+     y="514.45917"
+     rx="15" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a"
+     id="rect78-35"
+     width="143.60001"
+     height="79.266953"
+     x="683.32709"
+     y="684.1521"
+     rx="15" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a"
+     id="rect78-62"
+     width="143.60001"
+     height="79.266953"
+     x="319.04318"
+     y="682.46967"
+     rx="15" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a"
+     id="rect78-9"
+     width="143.60001"
+     height="79.266953"
+     x="328.34903"
+     y="515.27899"
+     rx="15" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a"
+     id="rect78-1"
+     width="143.60001"
+     height="79.266953"
+     x="326.05142"
+     y="364.78665"
+     rx="15" />
+  <text
+     x="347.15536"
+     y="75.300873"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text15">1.0</text>
+  <text
+     x="400"
+     y="115"
+     font-size="11"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text16"
+     style="font-size:13.3333px">Data Ingestion</text>
+  <!-- P2: Input Validation -->
+  <text
+     x="343.42178"
+     y="226.78883"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text17">2.0</text>
+  <text
+     x="400"
+     y="258"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text18"
+     style="font-size:13.3333px">Input Validation</text>
+  <text
+     x="400"
+     y="272"
+     font-size="8"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text19"
+     style="font-size:12px">«security process»</text>
+  <!-- P3: Feature Engineering -->
+  <text
+     x="340.26257"
+     y="379.49124"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text20">3.0</text>
+  <text
+     x="400"
+     y="412"
+     font-size="11"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text21"
+     style="font-size:13.3333px">Feature Engineering</text>
+  <!-- P4: Threat Detection -->
+  <text
+     x="340.29434"
+     y="528.75354"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text22">4.0</text>
+  <text
+     x="400"
+     y="562"
+     font-size="11"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text23"
+     style="font-size:13.3333px">Threat Detection</text>
+  <!-- P5: Threat Intel Enrichment -->
+  <text
+     x="57.127411"
+     y="526.78412"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text24">5.0</text>
+  <text
+     x="116.86485"
+     y="567.33441"
+     font-size="11px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text25"
+     style="font-size:13.3333px">Threat Intel Enrichment</text>
+  <!-- P6: Alert Management -->
+  <text
+     x="332.95459"
+     y="697.43652"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text26">6.0</text>
+  <text
+     x="391.87677"
+     y="734.43695"
+     font-size="11px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text27"
+     style="font-size:13.3333px">Alert Management</text>
+  <!-- P7: Visualization -->
+  <text
+     x="696.38678"
+     y="696.31659"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text28">7.0</text>
+  <text
+     x="751.62463"
+     y="733.62463"
+     font-size="11px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text29"
+     style="font-size:13.3333px">Attack Graph Viz</text>
+  <!-- P8: Federated Learning -->
+  <text
+     x="867.64441"
+     y="537.89325"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text30">8.0</text>
+  <text
+     x="927.8985"
+     y="574.18481"
+     font-size="11px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text31"
+     style="font-size:13.3333px">Federated Learning</text>
+  <!-- P9: Audit & Auth -->
+  <text
+     x="685.09302"
+     y="372.76807"
+     font-size="10px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text32">9.0</text>
+  <text
+     x="747.70239"
+     y="407.4256"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text33"
+     style="font-size:13.3333px">Auth, RBAC &amp; Audit</text>
+  <text
+     x="750"
+     y="422"
+     font-size="8"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text34"
+     style="font-size:12px">«security process»</text>
+  <!-- ══ DATA STORES ══ -->
+  <g
+     transform="translate(593.99629,159.50994)"
+     id="g36">
+    <line
+       x1="0"
+       y1="0"
+       x2="150"
+       y2="0"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line34" />
+    <line
+       x1="0"
+       y1="25"
+       x2="150"
+       y2="25"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line35" />
+    <text
+       x="10"
+       y="17"
+       font-size="10px"
+       font-weight="bold"
+       fill="#334155"
+       id="text35">D1</text>
+    <text
+       x="40"
+       y="17"
+       font-size="10px"
+       fill="#334155"
+       id="text36"
+       style="font-size:13.3333px">Wazuh OpenSearch Index</text>
+  </g>
+  <g
+     transform="translate(593.86538,608.06732)"
+     id="g38">
+    <line
+       x1="0"
+       y1="0"
+       x2="150"
+       y2="0"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line36" />
+    <line
+       x1="0"
+       y1="25"
+       x2="150"
+       y2="25"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line37" />
+    <text
+       x="10"
+       y="17"
+       font-size="10px"
+       font-weight="bold"
+       fill="#334155"
+       id="text37">D2</text>
+    <text
+       x="40"
+       y="17"
+       font-size="10px"
+       fill="#334155"
+       id="text38"
+       style="font-size:13.3333px">Alert Store (SQLite)</text>
+  </g>
+  <g
+     transform="translate(596.30235,496.80662)"
+     id="g40">
+    <line
+       x1="0"
+       y1="0"
+       x2="150"
+       y2="0"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line38" />
+    <line
+       x1="0"
+       y1="25"
+       x2="150"
+       y2="25"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line39" />
+    <text
+       x="10"
+       y="17"
+       font-size="10px"
+       font-weight="bold"
+       fill="#334155"
+       id="text39">D3</text>
+    <text
+       x="40"
+       y="17"
+       font-size="10px"
+       fill="#334155"
+       id="text40"
+       style="font-size:13.3333px">Model Store (signed)</text>
+  </g>
+  <g
+     transform="translate(230.41575,591.28009)"
+     id="g42">
+    <line
+       x1="754.75928"
+       y1="-320.51422"
+       x2="904.75928"
+       y2="-320.51422"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line40" />
+    <line
+       x1="754.75928"
+       y1="-295.51422"
+       x2="904.75928"
+       y2="-295.51422"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line41" />
+    <text
+       x="764.75928"
+       y="-303.51422"
+       font-size="10px"
+       font-weight="bold"
+       fill="#991b1b"
+       id="text41">D4</text>
+    <text
+       x="794.75928"
+       y="-303.51422"
+       font-size="10px"
+       fill="#991b1b"
+       id="text42"
+       style="font-size:13.3333px">Audit Log (hash-chain)</text>
+  </g>
+  <g
+     transform="translate(599.62011,243.38961)"
+     id="g44">
+    <line
+       x1="0"
+       y1="0"
+       x2="150"
+       y2="0"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line42" />
+    <line
+       x1="0"
+       y1="25"
+       x2="150"
+       y2="25"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line43" />
+    <text
+       x="10"
+       y="17"
+       font-size="10px"
+       font-weight="bold"
+       fill="#991b1b"
+       id="text43">D5</text>
+    <text
+       x="40"
+       y="17"
+       font-size="10px"
+       fill="#991b1b"
+       id="text44"
+       style="font-size:13.3333px">Dead Letter Queue</text>
+  </g>
+  <!-- ══ DATA FLOWS ══ -->
+  <!-- Laptops → P1 -->
+  <line
+     x1="200"
+     y1="105"
+     x2="329.17627"
+     y2="105"
+     stroke="#334155"
+     stroke-width="1.93035"
+     marker-end="url(#df1)"
+     id="line44" />
+  <text
+     x="207.35921"
+     y="97.089127"
+     font-size="8px"
+     fill="#334155"
+     id="text45"
+     style="font-size:13.3333px">Security telemetry</text>
+  <rect
+     x="231.62508"
+     y="109.66352"
+     width="45.705692"
+     height="13"
+     rx="1.2188183"
+     fill="#fee2e2"
+     id="rect45"
+     style="stroke-width:0.780646" />
+  <text
+     x="254.26512"
+     y="119.66352"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text46"
+     style="font-size:8px">«AES-256»</text>
+  <!-- P1 → D1 -->
+  <line
+     x1="488.79095"
+     y1="121.87221"
+     x2="587.54333"
+     y2="161.8006"
+     stroke="#334155"
+     stroke-width="2.67028"
+     marker-end="url(#df1)"
+     id="line46" />
+  <text
+     x="504.09113"
+     y="122.20674"
+     font-size="8px"
+     fill="#334155"
+     id="text47"
+     style="font-size:13.3333px">Indexed events</text>
+  <!-- D1 → P1 (read back) -->
+  <line
+     x1="577.81763"
+     y1="175.36603"
+     x2="478.66763"
+     y2="132.30795"
+     stroke="#334155"
+     stroke-width="2.7445"
+     marker-end="url(#df1)"
+     id="line47" />
+  <!-- P1 → P2 -->
+  <line
+     x1="400"
+     y1="140"
+     x2="400"
+     y2="213"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#df1)"
+     id="line48" />
+  <text
+     x="406.38403"
+     y="178"
+     font-size="8"
+     fill="#334155"
+     id="text48"
+     style="font-size:13.3333px">Raw events</text>
+  <!-- P2 → P3 -->
+  <line
+     x1="400"
+     y1="297.18481"
+     x2="400"
+     y2="363"
+     stroke="#334155"
+     stroke-width="1.37787"
+     marker-end="url(#df1)"
+     id="line49"
+     style="stroke-width:2.5;stroke-dasharray:none" />
+  <text
+     x="406.06445"
+     y="329.59384"
+     font-size="8px"
+     fill="#16a34a"
+     id="text49"
+     style="font-size:13.3333px">NormalizedEvent[]</text>
+  <!-- P2 → D5 (rejected) -->
+  <line
+     x1="476.13892"
+     y1="256.24316"
+     x2="599.55341"
+     y2="257.73996"
+     stroke="#dc2626"
+     stroke-width="2.43773"
+     marker-end="url(#df2)"
+     id="line50" />
+  <text
+     x="484.13666"
+     y="244.68329"
+     font-size="8px"
+     fill="#dc2626"
+     id="text50"
+     style="font-size:13.3333px">Rejected events</text>
+  <!-- P3 → P4 -->
+  <line
+     x1="400"
+     y1="447.99716"
+     x2="400"
+     y2="513"
+     stroke="#334155"
+     stroke-width="1.36934"
+     marker-end="url(#df1)"
+     id="line51"
+     style="stroke-width:2.5;stroke-dasharray:none" />
+  <text
+     x="403.6275"
+     y="475.56305"
+     font-size="8"
+     fill="#16a34a"
+     id="text51"
+     style="font-size:13.3333px">FeatureVector</text>
+  <!-- P4 → D3 (load model) -->
+  <line
+     x1="477.90283"
+     y1="562.11084"
+     x2="590.09711"
+     y2="514.37927"
+     stroke="#334155"
+     stroke-width="2.9337"
+     marker-end="url(#df1)"
+     id="line52" />
+  <text
+     x="519.06073"
+     y="556.79242"
+     font-size="8px"
+     fill="#334155"
+     id="text52"
+     style="font-size:13.3333px">Load model</text>
+  <rect
+     x="514.19153"
+     y="562.31952"
+     width="80"
+     height="13"
+     rx="2"
+     fill="#fee2e2"
+     id="rect52" />
+  <text
+     x="554.19153"
+     y="572.31952"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text53"
+     style="font-size:9.33333px">«signature verified»</text>
+  <!-- P4 → P5 -->
+  <line
+     x1="326.08258"
+     y1="551.60004"
+     x2="193.75298"
+     y2="551.57959"
+     stroke="#334155"
+     stroke-width="1.26511"
+     marker-end="url(#df1)"
+     id="line53"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="231.32083"
+     y="545.81732"
+     font-size="8px"
+     fill="#334155"
+     id="text54"
+     style="font-size:13.3333px">Detection</text>
+  <!-- MITRE → P5 -->
+  <line
+     x1="111.42879"
+     y1="275.93585"
+     x2="111.37477"
+     y2="506.24683"
+     stroke="#334155"
+     stroke-width="1.85527"
+     marker-end="url(#df1)"
+     id="line54"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="116.89486"
+     y="365.23596"
+     font-size="8px"
+     fill="#334155"
+     id="text55"
+     style="font-size:13.3333px">TTPs, IoCs</text>
+  <rect
+     x="113.82592"
+     y="370.81036"
+     width="80"
+     height="13"
+     rx="2"
+     fill="#fee2e2"
+     id="rect55" />
+  <text
+     x="153.82593"
+     y="380.81036"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text56"
+     style="font-size:9.33333px">«HTTPS, API Key»</text>
+  <!-- P5 → P6 -->
+  <line
+     x1="186.9108"
+     y1="589.961"
+     x2="317.80475"
+     y2="689.47003"
+     stroke="#334155"
+     stroke-width="0.566561"
+     marker-end="url(#df1)"
+     id="line56"
+     style="stroke-width:2.5;stroke-dasharray:none" />
+  <text
+     x="244.06274"
+     y="624.53741"
+     font-size="8px"
+     fill="#16a34a"
+     id="text57"
+     style="font-size:13.3333px">EnrichedAlert</text>
+  <!-- P6 → D2 -->
+  <line
+     x1="465.6579"
+     y1="697.45831"
+     x2="594.21893"
+     y2="635.42706"
+     stroke="#334155"
+     stroke-width="3.26811"
+     marker-end="url(#df1)"
+     id="line57" />
+  <text
+     x="472.95554"
+     y="657.63318"
+     font-size="8px"
+     fill="#334155"
+     id="text58"
+     style="font-size:13.3333px">Persist alert</text>
+  <!-- P6 → P7 -->
+  <line
+     x1="468.8237"
+     y1="730.96637"
+     x2="680.80096"
+     y2="730.96637"
+     stroke="#334155"
+     stroke-width="2.10147"
+     marker-end="url(#df1)"
+     id="line58" />
+  <text
+     x="532.75928"
+     y="725.18481"
+     font-size="8px"
+     fill="#334155"
+     id="text59"
+     style="font-size:13.3333px">Attack path data</text>
+  <!-- P6 → SOC -->
+  <line
+     x1="392.48624"
+     y1="762.92291"
+     x2="392.47623"
+     y2="832.54761"
+     stroke="#dc2626"
+     stroke-width="2.13485"
+     marker-end="url(#df2)"
+     id="line59" />
+  <text
+     x="395.55798"
+     y="793.91687"
+     font-size="8px"
+     fill="#dc2626"
+     id="text60"
+     style="font-size:13.3333px">Alert notification</text>
+  <!-- P7 → SOC -->
+  <line
+     x1="678.39233"
+     y1="754.80621"
+     x2="479.60944"
+     y2="862.57538"
+     stroke="#334155"
+     stroke-width="0.896298"
+     marker-end="url(#df1)"
+     id="line60"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="586.93915"
+     y="816.90234"
+     font-size="8px"
+     fill="#334155"
+     id="text61"
+     style="font-size:13.3333px">Interactive graph HTML</text>
+  <!-- P8 ↔ FL Orgs -->
+  <line
+     x1="993.48645"
+     y1="612.93524"
+     x2="1106.6278"
+     y2="745.34216"
+     stroke="#7c3aed"
+     stroke-width="0.845774"
+     marker-end="url(#df3)"
+     id="line61"
+     style="stroke-width:2;stroke-dasharray:none" />
+  <line
+     x1="1127.3488"
+     y1="742.01776"
+     x2="1006.2667"
+     y2="598.51459"
+     stroke="#7c3aed"
+     stroke-width="0.934999"
+     marker-end="url(#df3)"
+     id="line62"
+     style="stroke-width:2;stroke-dasharray:none" />
+  <text
+     x="913.08154"
+     y="654.06165"
+     font-size="8px"
+     fill="#5b21b6"
+     id="text62"
+     style="font-size:13.3333px">Tree structures ↔</text>
+  <text
+     x="942.3252"
+     y="665.03076"
+     font-size="8px"
+     fill="#5b21b6"
+     id="text63"
+     style="font-size:13.3333px">Global model</text>
+  <rect
+     x="954.71991"
+     y="668.81232"
+     width="80"
+     height="13"
+     rx="2"
+     fill="#fee2e2"
+     id="rect63" />
+  <text
+     x="994.71991"
+     y="678.81232"
+     font-size="7"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text64"
+     style="font-size:8px">«DP ε=1.0, encrypted»</text>
+  <!-- P8 → D3 (save updated model) -->
+  <line
+     x1="851.9491"
+     y1="571.32147"
+     x2="754.82898"
+     y2="519.09827"
+     stroke="#7c3aed"
+     stroke-width="3.37814"
+     marker-end="url(#df3)"
+     id="line64" />
+  <text
+     x="735.89618"
+     y="568.48712"
+     font-size="8px"
+     fill="#5b21b6"
+     id="text65"
+     style="font-size:13.3333px">Updated model</text>
+  <!-- P9 ↔ Admin -->
+  <line
+     x1="826.45477"
+     y1="411.4071"
+     x2="1059.8087"
+     y2="411.48743"
+     stroke="#334155"
+     stroke-width="0.0559232"
+     marker-end="url(#df1)"
+     id="line65"
+     style="stroke-width:2.88704;stroke-dasharray:none" />
+  <line
+     x1="1062.191"
+     y1="389.29343"
+     x2="827.32184"
+     y2="388.76279"
+     stroke="#334155"
+     stroke-width="0.149092"
+     marker-end="url(#df1)"
+     id="line66"
+     style="stroke-width:2.79241;stroke-dasharray:none" />
+  <text
+     x="896.58301"
+     y="380.19623"
+     font-size="8px"
+     fill="#dc2626"
+     id="text66"
+     style="font-size:13.3333px">Config changes</text>
+  <text
+     x="890.89673"
+     y="405.19623"
+     font-size="8px"
+     fill="#dc2626"
+     id="text67"
+     style="font-size:13.3333px">Retrain commands</text>
+  <rect
+     x="899.07587"
+     y="419.94409"
+     width="80"
+     height="13"
+     rx="2"
+     fill="#fee2e2"
+     id="rect67" />
+  <text
+     x="939.07587"
+     y="429.94409"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text68"
+     style="font-size:9.33333px">«JWT, admin role»</text>
+  <!-- P9 → D4 (audit) -->
+  <line
+     x1="814.76636"
+     y1="362.30737"
+     x2="979.34167"
+     y2="287.27069"
+     stroke="#dc2626"
+     stroke-width="0.412431"
+     stroke-dasharray="4, 3"
+     marker-end="url(#df2)"
+     id="line68"
+     style="stroke-width:2;stroke-dasharray:19.39718374,14.54788844;stroke-dashoffset:0" />
+  <text
+     x="827.60474"
+     y="319.84915"
+     font-size="8px"
+     fill="#dc2626"
+     id="text69"
+     style="font-size:13.3333px">Audit events</text>
+  <!-- ══ LEGEND ══ -->
+  <rect
+     x="45.220013"
+     y="951.33051"
+     width="1204.3649"
+     height="57.470261"
+     rx="5.8275719"
+     fill="#f8fafc"
+     stroke="#94a3b8"
+     stroke-width="0.892978"
+     id="rect69" />
+  <text
+     x="65.273521"
+     y="967.06567"
+     font-size="10px"
+     font-weight="bold"
+     fill="#0f172a"
+     id="text70">Legend:</text>
+  <text
+     x="185.27351"
+     y="985.06567"
+     font-size="9px"
+     fill="#334155"
+     id="text71">Process</text>
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626;stroke-width:0.384886"
+     id="rect78-3-0-0"
+     width="57.480984"
+     height="29.33502"
+     x="261.78964"
+     y="966.125"
+     rx="6.004281" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a;stroke-width:0.384886"
+     id="rect78-3-0-0-6"
+     width="57.480984"
+     height="29.33502"
+     x="121.85217"
+     y="966.14539"
+     rx="6.004281" />
+  <text
+     x="325.27353"
+     y="985.06567"
+     font-size="9px"
+     fill="#334155"
+     id="text72">Security Process</text>
+  <rect
+     x="435.27353"
+     y="968.06567"
+     width="80"
+     height="24"
+     rx="3"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect72" />
+  <text
+     x="525.27356"
+     y="985.06567"
+     font-size="9px"
+     fill="#334155"
+     id="text73">External Entity</text>
+  <line
+     x1="618.67682"
+     y1="972.25336"
+     x2="678.67682"
+     y2="972.25336"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="line73" />
+  <line
+     x1="618.67682"
+     y1="990.25336"
+     x2="678.67682"
+     y2="990.25336"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="line74" />
+  <text
+     x="688.67682"
+     y="984.25336"
+     font-size="9px"
+     fill="#334155"
+     id="text74">Data Store</text>
+  <line
+     x1="768.67682"
+     y1="979.25336"
+     x2="828.67682"
+     y2="979.25336"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#df1)"
+     id="line75" />
+  <text
+     x="838.67682"
+     y="984.25336"
+     font-size="9px"
+     fill="#334155"
+     id="text75">Data Flow</text>
+  <line
+     x1="918.67682"
+     y1="979.25336"
+     x2="978.67682"
+     y2="979.25336"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     marker-end="url(#df2)"
+     id="line76" />
+  <text
+     x="988.67682"
+     y="984.25336"
+     font-size="9px"
+     fill="#334155"
+     id="text76">Security Flow</text>
+  <line
+     x1="1078.6769"
+     y1="979.25336"
+     x2="1138.6769"
+     y2="979.25336"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     marker-end="url(#df3)"
+     id="line77" />
+  <text
+     x="1148.6769"
+     y="984.25336"
+     font-size="9px"
+     fill="#334155"
+     id="text77">FL Flow</text>
+</svg>

@@ -1,0 +1,113 @@
+<!--
+  Sysmon configuration optimized for APT detection.
+  Focus: Credential-based lateral movement + DNS exfiltration.
+
+  Key events collected:
+    EID 1:  Process Creation (detects mimikatz, psexec, LOLBins)
+    EID 3:  Network Connection (detects lateral movement connections)
+    EID 7:  Image Loaded (detects DLL injection)
+    EID 8:  CreateRemoteThread (detects process injection)
+    EID 10: Process Access (detects LSASS credential dumping)
+    EID 13: Registry Value Set (detects persistence mechanisms)
+    EID 22: DNS Query (detects DNS tunneling / exfiltration)
+    EID 25: Process Tampering (detects defense evasion)
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <CheckRevocation/>
+
+  <EventFiltering>
+
+    <!-- EID 1: Process Creation — Log everything, filter noise -->
+    <RuleGroup name="ProcessCreate" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <!-- Exclude very noisy, low-value processes -->
+        <Image condition="is">C:\Windows\System32\conhost.exe</Image>
+        <Image condition="is">C:\Windows\System32\backgroundTaskHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\RuntimeBroker.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\audiodg.exe</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- EID 3: Network Connection — Focus on lateral movement ports -->
+    <RuleGroup name="NetworkConnect" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <!-- SMB (lateral movement) -->
+        <DestinationPort condition="is">445</DestinationPort>
+        <!-- RDP -->
+        <DestinationPort condition="is">3389</DestinationPort>
+        <!-- WinRM / PSRemoting -->
+        <DestinationPort condition="is">5985</DestinationPort>
+        <DestinationPort condition="is">5986</DestinationPort>
+        <!-- WMI -->
+        <DestinationPort condition="is">135</DestinationPort>
+        <!-- DNS (for exfiltration detection) -->
+        <DestinationPort condition="is">53</DestinationPort>
+        <!-- HTTP/HTTPS (C2 channels) -->
+        <DestinationPort condition="is">80</DestinationPort>
+        <DestinationPort condition="is">443</DestinationPort>
+        <!-- Suspicious high ports from known tools -->
+        <Image condition="contains">powershell</Image>
+        <Image condition="contains">cmd.exe</Image>
+        <Image condition="contains">wmic.exe</Image>
+        <Image condition="contains">psexec</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- EID 7: Image Loaded — Focus on credential theft DLLs -->
+    <RuleGroup name="ImageLoad" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <ImageLoaded condition="contains">samlib.dll</ImageLoaded>
+        <ImageLoaded condition="contains">vaultcli.dll</ImageLoaded>
+        <ImageLoaded condition="contains">wdigest.dll</ImageLoaded>
+        <ImageLoaded condition="contains">cryptdll.dll</ImageLoaded>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- EID 8: CreateRemoteThread — All (always suspicious) -->
+    <RuleGroup name="CreateRemoteThread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <!-- Exclude known legitimate remote thread creators -->
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\lsass.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- EID 10: Process Access — CRITICAL for credential dumping detection -->
+    <RuleGroup name="ProcessAccess" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <!-- Alert when ANYTHING accesses LSASS (credential dumping indicator) -->
+        <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- EID 13: Registry Value Set — Persistence mechanisms -->
+    <RuleGroup name="RegistryEvent" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\Winlogon</TargetObject>
+        <TargetObject condition="contains">Policies\Explorer\Run</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- EID 22: DNS Query — ALL queries (needed for DNS tunneling detection) -->
+    <RuleGroup name="DnsQuery" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <!-- Exclude only the most noisy internal queries -->
+        <QueryName condition="end with">.local</QueryName>
+        <QueryName condition="is">wpad</QueryName>
+        <QueryName condition="end with">.arpa</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- EID 25: Process Tampering — All (defense evasion indicator) -->
+    <RuleGroup name="ProcessTampering" groupRelation="or">
+      <ProcessTampering onmatch="include"/>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

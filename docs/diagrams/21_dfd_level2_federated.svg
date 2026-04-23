@@ -1,0 +1,1088 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1200 700"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg72"
+   sodipodi:docname="21_dfd_level2_federated.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview72"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.3057143"
+     inkscape:cx="489.77024"
+     inkscape:cy="355.36105"
+     inkscape:window-width="1920"
+     inkscape:window-height="1025"
+     inkscape:window-x="0"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg72" />
+  <defs
+     id="defs3">
+    <marker
+       style="overflow:visible"
+       id="marker75"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path75" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker74"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path74" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+    <marker
+       id="fl1"
+       markerWidth="7"
+       markerHeight="6"
+       refX="7"
+       refY="3"
+       orient="auto"
+       viewBox="0 0 7 6"
+       preserveAspectRatio="xMidYMid">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="fl2"
+       markerWidth="7"
+       markerHeight="6"
+       refX="7"
+       refY="3"
+       orient="auto"
+       viewBox="0 0 7 6"
+       preserveAspectRatio="xMidYMid">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#7c3aed"
+         id="path2" />
+    </marker>
+    <marker
+       id="fl3"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#dc2626"
+         id="path3" />
+    </marker>
+  </defs>
+  <text
+     x="600"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text3"
+     style="font-size:26.6667px">DFD Level 2 — Process 8.0: Federated Learning</text>
+  <text
+     x="600"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text4"
+     style="font-size:21.3333px">Cross-organization training with federated bagging, differential privacy, and Byzantine fault tolerance</text>
+  <!-- Boundary -->
+  <rect
+     x="130"
+     y="60"
+     width="940"
+     height="570"
+     rx="10"
+     fill="#f5f3ff"
+     stroke="#7c3aed"
+     stroke-width="2"
+     stroke-dasharray="8,4"
+     id="rect4" />
+  <text
+     x="601.53174"
+     y="86.595192"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text5"
+     style="font-size:21.3333px">Process 8.0: Federated Learning</text>
+  <!-- ══ EXTERNAL: FL Client Orgs ══ -->
+  <rect
+     x="13.202829"
+     y="101.33649"
+     width="100"
+     height="80"
+     rx="5"
+     fill="#f5f3ff"
+     stroke="#7c3aed"
+     stroke-width="2"
+     id="rect5" />
+  <text
+     x="63.202831"
+     y="123.33649"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text6"
+     style="font-size:13.3333px">FL Clients</text>
+  <text
+     x="63.202831"
+     y="140.58578"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text7"
+     style="font-size:10.6667px">UDOM (real)</text>
+  <text
+     x="63.202831"
+     y="152.58577"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text8"
+     style="font-size:10.6667px">Hospital (sim)</text>
+  <text
+     x="63.202831"
+     y="164.58577"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text9"
+     style="font-size:10.6667px">Bank (sim)</text>
+  <!-- ══ EXTERNAL: Detection Engine ══ -->
+  <rect
+     x="1090.8976"
+     y="235.64229"
+     width="100"
+     height="45"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect9" />
+  <text
+     x="1140.8976"
+     y="255.64229"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text10"
+     style="font-size:12px">To 4.0</text>
+  <text
+     x="1140.8976"
+     y="268.6423"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text11"
+     style="font-size:10.6667px">Detection Engine</text>
+  <!-- ══ EXTERNAL: Admin ══ -->
+  <rect
+     x="1090.7141"
+     y="375.89612"
+     width="100"
+     height="45"
+     rx="5"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect11" />
+  <text
+     x="1140.7141"
+     y="395.89612"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text12"
+     style="font-size:12px">Admin</text>
+  <text
+     x="1140.7141"
+     y="408.89612"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text13"
+     style="font-size:10.6667px">«role: admin»</text>
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.15543;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72"
+     width="127.58966"
+     height="68.47406"
+     x="233.46869"
+     y="108.78812"
+     rx="6.0694804" />
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626;stroke-width:2.15543;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-6"
+     width="127.58966"
+     height="68.47406"
+     x="826.71875"
+     y="303.27472"
+     rx="6.0694804" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.15543;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-7"
+     width="127.58966"
+     height="68.47406"
+     x="236.39584"
+     y="500.1095"
+     rx="6.0694804" />
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626;stroke-width:2.3352;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-5"
+     width="150.15489"
+     height="68.294289"
+     x="572.78693"
+     y="385.39124"
+     rx="7.1429157" />
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626;stroke-width:2.3;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-35"
+     width="161.78656"
+     height="68.207069"
+     x="219.30865"
+     y="374.58795"
+     rx="7.696238" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.15543;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-62"
+     width="127.58966"
+     height="68.47406"
+     x="586.77728"
+     y="138.89708"
+     rx="6.0694804" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.28534;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-9"
+     width="143.70619"
+     height="68.344147"
+     x="578.17749"
+     y="251.60399"
+     rx="6.8361483" />
+  <rect
+     style="fill:#ffffff;stroke:#7c3aed;stroke-width:2.15543;stroke-linecap:square;stroke-dasharray:none"
+     id="rect72-1"
+     width="127.58966"
+     height="68.47406"
+     x="237.47894"
+     y="231.50175"
+     rx="6.0694804" />
+  <!-- ════════════════════════════════════════════ -->
+  <!-- SERVER SIDE (right half)                     -->
+  <!-- ════════════════════════════════════════════ -->
+  <!-- ══ P8.1: Distribute Global Model ══ -->
+  <text
+     x="244.62314"
+     y="119.98029"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text14">8.1</text>
+  <text
+     x="296.66577"
+     y="142.93839"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text15"
+     style="font-size:10.6667px">Distribute Global Model</text>
+  <text
+     x="296.66577"
+     y="156.93839"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text16"
+     style="font-size:9.33333px">to all connected FL clients</text>
+  <!-- Clients → P8.1 connection -->
+  <line
+     x1="112.65742"
+     y1="142.35925"
+     x2="232.88821"
+     y2="141.57925"
+     stroke="#7c3aed"
+     stroke-width="3.11784"
+     marker-end="url(#fl2)"
+     id="line16"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="140.40218"
+     y="127.05749"
+     font-size="7px"
+     fill="#7c3aed"
+     id="text17"
+     style="font-size:12px">gRPC connect</text>
+  <!-- ══ P8.2: Local Training (client-side) ══ -->
+  <text
+     x="247.31125"
+     y="243.1842"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text18">8.2</text>
+  <text
+     x="300"
+     y="264"
+     font-size="9"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text19"
+     style="font-size:10.6667px">Local XGBoost Training</text>
+  <text
+     x="300"
+     y="278"
+     font-size="7"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text20"
+     style="font-size:8px">10 boost rounds on local data</text>
+  <text
+     x="300"
+     y="290"
+     font-size="7"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text21"
+     style="font-size:9.33333px">RAW DATA STAYS LOCAL</text>
+  <!-- P8.1 → P8.2 -->
+  <line
+     x1="300"
+     y1="179.3725"
+     x2="300"
+     y2="229.4464"
+     stroke="#334155"
+     stroke-width="1.34493"
+     marker-end="url(#fl1)"
+     id="line21"
+     style="stroke-width:3.10889;stroke-dasharray:none" />
+  <text
+     x="312.29227"
+     y="197.0215"
+     font-size="7"
+     fill="#7c3aed"
+     id="text22"
+     style="font-size:12px">global model bytes</text>
+  <rect
+     x="312.53015"
+     y="200.37537"
+     width="100"
+     height="12"
+     rx="2"
+     fill="#fee2e2"
+     id="rect22" />
+  <text
+     x="361.98862"
+     y="209.83382"
+     font-size="6.5px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text23"
+     style="font-size:10.6667px">«encrypted gRPC»</text>
+  <!-- ══ D13: Local Data Partitions ══ -->
+  <g
+     transform="translate(239.85821,18.53936)"
+     y="310"
+     id="g25">
+    <line
+       x1="145"
+       y1="310"
+       x2="295"
+       y2="310"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       id="line23" />
+    <line
+       x1="145"
+       y1="330"
+       x2="295"
+       y2="330"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       id="line24" />
+    <text
+       x="153"
+       y="324"
+       font-size="8px"
+       font-weight="bold"
+       fill="#5b21b6"
+       id="text24">D13</text>
+    <text
+       x="180"
+       y="324"
+       font-size="8px"
+       fill="#5b21b6"
+       id="text25"
+       style="font-size:12px">Local Data Partitions (ro)</text>
+  </g>
+  <!-- D13 → P8.2 -->
+  <line
+     x1="409.18433"
+     y1="326.28256"
+     x2="366.39551"
+     y2="289.8006"
+     stroke="#334155"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line25"
+     style="stroke-width:3;stroke-dasharray:5.99999324,3;stroke-dashoffset:0" />
+  <text
+     x="392.65866"
+     y="301.93655"
+     font-size="7px"
+     fill="#334155"
+     id="text26"
+     style="font-size:12px">train data</text>
+  <!-- ══ P8.3: Apply Differential Privacy ══ -->
+  <text
+     x="231.83807"
+     y="386.17068"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text27">8.3</text>
+  <text
+     x="300"
+     y="404"
+     font-size="9"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text28"
+     style="font-size:10.6667px">Apply Differential Privacy</text>
+  <text
+     x="300"
+     y="418"
+     font-size="7"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text29"
+     style="font-size:10.6667px">«security: Laplace noise, ε=1.0»</text>
+  <text
+     x="300"
+     y="430"
+     font-size="7"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text30"
+     style="font-size:8px">noise on XGBoost leaf values</text>
+  <!-- P8.2 → P8.3 -->
+  <line
+     x1="300"
+     y1="303.48798"
+     x2="300"
+     y2="366"
+     stroke="#334155"
+     stroke-width="1.37866"
+     marker-end="url(#fl1)"
+     id="line30"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="199.35449"
+     y="332"
+     font-size="7px"
+     fill="#334155"
+     id="text31"
+     style="font-size:12px">trained local trees</text>
+  <!-- ══ P8.4: Submit Tree Structures ══ -->
+  <text
+     x="248.0114"
+     y="512.20917"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text32">8.4</text>
+  <text
+     x="300"
+     y="535.95703"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text33"
+     style="font-size:12px">Submit Tree Bytes</text>
+  <text
+     x="300"
+     y="547.95703"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text34">FitRes(model_bytes, num_examples)</text>
+  <!-- P8.3 → P8.4 -->
+  <line
+     x1="300"
+     y1="444.25385"
+     x2="300"
+     y2="498.66476"
+     stroke="#334155"
+     stroke-width="1.26348"
+     marker-end="url(#fl1)"
+     id="line34"
+     style="stroke-width:3.44965;stroke-dasharray:none" />
+  <text
+     x="304.78644"
+     y="462.57101"
+     font-size="7px"
+     fill="#334155"
+     id="text35"
+     style="font-size:12px">DP-protected trees</text>
+  <!-- ════════════════════════════════════════════ -->
+  <!-- SERVER-SIDE PROCESSES                        -->
+  <!-- ════════════════════════════════════════════ -->
+  <!-- ══ P8.5: Validate Contribution (Trust Manager) ══ -->
+  <text
+     x="582.67047"
+     y="395.85245"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text36">8.5</text>
+  <text
+     x="648.19775"
+     y="415.5387"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text37"
+     style="font-size:10.6667px">Validate Contribution</text>
+  <text
+     x="648.19775"
+     y="429.5387"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text38"
+     style="font-size:10.6667px">«security: Trust Manager»</text>
+  <text
+     x="648.19775"
+     y="441.5387"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text39">accuracy ≥0.5, no sudden drops, trust ≥0.3</text>
+  <!-- P8.4 → P8.5 -->
+  <line
+     x1="367.53766"
+     y1="522.94867"
+     x2="558.78613"
+     y2="453.20306"
+     stroke="#334155"
+     stroke-width="2.55132"
+     marker-end="url(#fl1)"
+     id="line39"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="439.74786"
+     y="473.5387"
+     font-size="7px"
+     fill="#334155"
+     id="text40"
+     style="font-size:12px">tree bytes</text>
+  <!-- ══ D14: Validation Set ══ -->
+  <g
+     id="g42"
+     transform="translate(21.009576,19.430023)">
+    <line
+       x1="700"
+       y1="480"
+       x2="870"
+       y2="480"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line40" />
+    <line
+       x1="700"
+       y1="500"
+       x2="870"
+       y2="500"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line41" />
+    <text
+       x="708"
+       y="494"
+       font-size="8px"
+       font-weight="bold"
+       fill="#991b1b"
+       id="text41">D14</text>
+    <text
+       x="735"
+       y="494"
+       font-size="8px"
+       fill="#991b1b"
+       id="text42"
+       style="font-size:12px">Held-out Validation Set</text>
+  </g>
+  <!-- P8.5 ↔ D14 -->
+  <line
+     x1="698.19775"
+     y1="452.57883"
+     x2="768.19775"
+     y2="498.57883"
+     stroke="#dc2626"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line42" />
+  <text
+     x="743.21967"
+     y="476.3447"
+     font-size="7px"
+     fill="#dc2626"
+     id="text43"
+     style="font-size:12px">evaluate accuracy</text>
+  <!-- ══ D15: Client Reputation Store ══ -->
+  <g
+     id="g45"
+     transform="translate(-137.90728,207.06679)">
+    <line
+       x1="700"
+       y1="340"
+       x2="870"
+       y2="340"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line43" />
+    <line
+       x1="700"
+       y1="360"
+       x2="870"
+       y2="360"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line44" />
+    <text
+       x="708"
+       y="354"
+       font-size="8px"
+       font-weight="bold"
+       fill="#991b1b"
+       id="text44">D15</text>
+    <text
+       x="735"
+       y="354"
+       font-size="8px"
+       fill="#991b1b"
+       id="text45"
+       style="font-size:12px">Client Reputation Scores</text>
+  </g>
+  <!-- P8.5 ↔ D15 -->
+  <line
+     x1="638.37354"
+     y1="543.83679"
+     x2="638.23163"
+     y2="457.34753"
+     stroke="#dc2626"
+     stroke-width="1.61091"
+     stroke-dasharray="4, 3"
+     id="line45" />
+  <text
+     x="542.96802"
+     y="514.69263"
+     font-size="7px"
+     fill="#dc2626"
+     id="text46"
+     style="font-size:12px">read/update trust</text>
+  <!-- Rejection path -->
+  <path
+     d="m 726.35068,419.51733 c 217.96053,-1.00718 211.10578,-6.44177 211.51662,129.91198"
+     stroke="#dc2626"
+     stroke-width="2.20434"
+     marker-end="url(#fl3)"
+     id="path46"
+     style="fill:none;stroke-width:3.11344;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;paint-order:normal"
+     sodipodi:nodetypes="cc" />
+  <text
+     x="943.30719"
+     y="481.77139"
+     font-size="7px"
+     fill="#dc2626"
+     id="text47"
+     style="font-size:12px">[REJECTED]</text>
+  <text
+     x="943.30719"
+     y="493.77139"
+     font-size="7px"
+     fill="#dc2626"
+     id="text48"
+     style="font-size:12px">trust -= 0.2</text>
+  <!-- Blocked state -->
+  <rect
+     x="876.66602"
+     y="552.47156"
+     width="120"
+     height="35"
+     rx="6"
+     fill="#7f1d1d"
+     stroke="#450a0a"
+     stroke-width="2"
+     id="rect48" />
+  <text
+     x="937.04895"
+     y="568.55688"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#ffffff"
+     id="text49"
+     style="font-size:12px">Blocked</text>
+  <text
+     x="937.04895"
+     y="580.55688"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#fecaca"
+     id="text50"
+     style="font-size:10.6667px">[trust &lt; 0.3]</text>
+  <!-- ══ P8.6: Aggregate Trees (Federated Bagging) ══ -->
+  <text
+     x="589.16907"
+     y="262.99713"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text51">8.6</text>
+  <text
+     x="649.28082"
+     y="280.24643"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text52"
+     style="font-size:10.6667px">Aggregate (Fed. Bagging)</text>
+  <text
+     x="649.28082"
+     y="294.24643"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text53"
+     style="font-size:8px">combine trees, weight by trust score</text>
+  <text
+     x="649.28082"
+     y="306.24643"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text54"
+     style="font-size:8px">→ larger ensemble = global model</text>
+  <!-- P8.5 → P8.6 (accepted) -->
+  <line
+     x1="648.19775"
+     y1="385.57883"
+     x2="648.19775"
+     y2="330.90347"
+     stroke="#16a34a"
+     stroke-width="1.42369"
+     marker-end="url(#fl1)"
+     id="line54"
+     style="stroke-width:2.77372;stroke-dasharray:none;marker-end:url(#marker74)" />
+  <text
+     x="663.19775"
+     y="355.57883"
+     font-size="7px"
+     fill="#16a34a"
+     id="text55"
+     style="font-size:12px">[ACCEPTED]</text>
+  <text
+     x="663.19775"
+     y="366.57883"
+     font-size="7px"
+     fill="#16a34a"
+     id="text56"
+     style="font-size:12px">trust += 0.02</text>
+  <!-- ══ P8.7: Save Global Model ══ -->
+  <text
+     x="597.29224"
+     y="149.49857"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text57">8.7</text>
+  <text
+     x="648.19775"
+     y="173.24643"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text58"
+     style="font-size:12px">Save Global Model</text>
+  <text
+     x="648.19775"
+     y="186.24643"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text59"
+     style="font-size:9.33333px">HMAC sign + version</text>
+  <!-- P8.6 → P8.7 -->
+  <line
+     x1="648.19775"
+     y1="248.57881"
+     x2="648.19775"
+     y2="219.28441"
+     stroke="#334155"
+     stroke-width="1.2908"
+     marker-end="url(#fl1)"
+     id="line59"
+     style="stroke-width:2.7235;stroke-dasharray:none;marker-end:url(#marker75)" />
+  <text
+     x="655.58344"
+     y="232.68687"
+     font-size="7px"
+     fill="#334155"
+     id="text60"
+     style="font-size:12px">aggregated</text>
+  <!-- ══ D3: Model Store ══ -->
+  <g
+     id="g62"
+     transform="translate(54.696334,14.080245)">
+    <line
+       x1="750"
+       y1="120"
+       x2="930"
+       y2="120"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line60" />
+    <line
+       x1="750"
+       y1="140"
+       x2="930"
+       y2="140"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line61" />
+    <text
+       x="758"
+       y="134"
+       font-size="8px"
+       font-weight="bold"
+       fill="#991b1b"
+       id="text61">D3</text>
+    <text
+       x="780"
+       y="134"
+       font-size="8px"
+       fill="#991b1b"
+       id="text62"
+       style="font-size:12px">Model Store (HMAC signed)</text>
+  </g>
+  <!-- P8.7 → D3 -->
+  <line
+     x1="715.96252"
+     y1="173.04799"
+     x2="802.02319"
+     y2="154.60133"
+     stroke="#334155"
+     stroke-width="2.88216"
+     marker-end="url(#fl1)"
+     id="line62" />
+  <text
+     x="737.32953"
+     y="179.44704"
+     font-size="7px"
+     fill="#334155"
+     id="text63"
+     style="font-size:12px">save + sign</text>
+  <!-- P8.7 → P8.1 (loop: distribute new model) -->
+  <path
+     d="M 495"
+     y1="145"
+     x2="412"
+     y2="142"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     marker-end="url(#fl2)"
+     id="path63" />
+  <line
+     x1="584.46863"
+     y1="171.54071"
+     x2="364.08539"
+     y2="135.47575"
+     stroke="#7c3aed"
+     stroke-width="2.09155"
+     marker-end="url(#fl2)"
+     id="line63"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="448.46829"
+     y="136.76587"
+     font-size="7px"
+     fill="#7c3aed"
+     id="text64"
+     style="font-size:12px">next round</text>
+  <!-- P8.7 → Detection Engine (hot-reload) -->
+  <path
+     d="m 714.41718,202.15941 q 72.06301,72.81092 365.78902,55.451"
+     stroke="#16a34a"
+     stroke-width="0.70304"
+     stroke-dasharray="5, 3"
+     marker-end="url(#fl1)"
+     id="path64"
+     style="fill:none;stroke-width:2.97622;stroke-dasharray:21.1667, 12.7;stroke-dashoffset:0;marker-end:url(#Triangle)" />
+  <text
+     x="851.87769"
+     y="231.04546"
+     font-size="7px"
+     fill="#16a34a"
+     id="text65"
+     style="font-size:12px">FL_ROUND_COMPLETED</text>
+  <text
+     x="830.453"
+     y="244.25272"
+     font-size="7px"
+     fill="#16a34a"
+     id="text65-2"
+     style="font-size:10.6667px">→ hot_reload model in Detection Engine</text>
+  <!-- ══ P8.8: Audit FL Round ══ -->
+  <text
+     x="837.54285"
+     y="315.39191"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text66">8.8</text>
+  <text
+     x="894.4054"
+     y="341.8475"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text67"
+     style="font-size:12px">Audit FL Round</text>
+  <!-- P8.6 → P8.8 -->
+  <line
+     x1="723.42603"
+     y1="288.44348"
+     x2="822.65295"
+     y2="322.86182"
+     stroke="#dc2626"
+     stroke-width="2.57327"
+     marker-end="url(#fl3)"
+     id="line67"
+     style="stroke-width:2.22127;stroke-dasharray:none" />
+  <text
+     x="741.56757"
+     y="288.44754"
+     font-size="7px"
+     fill="#dc2626"
+     id="text68"
+     style="font-size:12px">log round results</text>
+  <!-- Admin → config -->
+  <line
+     x1="1088.8507"
+     y1="394.22379"
+     x2="955.59967"
+     y2="351.729"
+     stroke="#334155"
+     stroke-width="1.01298"
+     marker-end="url(#fl1)"
+     id="line68"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="1002.4985"
+     y="332.94153"
+     font-size="7px"
+     fill="#dc2626"
+     id="text69"
+     style="font-size:12px">configure</text>
+  <text
+     x="992.64648"
+     y="342.95132"
+     font-size="7px"
+     fill="#dc2626"
+     id="text70"
+     style="font-size:9.33333px">rounds, ε, clients</text>
+  <rect
+     x="985.90112"
+     y="346.40979"
+     width="80"
+     height="12"
+     rx="2"
+     fill="#fee2e2"
+     id="rect70" />
+  <text
+     x="1025.3595"
+     y="355.59747"
+     font-size="6.5px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text71"
+     style="font-size:10.6667px">«admin only»</text>
+  <!-- Legend -->
+  <text
+     x="668.60315"
+     y="245.32364"
+     font-size="7px"
+     fill="#334155"
+     id="text75"
+     style="font-size:12px">model</text>
+</svg>

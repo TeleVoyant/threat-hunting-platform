@@ -1,0 +1,26 @@
+# Secrets — NEVER commit
+.env
+secrets/
+*.key
+
+# Data
+data/
+training/data/
+
+# Models (too large for git)
+detection/models/*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

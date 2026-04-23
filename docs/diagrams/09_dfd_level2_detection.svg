@@ -1,0 +1,976 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1200 750"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg55"
+   sodipodi:docname="09_dfd_level2_detection.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview55"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.2186667"
+     inkscape:cx="480.44309"
+     inkscape:cy="423.41356"
+     inkscape:window-width="1920"
+     inkscape:window-height="1025"
+     inkscape:window-x="0"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg55" />
+  <defs
+     id="defs2">
+    <marker
+       style="overflow:visible"
+       id="Triangle"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+    <marker
+       id="d21"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="d22"
+       markerWidth="7"
+       markerHeight="6"
+       refX="7"
+       refY="3"
+       orient="auto"
+       viewBox="0 0 7 6"
+       preserveAspectRatio="xMidYMid">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#dc2626"
+         id="path2" />
+    </marker>
+    <marker
+       id="df1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M 0,0 V 6 L 7,3 Z"
+         fill="#334155"
+         id="path1-2" />
+    </marker>
+    <marker
+       id="df2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M 0,0 V 6 L 7,3 Z"
+         fill="#dc2626"
+         id="path2-9" />
+    </marker>
+    <marker
+       id="df3"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M 0,0 V 6 L 7,3 Z"
+         fill="#7c3aed"
+         id="path3" />
+    </marker>
+  </defs>
+  <text
+     x="600"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text2"
+     style="font-size:21.3333px">Data Flow Diagram — Level 2: Process 4.0 (Threat Detection) Decomposition</text>
+  <text
+     x="600"
+     y="49.333698"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text3"
+     style="font-size:21.3333px">Plugin-based detection engine with model integrity verification and drift monitoring</text>
+  <!-- Boundary -->
+  <rect
+     x="163.72151"
+     y="63.4501"
+     width="859.21118"
+     height="568.36676"
+     rx="10.228704"
+     fill="#f0fdf4"
+     stroke="#16a34a"
+     stroke-width="1.93668"
+     stroke-dasharray="8, 4"
+     id="rect3" />
+  <text
+     x="600"
+     y="87.74398"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text4"
+     style="font-size:18.6667px">Process 4.0: Threat Detection Engine</text>
+  <!-- ══ INCOMING FLOWS ══ -->
+  <!-- From P3 Feature Engineering -->
+  <rect
+     x="16.377834"
+     y="405.58459"
+     width="130"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect4" />
+  <text
+     x="81.377831"
+     y="423.58459"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text5"
+     style="font-size:13.3333px">From 3.0</text>
+  <text
+     x="81.377831"
+     y="437.58459"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text6"
+     style="font-size:10.6667px">Feature Engineering</text>
+  <line
+     x1="146.37784"
+     y1="425.58459"
+     x2="253.73462"
+     y2="425.58459"
+     stroke="#334155"
+     stroke-width="1.92775"
+     marker-end="url(#d21)"
+     id="line6"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="169.67439"
+     y="411.04163"
+     font-size="8px"
+     fill="#16a34a"
+     id="text7"
+     style="font-size:13.3333px">FeatureVector</text>
+  <!-- ══ INTERNAL PROCESSES ══ -->
+  <!-- P4.1: Load & Verify Model -->
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a;stroke-width:2;stroke-dasharray:none"
+     id="rect55"
+     width="117.45621"
+     height="69.061707"
+     x="260.03787"
+     y="394.13757"
+     rx="10" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a;stroke-width:2;stroke-dasharray:none"
+     id="rect55-3"
+     width="117.45621"
+     height="69.061707"
+     x="720.83417"
+     y="514.96112"
+     rx="10" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a;stroke-width:2;stroke-dasharray:none"
+     id="rect55-6"
+     width="134.43706"
+     height="70.451744"
+     x="479.71246"
+     y="455.18512"
+     rx="10" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a;stroke-width:2;stroke-dasharray:none"
+     id="rect55-7"
+     width="154.632"
+     height="73.414719"
+     x="471.66647"
+     y="312.5658"
+     rx="10" />
+  <rect
+     style="fill:#ffffff;stroke:#334155;stroke-width:1.59217;stroke-dasharray:none"
+     id="rect55-7-5"
+     width="119.34509"
+     height="60.283169"
+     x="717.14832"
+     y="383.99326"
+     rx="7.7180071" />
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626;stroke-width:1.78155;stroke-dasharray:none"
+     id="rect55-7-3"
+     width="142.13164"
+     height="63.376064"
+     x="248.87386"
+     y="254.10437"
+     rx="9.1916056" />
+  <rect
+     style="fill:#fef3c7;stroke:#d97706;stroke-width:1.70902;stroke-dasharray:none"
+     id="rect55-7-56"
+     width="132.35735"
+     height="62.628017"
+     x="627.79327"
+     y="181.82059"
+     rx="8.5595045" />
+  <text
+     x="259.27789"
+     y="264.64987"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text8">4.1</text>
+  <text
+     x="317.5383"
+     y="290.72757"
+     font-size="9"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text9"
+     style="font-size:13.3333px">Load &amp; Verify Model</text>
+  <text
+     x="317.94858"
+     y="305.77899"
+     font-size="7"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text10"
+     style="font-size:8px">«security: HMAC signature check»</text>
+  <!-- P4.2: Detector Registry -->
+  <text
+     x="272.19791"
+     y="406.89542"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text11">4.2</text>
+  <text
+     x="317.12802"
+     y="433.59955"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text12"
+     style="font-size:13.3333px">Detector Registry</text>
+  <text
+     x="317.5383"
+     y="448.24069"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text13"
+     style="font-size:10.6667px">«plugin auto-discovery»</text>
+  <!-- P4.3a: Lateral Movement XGBoost -->
+  <text
+     x="485.18921"
+     y="325.73495"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text14">4.3a</text>
+  <text
+     x="547.53827"
+     y="355.24069"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text15"
+     style="font-size:13.3333px">XGBoost: Lateral Mvmt</text>
+  <text
+     x="547.53827"
+     y="368.24069"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text16"
+     style="font-size:8px">T1003, T1021, T1550, T1078</text>
+  <!-- P4.3b: DNS Exfiltration XGBoost -->
+  <text
+     x="495.84247"
+     y="467.93216"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text17">4.3b</text>
+  <text
+     x="547.53827"
+     y="495.24069"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text18"
+     style="font-size:13.3333px">XGBoost: DNS Exfil</text>
+  <text
+     x="547.53827"
+     y="508.24069"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text19"
+     style="font-size:10.6667px">T1048, T1071.004</text>
+  <!-- P4.4: Confidence Threshold -->
+  <text
+     x="726.25269"
+     y="393.00873"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#334155"
+     id="text20">4.4</text>
+  <text
+     x="777.94855"
+     y="419.4967"
+     font-size="9"
+     text-anchor="middle"
+     fill="#334155"
+     id="text21"
+     style="font-size:13.3333px">Threshold Filter</text>
+  <text
+     x="777.12799"
+     y="432.4967"
+     font-size="7"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text22"
+     style="font-size:8px">conf &gt; detectors.yaml threshold</text>
+  <!-- P4.5: SHAP Explainer -->
+  <text
+     x="731.58643"
+     y="526.29102"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text23">4.5</text>
+  <text
+     x="777.53827"
+     y="555.24072"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text24"
+     style="font-size:13.3333px">SHAP Explainer</text>
+  <text
+     x="777.53827"
+     y="568.24072"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text25"
+     style="font-size:8px">Top 5 contributing features</text>
+  <!-- P4.6: Drift Monitor -->
+  <text
+     x="637.8009"
+     y="191.7998"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text26">4.6</text>
+  <text
+     x="692.77899"
+     y="219.51862"
+     font-size="9"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text27"
+     style="font-size:13.3333px">Drift Monitor</text>
+  <text
+     x="692.77899"
+     y="232.51862"
+     font-size="7"
+     text-anchor="middle"
+     fill="#b45309"
+     id="text28"
+     style="font-size:8px">Track confidence distribution shifts</text>
+  <!-- ══ DATA STORES ══ -->
+  <!-- D3: Model Store -->
+  <g
+     transform="translate(255.13476,146.86078)"
+     id="g30">
+    <line
+       x1="0"
+       y1="0"
+       x2="130"
+       y2="0"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line28" />
+    <line
+       x1="0"
+       y1="22"
+       x2="130"
+       y2="22"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       id="line29" />
+    <text
+       x="8"
+       y="16"
+       font-size="9px"
+       font-weight="bold"
+       fill="#991b1b"
+       id="text29">D3</text>
+    <text
+       x="35"
+       y="16"
+       font-size="9px"
+       fill="#991b1b"
+       id="text30"
+       style="font-size:13.3333px">Model Store (signed)</text>
+  </g>
+  <!-- D6: Detector Config -->
+  <g
+     transform="translate(197.53829,515.2407)"
+     id="g32">
+    <line
+       x1="0"
+       y1="0"
+       x2="120"
+       y2="0"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line30" />
+    <line
+       x1="0"
+       y1="22"
+       x2="120"
+       y2="22"
+       stroke="#334155"
+       stroke-width="1.5"
+       id="line31" />
+    <text
+       x="8"
+       y="16"
+       font-size="9px"
+       font-weight="bold"
+       fill="#334155"
+       id="text31">D6</text>
+    <text
+       x="35"
+       y="16"
+       font-size="9"
+       fill="#334155"
+       id="text32"
+       style="font-size:13.3333px">detectors.yaml</text>
+  </g>
+  <!-- D7: Drift Baseline -->
+  <g
+     transform="translate(621.55361,117.04596)"
+     id="g34">
+    <line
+       x1="0"
+       y1="0"
+       x2="130"
+       y2="0"
+       stroke="#d97706"
+       stroke-width="1.5"
+       id="line32" />
+    <line
+       x1="0"
+       y1="22"
+       x2="130"
+       y2="22"
+       stroke="#d97706"
+       stroke-width="1.5"
+       id="line33" />
+    <text
+       x="8"
+       y="16"
+       font-size="9px"
+       font-weight="bold"
+       fill="#92400e"
+       id="text33">D7</text>
+    <text
+       x="35"
+       y="16"
+       font-size="9"
+       fill="#92400e"
+       id="text34"
+       style="font-size:13.3333px">Drift Baseline</text>
+  </g>
+  <!-- ══ FLOWS ══ -->
+  <!-- D3 → P4.1 (load model) -->
+  <text
+     x="319.78781"
+     y="218.08434"
+     font-size="7px"
+     fill="#dc2626"
+     id="text35"
+     style="font-size:13.3333px">model.json + manifest</text>
+  <!-- P4.1 → P4.2 (verified model) -->
+  <line
+     x1="317.5383"
+     y1="317.24069"
+     x2="317.5383"
+     y2="391.24069"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#d21)"
+     id="line35"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="321.87091"
+     y="345.39386"
+     font-size="7"
+     fill="#334155"
+     id="text36"
+     style="font-size:13.3333px">Verified model</text>
+  <!-- P4.1 integrity fail path -->
+  <!-- FeatureVector → P4.2 -->
+  <!-- D6 → P4.2 (config) -->
+  <line
+     x1="257.5383"
+     y1="515.24072"
+     x2="267.5383"
+     y2="455.24069"
+     stroke="#334155"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line41"
+     style="stroke-width:2;stroke-dasharray:8,6;stroke-dashoffset:0" />
+  <text
+     x="208.81839"
+     y="494.34354"
+     font-size="7"
+     fill="#64748b"
+     id="text41"
+     style="font-size:13.3333px">enabled, threshold</text>
+  <!-- P4.2 → P4.3a -->
+  <line
+     x1="382.50452"
+     y1="404.23718"
+     x2="467.72525"
+     y2="352.83282"
+     stroke="#334155"
+     stroke-width="1.41118"
+     marker-end="url(#d21)"
+     id="line42"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="404.79211"
+     y="400.98468"
+     font-size="7"
+     fill="#334155"
+     id="text42"
+     style="font-size:13.3333px">Auth + Process features</text>
+  <!-- P4.2 → P4.3b -->
+  <line
+     x1="381.03238"
+     y1="454.3006"
+     x2="473.38834"
+     y2="497.2092"
+     stroke="#334155"
+     stroke-width="6.67699"
+     marker-end="url(#d21)"
+     id="line43"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="394.94531"
+     y="454.5733"
+     font-size="7"
+     fill="#334155"
+     id="text43"
+     style="font-size:13.3333px">DNS features</text>
+  <!-- P4.3a → P4.4 -->
+  <line
+     x1="631.56854"
+     y1="366.55475"
+     x2="713.13"
+     y2="403.7735"
+     stroke="#334155"
+     stroke-width="3.01776"
+     marker-end="url(#d21)"
+     id="line44" />
+  <text
+     x="648.30414"
+     y="371.06128"
+     font-size="7"
+     fill="#334155"
+     id="text44"
+     style="font-size:13.3333px">Detection(conf=0.87)</text>
+  <!-- P4.3b → P4.4 -->
+  <line
+     x1="619.41968"
+     y1="471.33429"
+     x2="711.80237"
+     y2="430.48349"
+     stroke="#334155"
+     stroke-width="3.07162"
+     marker-end="url(#d21)"
+     id="line45" />
+  <text
+     x="631.89276"
+     y="478.44638"
+     font-size="7"
+     fill="#334155"
+     id="text45"
+     style="font-size:13.3333px">Detection(conf=0.72)</text>
+  <!-- P4.4 → P4.5 (above threshold) -->
+  <line
+     x1="777.53827"
+     y1="447.24069"
+     x2="777.53827"
+     y2="511.24069"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#d21)"
+     id="line46"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="783.51202"
+     y="481.13785"
+     font-size="7"
+     fill="#16a34a"
+     id="text46"
+     style="font-size:13.3333px">[above threshold]</text>
+  <!-- P4.4 → discard (below threshold) -->
+  <line
+     x1="837.33038"
+     y1="411.13785"
+     x2="942.61487"
+     y2="411.13785"
+     stroke="#94a3b8"
+     stroke-width="1.2264"
+     id="line47"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="945.07654"
+     y="417.34354"
+     font-size="7px"
+     fill="#94a3b8"
+     id="text47"
+     style="font-size:21.3333px">Discard</text>
+  <!-- P4.3a/b → P4.6 (all predictions for drift) -->
+  <line
+     x1="623.80078"
+     y1="220.49612"
+     x2="554.06927"
+     y2="311.70758"
+     stroke="#d97706"
+     stroke-width="0.697942"
+     stroke-dasharray="4, 3"
+     id="line48"
+     style="stroke-width:2;stroke-dasharray:11.4622702,8.59670265;stroke-dashoffset:0" />
+  <text
+     x="598.64331"
+     y="277.68051"
+     font-size="7"
+     fill="#d97706"
+     id="text48"
+     style="font-size:13.3333px">All predictions</text>
+  <!-- P4.6 → D7 -->
+  <line
+     x1="695.44208"
+     y1="140.23369"
+     x2="695.3183"
+     y2="182.87469"
+     stroke="#d97706"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line49"
+     style="stroke-width:2.37134;stroke-dasharray:4.74267, 2.37134;stroke-dashoffset:0" />
+  <!-- ══ OUTPUT ══ -->
+  <rect
+     x="1061.3278"
+     y="527.42554"
+     width="130"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect49" />
+  <text
+     x="1126.3278"
+     y="547.42554"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text49"
+     style="font-size:13.3333px">To 5.0</text>
+  <text
+     x="1126.3278"
+     y="560.42554"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text50"
+     style="font-size:10.6667px">Threat Intel Enrichment</text>
+  <line
+     x1="840.29919"
+     y1="549.30743"
+     x2="1055.6963"
+     y2="549.40088"
+     stroke="#334155"
+     stroke-width="0.145331"
+     marker-end="url(#d21)"
+     id="line50"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="840.91205"
+     y="542.16626"
+     font-size="8"
+     fill="#16a34a"
+     id="text51"
+     style="font-size:13.3333px">Detection + SHAP explanations</text>
+  <!-- Drift alert output -->
+  <rect
+     x="1059.6525"
+     y="199.20168"
+     width="130"
+     height="40"
+     rx="5"
+     fill="#fef3c7"
+     stroke="#d97706"
+     stroke-width="1.5"
+     id="rect51" />
+  <text
+     x="1124.6525"
+     y="219.20168"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text52"
+     style="font-size:13.3333px">To Admin</text>
+  <text
+     x="1124.6525"
+     y="232.20168"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text53"
+     style="font-size:10.6667px">Drift Alert</text>
+  <line
+     x1="765.85333"
+     y1="218.62144"
+     x2="1047.0078"
+     y2="218.62144"
+     stroke="#d97706"
+     stroke-width="1.29935"
+     marker-end="url(#d21)"
+     id="line53"
+     style="stroke-width:2.96271;stroke-dasharray:none;marker-end:url(#Triangle)" />
+  <text
+     x="770.40479"
+     y="211.62144"
+     font-size="8"
+     fill="#d97706"
+     id="text54"
+     style="font-size:13.3333px">Model drift detected → retrain recommended</text>
+  <!-- Legend -->
+  <line
+     x1="314.25601"
+     y1="178.56454"
+     x2="314.25601"
+     y2="252.56454"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#d21)"
+     id="line56"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="840.95184"
+     y="399.90152"
+     font-size="7"
+     fill="#16a34a"
+     id="text56"
+     style="font-size:13.3333px;fill:#334155">[below threshold]</text>
+  <rect
+     x="72.85643"
+     y="664.76764"
+     width="1053.5625"
+     height="57.527622"
+     rx="5.0978827"
+     fill="#f8fafc"
+     stroke="#94a3b8"
+     stroke-width="0.83562"
+     id="rect69" />
+  <text
+     x="99.901367"
+     y="679.37103"
+     font-size="10px"
+     font-weight="bold"
+     fill="#0f172a"
+     id="text70">Legend:</text>
+  <text
+     x="219.90135"
+     y="697.37103"
+     font-size="9px"
+     fill="#334155"
+     id="text71">Process</text>
+  <rect
+     style="fill:#fee2e2;stroke:#dc2626;stroke-width:0.384886"
+     id="rect78-3-0-0"
+     width="57.480999"
+     height="29.33502"
+     x="296.41751"
+     y="678.43036"
+     rx="6.004281" />
+  <rect
+     style="fill:#dcfce7;stroke:#16a34a;stroke-width:0.384886"
+     id="rect78-3-0-0-6"
+     width="57.480984"
+     height="29.33502"
+     x="156.48001"
+     y="678.45074"
+     rx="6.004281" />
+  <text
+     x="359.9014"
+     y="697.37103"
+     font-size="9px"
+     fill="#334155"
+     id="text72">Security Process</text>
+  <rect
+     x="469.82718"
+     y="680.29688"
+     width="64.557556"
+     height="24.148369"
+     rx="6"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="1.35163"
+     id="rect72"
+     style="fill:#fef3c7;stroke:#d97706" />
+  <text
+     x="545.95172"
+     y="695.72992"
+     font-size="9px"
+     fill="#334155"
+     id="text73">Monitor Process</text>
+  <line
+     x1="816.92944"
+     y1="685.71918"
+     x2="876.92944"
+     y2="685.71918"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="line73" />
+  <line
+     x1="816.92944"
+     y1="703.71918"
+     x2="876.92944"
+     y2="703.71918"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="line74" />
+  <text
+     x="886.9295"
+     y="697.71918"
+     font-size="9px"
+     fill="#334155"
+     id="text74">Data Store</text>
+  <line
+     x1="966.9295"
+     y1="692.71918"
+     x2="1026.9296"
+     y2="692.71918"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#df1)"
+     id="line75" />
+  <text
+     x="1036.9296"
+     y="697.71918"
+     font-size="9px"
+     fill="#334155"
+     id="text75">Data Flow</text>
+  <rect
+     x="645.05658"
+     y="680.29681"
+     width="64.557556"
+     height="24.148369"
+     rx="6"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="1.35163"
+     id="rect56"
+     style="fill:#ffffff;stroke:#334155" />
+  <text
+     x="129.48412"
+     y="281.60992"
+     font-size="7px"
+     fill="#dc2626"
+     text-anchor="end"
+     id="text37"
+     style="font-size:13.3333px">⚠ INTEGRITY FAIL</text>
+  <text
+     x="129.48412"
+     y="293.60992"
+     font-size="7px"
+     fill="#dc2626"
+     text-anchor="end"
+     id="text38"
+     style="font-size:13.3333px">→ REFUSE to load</text>
+  <text
+     x="129.48412"
+     y="305.60992"
+     font-size="7px"
+     fill="#dc2626"
+     text-anchor="end"
+     id="text39"
+     style="font-size:13.3333px">→ alert admin</text>
+  <text
+     x="721.18115"
+     y="695.72986"
+     font-size="9px"
+     fill="#334155"
+     id="text57">Filter Process</text>
+  <line
+     x1="246.48724"
+     y1="288.13931"
+     x2="133.93156"
+     y2="288.13931"
+     stroke="#334155"
+     stroke-width="1.92775"
+     marker-end="url(#d21)"
+     id="line57"
+     style="stroke:#dc2626;stroke-width:3.07179;stroke-dasharray:none;marker-end:url(#d22)" />
+</svg>

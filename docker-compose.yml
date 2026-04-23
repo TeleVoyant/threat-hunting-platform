@@ -1,0 +1,234 @@
+# ══════════════════════════════════════════════════════════════
+# APT Threat Hunting Platform — Docker Compose Deployment
+# ══════════════════════════════════════════════════════════════
+#
+# USAGE:
+#   First time setup:
+#     cp .env.example .env        # Edit with real values
+#     mkdir -p secrets
+#     echo "your-jwt-secret" > secrets/jwt_secret.txt
+#     echo "your-wazuh-pass" > secrets/wazuh_api_password.txt
+#     echo "your-signing-key" > secrets/model_signing_key.txt
+#     echo "your-fl-key" > secrets/fl_server_key.txt
+#     docker compose up -d
+#
+#   View logs:
+#     docker compose logs -f api
+#
+#   Stop:
+#     docker compose down
+#
+#   Deploy agent on a laptop (from laptop, run in PowerShell as Admin):
+#     .\scripts\deploy_endpoint.ps1 -ServerIP <THIS_SERVER_IP> -RegistrationPassword <PASS>
+#
+# ══════════════════════════════════════════════════════════════
+
+version: "3.8"
+
+services:
+
+  # ── WAZUH SIEM STACK ──────────────────────────────────
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.0
+    hostname: wazuh-manager
+    ports:
+      - "1514:1514"           # Agent communication (laptops connect here)
+      - "1515:1515"           # Agent registration
+      - "55000:55000"         # REST API (AI Platform connects here)
+    volumes:
+      - wazuh-data:/var/ossec/data
+      - wazuh-etc:/var/ossec/etc
+    environment:
+      - WAZUH_CLUSTER_DISABLED=true
+    env_file:
+      - .env
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4.0"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sk https://localhost:55000/ || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    networks:
+      - internal-net
+      - agent-net
+
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.7.0
+    hostname: wazuh-indexer
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "bootstrap.memory_lock=true"
+      - "discovery.type=single-node"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    networks:
+      - internal-net
+
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.7.0
+    hostname: wazuh-dashboard
+    ports:
+      - "5601:5601"           # SOC analysts access this
+    depends_on:
+      - wazuh-indexer
+      - wazuh-manager
+    environment:
+      - WAZUH_API_URL=https://wazuh-manager:55000
+      - INDEXER_URL=https://wazuh-indexer:9200
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    networks:
+      - internal-net
+
+  # ── AI THREAT HUNTING PLATFORM ────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: threat-platform-api
+    ports:
+      - "8000:8000"           # REST API
+    volumes:
+      - ./config:/app/config:ro
+      - ./detection/models:/app/detection/models:ro
+      - platform-data:/app/data
+    depends_on:
+      wazuh-manager:
+        condition: service_healthy
+    environment:
+      - CONFIG_DIR=config
+      - DATA_DIR=data
+      - LOG_LEVEL=INFO
+      - DETECTION_LOOP_ENABLED=true
+    env_file:
+      - .env
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8000/health'); exit(0 if r.status_code==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - internal-net
+
+  # ── ATTACK GRAPH VISUALIZATION ────────────────────────
+  visualization:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: attack-graph-viz
+    ports:
+      - "8080:8080"           # Standalone attack graph viewer
+    command: ["python", "-m", "uvicorn", "visualization.web:app", "--host", "0.0.0.0", "--port", "8080"]
+    volumes:
+      - platform-data:/app/data:ro
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - internal-net
+
+  # ── FEDERATED LEARNING ────────────────────────────────
+  fl-server:
+    build:
+      context: .
+      dockerfile: federated/Dockerfile
+    hostname: fl-server
+    command: ["python", "run_server.py", "--mode", "fl-server", "--config-dir", "config"]
+    volumes:
+      - ./config:/app/config:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    networks:
+      - fl-net
+
+  fl-client-udom:
+    build:
+      context: .
+      dockerfile: federated/Dockerfile
+    command: >
+      python run_server.py --mode fl-client
+      --fl-server-address fl-server:8888
+      --fl-client-name udom
+      --fl-data-path /data/partition_1/train.csv
+    volumes:
+      - ./training/data/partition_1:/data/partition_1:ro
+    depends_on:
+      - fl-server
+    networks:
+      - fl-net
+
+  fl-client-hospital:
+    build:
+      context: .
+      dockerfile: federated/Dockerfile
+    command: >
+      python run_server.py --mode fl-client
+      --fl-server-address fl-server:8888
+      --fl-client-name hospital
+      --fl-data-path /data/partition_2/train.csv
+    volumes:
+      - ./training/data/partition_2:/data/partition_2:ro
+    depends_on:
+      - fl-server
+    networks:
+      - fl-net
+
+  fl-client-bank:
+    build:
+      context: .
+      dockerfile: federated/Dockerfile
+    command: >
+      python run_server.py --mode fl-client
+      --fl-server-address fl-server:8888
+      --fl-client-name bank
+      --fl-data-path /data/partition_3/train.csv
+    volumes:
+      - ./training/data/partition_3:/data/partition_3:ro
+    depends_on:
+      - fl-server
+    networks:
+      - fl-net
+
+volumes:
+  wazuh-data:
+  wazuh-etc:
+  wazuh-indexer-data:
+  platform-data:
+
+networks:
+  internal-net:
+    driver: bridge
+  agent-net:
+    driver: bridge
+  fl-net:
+    driver: bridge
+    internal: true

@@ -1,0 +1,700 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1100 650"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg45"
+   sodipodi:docname="17_dfd_level2_features.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview45"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.9886018"
+     inkscape:cx="752.79021"
+     inkscape:cy="262.99885"
+     inkscape:window-width="1920"
+     inkscape:window-height="1025"
+     inkscape:window-x="128"
+     inkscape:window-y="1179"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg45" />
+  <defs
+     id="defs2">
+    <marker
+       id="f1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="f2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#16a34a"
+         id="path2" />
+    </marker>
+  </defs>
+  <text
+     x="550"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text2"
+     style="font-size:26.6667px">DFD Level 2 — Process 3.0: Feature Engineering</text>
+  <text
+     x="550"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text3"
+     style="font-size:17.3333px">Composable extractor pipeline with 6 pluggable extractors, prefix namespacing, and LRU caching</text>
+  <!-- Boundary -->
+  <rect
+     x="126.01869"
+     y="59.983871"
+     width="832.87756"
+     height="520.03229"
+     rx="9.6846237"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.96827"
+     stroke-dasharray="8, 4"
+     id="rect3" />
+  <text
+     x="550"
+     y="82"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text4"
+     style="font-size:21.3333px">Process 3.0: Feature Engineering</text>
+  <!-- ══ INPUT ══ -->
+  <rect
+     x="10"
+     y="250"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#fef3c7"
+     stroke="#d97706"
+     stroke-width="1.5"
+     id="rect4" />
+  <text
+     x="60"
+     y="268"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text5"
+     style="font-size:13.3333px">From 1.0</text>
+  <text
+     x="60"
+     y="281"
+     font-size="7"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text6"
+     style="font-size:10.6667px">NormalizedEvent[]</text>
+  <line
+     x1="111.7779"
+     y1="270"
+     x2="167.20131"
+     y2="270"
+     stroke="#334155"
+     stroke-width="1.81153"
+     marker-end="url(#f1)"
+     id="line6"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <!-- ══ P3.1: Group by Entity ══ -->
+  <rect
+     style="fill:#ffffff;stroke:#16a34a;stroke-width:3.04175"
+     id="rect1"
+     width="139.66553"
+     height="62.570263"
+     x="169.2769"
+     y="238.97055"
+     rx="5.1411128" />
+  <rect
+     style="fill:#ffffff;stroke:#16a34a;stroke-width:3.04175"
+     id="rect1-3"
+     width="139.66553"
+     height="62.570263"
+     x="733.50439"
+     y="398.63535"
+     rx="5.1411128" />
+  <rect
+     style="fill:#ffffff;stroke:#16a34a;stroke-width:3.04175"
+     id="rect1-6"
+     width="139.66553"
+     height="62.570263"
+     x="731.42749"
+     y="242.91629"
+     rx="5.1411128" />
+  <rect
+     style="fill:#ffffff;stroke:#16a34a;stroke-width:3.04175"
+     id="rect1-7"
+     width="139.66553"
+     height="62.570263"
+     x="169.30051"
+     y="370.90521"
+     rx="5.1411128" />
+  <rect
+     style="fill:#ffffff;stroke:#16a34a;stroke-width:3.04175"
+     id="rect1-5"
+     width="139.66553"
+     height="62.570263"
+     x="379.3443"
+     y="241.49852"
+     rx="5.1411128" />
+  <text
+     x="182.39606"
+     y="253.91028"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text7">3.1</text>
+  <text
+     x="240"
+     y="280"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text8"
+     style="font-size:13.3333px">Group by Entity</text>
+  <text
+     x="240"
+     y="292"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text9"
+     style="font-size:10.6667px">hostname / source_ip</text>
+  <!-- ══ P3.2: Check Cache ══ -->
+  <text
+     x="185.95186"
+     y="386.04376"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text10">3.2</text>
+  <text
+     x="240"
+     y="410"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text11"
+     style="font-size:13.3333px">Check Cache</text>
+  <text
+     x="240"
+     y="422"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text12"
+     style="font-size:10.6667px">LRU with TTL (600s)</text>
+  <!-- P3.1 → P3.2 -->
+  <line
+     x1="240"
+     y1="301.55579"
+     x2="240"
+     y2="367.15536"
+     stroke="#334155"
+     stroke-width="1.43178"
+     marker-end="url(#f1)"
+     id="line12"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="134.10284"
+     y="331.46609"
+     font-size="7"
+     fill="#334155"
+     id="text13"
+     style="font-size:12px">entity event groups</text>
+  <!-- ══ D9: Feature Cache ══ -->
+  <g
+     transform="translate(452.86653,509.11379)"
+     id="g15">
+    <line
+       x1="0"
+       y1="0"
+       x2="120"
+       y2="0"
+       stroke="#16a34a"
+       stroke-width="1.5"
+       id="line13" />
+    <line
+       x1="0"
+       y1="20"
+       x2="120"
+       y2="20"
+       stroke="#16a34a"
+       stroke-width="1.5"
+       id="line14" />
+    <text
+       x="8"
+       y="14"
+       font-size="8px"
+       font-weight="bold"
+       fill="#14532d"
+       id="text14">D9</text>
+    <text
+       x="32"
+       y="14"
+       font-size="8"
+       fill="#14532d"
+       id="text15"
+       style="font-size:12px">Feature Cache (LRU)</text>
+  </g>
+  <!-- P3.2 ↔ D9 -->
+  <line
+     x1="314.67545"
+     y1="429.19635"
+     x2="466.02368"
+     y2="504.92276"
+     stroke="#16a34a"
+     stroke-width="0.0616946"
+     stroke-dasharray="4, 3"
+     id="line15"
+     style="stroke-width:3;stroke-dasharray:6.00001, 3;stroke-dashoffset:0" />
+  <line
+     x1="732.6925"
+     y1="450.67987"
+     x2="562.36652"
+     y2="505.28809"
+     stroke="#16a34a"
+     stroke-width="0.0616946"
+     stroke-dasharray="4, 3"
+     id="line15-3"
+     style="stroke-width:3;stroke-dasharray:5.99992353,3;stroke-dashoffset:0" />
+  <text
+     x="365.78134"
+     y="445.76266"
+     font-size="7"
+     fill="#16a34a"
+     id="text16"
+     style="font-size:12px">lookup / store</text>
+  <!-- Cache hit path → output -->
+  <path
+     d="m 506.41282,531.14131 c 97.99599,79.69991 341.00627,34.56834 473.39015,-75.62021"
+     stroke="#16a34a"
+     stroke-width="1.65462"
+     stroke-dasharray="5, 3"
+     marker-end="url(#f2)"
+     id="path16"
+     style="fill:none;stroke-width:3;stroke-dasharray:9.06552534,5.4393152;stroke-dashoffset:0"
+     sodipodi:nodetypes="cc" />
+  <text
+     x="624.08618"
+     y="564.34253"
+     font-size="7"
+     fill="#16a34a"
+     id="text17"
+     style="font-size:12px">[cache HIT]</text>
+  <text
+     x="562.91449"
+     y="551.15308"
+     font-size="7"
+     fill="#16a34a"
+     id="text17-5"
+     style="font-size:12px">→ return cached FeatureVector directly</text>
+  <!-- Cache miss → P3.3 -->
+  <line
+     x1="313.63086"
+     y1="393.11765"
+     x2="381.36914"
+     y2="306.88235"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#f1)"
+     id="line17"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="358.49014"
+     y="356.37857"
+     font-size="7"
+     fill="#334155"
+     id="text18"
+     style="font-size:12px">[cache MISS]</text>
+  <!-- ══ P3.3: Route to Extractors ══ -->
+  <text
+     x="395.24069"
+     y="254.62144"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text19">3.3</text>
+  <text
+     x="450"
+     y="280"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text20"
+     style="font-size:13.3333px">Route Events</text>
+  <text
+     x="450"
+     y="292"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text21"
+     style="font-size:10.6667px">filter by event_type</text>
+  <!-- ══ 6 EXTRACTORS (parallel fork) ══ -->
+  <!-- Fork bar -->
+  <rect
+     x="536.40045"
+     y="102.57111"
+     width="4"
+     height="297.42889"
+     rx="2"
+     fill="#14532d"
+     id="rect21"
+     style="stroke-width:1.21949" />
+  <!-- P3.4a: Auth extractor -->
+  <rect
+     x="552.93573"
+     y="105.04733"
+     width="146.97318"
+     height="37.987511"
+     rx="6.7833772"
+     fill="#bbf7d0"
+     stroke="#4ade80"
+     stroke-width="1.59465"
+     id="rect22" />
+  <text
+     x="625"
+     y="120"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text22"
+     style="font-size:12px">3.4a Auth</text>
+  <text
+     x="625"
+     y="133"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text23"
+     style="font-size:10.6667px">8 features (logon, Kerberos)</text>
+  <!-- P3.4b: DNS extractor -->
+  <rect
+     x="552.93573"
+     y="155.0309"
+     width="146.97318"
+     height="37.987511"
+     rx="6.7833772"
+     fill="#bbf7d0"
+     stroke="#4ade80"
+     stroke-width="1.59465"
+     id="rect23" />
+  <text
+     x="625"
+     y="170"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text24"
+     style="font-size:12px">3.4b DNS</text>
+  <text
+     x="625"
+     y="183"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text25"
+     style="font-size:10.6667px">14 features (entropy, depth)</text>
+  <!-- P3.4c: Process extractor -->
+  <rect
+     x="552.93573"
+     y="205.01447"
+     width="146.97318"
+     height="37.987511"
+     rx="6.7833772"
+     fill="#bbf7d0"
+     stroke="#4ade80"
+     stroke-width="1.59465"
+     id="rect25" />
+  <text
+     x="625"
+     y="220"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text26"
+     style="font-size:12px">3.4c Process</text>
+  <text
+     x="625"
+     y="233"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text27"
+     style="font-size:10.6667px">12 features (LOLBins, cmd)</text>
+  <!-- P3.4d: Temporal extractor -->
+  <rect
+     x="552.93573"
+     y="254.99802"
+     width="146.97318"
+     height="37.987511"
+     rx="6.7833772"
+     fill="#bbf7d0"
+     stroke="#4ade80"
+     stroke-width="1.59465"
+     id="rect27" />
+  <text
+     x="625"
+     y="270"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text28"
+     style="font-size:12px">3.4d Temporal</text>
+  <text
+     x="625"
+     y="283"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text29"
+     style="font-size:10.6667px">6 features (rate, burst)</text>
+  <!-- P3.4e: Behavioral extractor -->
+  <rect
+     x="552.93573"
+     y="304.9816"
+     width="146.97318"
+     height="37.987511"
+     rx="6.7833772"
+     fill="#bbf7d0"
+     stroke="#4ade80"
+     stroke-width="1.59465"
+     id="rect29" />
+  <text
+     x="625"
+     y="320"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text30"
+     style="font-size:12px">3.4e Behavioral</text>
+  <text
+     x="625"
+     y="333"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text31"
+     style="font-size:10.6667px">8 features (deviation)</text>
+  <!-- P3.4f: Network extractor -->
+  <rect
+     x="552.93573"
+     y="354.96518"
+     width="146.97318"
+     height="37.987511"
+     rx="6.7833772"
+     fill="#bbf7d0"
+     stroke="#4ade80"
+     stroke-width="1.59465"
+     id="rect31" />
+  <text
+     x="625"
+     y="370"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text32"
+     style="font-size:12px">3.4f Network</text>
+  <text
+     x="625"
+     y="383"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text33"
+     style="font-size:10.6667px">6 features (ports, bytes)</text>
+  <!-- Route → Fork -->
+  <line
+     x1="520.02191"
+     y1="270"
+     x2="535.82275"
+     y2="270"
+     stroke="#334155"
+     stroke-width="3.44248"
+     id="line33" />
+  <!-- Extractors → P3.5 -->
+  <!-- Join bar -->
+  <rect
+     x="710"
+     y="102.57111"
+     width="4"
+     height="297.42889"
+     rx="2"
+     fill="#14532d"
+     id="rect33"
+     style="stroke-width:1.21949" />
+  <!-- ══ P3.5: Merge & Prefix ══ -->
+  <text
+     x="743.151"
+     y="256.01968"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text34">3.5</text>
+  <text
+     x="802.88837"
+     y="279.26477"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text35"
+     style="font-size:13.3333px">Merge &amp; Prefix</text>
+  <text
+     x="802.88837"
+     y="292.26477"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text36"
+     style="font-size:10.6667px">auth__feat, dns__feat, ...</text>
+  <line
+     x1="728.8009"
+     y1="271.55362"
+     x2="715.13348"
+     y2="271.55362"
+     stroke="#334155"
+     stroke-width="3.20165"
+     id="line36" />
+  <!-- ══ P3.6: Build FeatureVector ══ -->
+  <text
+     x="744.43652"
+     y="412.33261"
+     font-size="9px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text37">3.6</text>
+  <text
+     x="803.46277"
+     y="437"
+     font-size="9"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text38"
+     style="font-size:13.3333px">Build FeatureVector</text>
+  <text
+     x="803.46277"
+     y="450"
+     font-size="7"
+     text-anchor="middle"
+     fill="#166534"
+     id="text39"
+     style="font-size:10.6667px">Pydantic model + window ID</text>
+  <line
+     x1="810"
+     y1="309.37637"
+     x2="810"
+     y2="398"
+     stroke="#334155"
+     stroke-width="1.71243"
+     marker-end="url(#f1)"
+     id="line39"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="816.46606"
+     y="369.28885"
+     font-size="7"
+     fill="#334155"
+     id="text40"
+     style="font-size:12px">~54 prefixed features</text>
+  <!-- ══ OUTPUT ══ -->
+  <rect
+     x="976.64319"
+     y="409.41794"
+     width="120"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect40" />
+  <text
+     x="1036.6433"
+     y="427.41794"
+     font-size="9"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text41"
+     style="font-size:13.3333px">To 4.0</text>
+  <text
+     x="1036.6433"
+     y="440.41794"
+     font-size="8"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text42"
+     style="font-size:10.6667px">Detection Engine</text>
+  <line
+     x1="877.34247"
+     y1="429.97134"
+     x2="973.64618"
+     y2="429.97134"
+     stroke="#334155"
+     stroke-width="2.17939"
+     marker-end="url(#f1)"
+     id="line42"
+     style="stroke-width:3.09006;stroke-dasharray:none" />
+  <text
+     x="879.2392"
+     y="417.94269"
+     font-size="7"
+     fill="#16a34a"
+     id="text43"
+     style="font-size:12px">FeatureVector</text>
+  <!-- Also store in cache -->
+  <text
+     x="537.82275"
+     y="470.13129"
+     font-size="7"
+     fill="#16a34a"
+     id="text44"
+     style="font-size:12px">store in cache for reuse</text>
+  <!-- Legend -->
+</svg>

@@ -1,0 +1,762 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 900 850"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg41"
+   sodipodi:docname="07_activity_investigation.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview41"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.76034776"
+     inkscape:cx="521.47191"
+     inkscape:cy="549.74844"
+     inkscape:window-width="2048"
+     inkscape:window-height="1125"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg41" />
+  <defs
+     id="defs1">
+    <marker
+       id="ai1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+  </defs>
+  <text
+     x="450"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text1">Activity Diagram — Alert Investigation Workflow</text>
+  <text
+     x="450"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text2">SOC Analyst and IT Admin investigation process with RBAC enforcement</text>
+  <!-- Swimlanes -->
+  <rect
+     x="20"
+     y="60"
+     width="270"
+     height="770"
+     rx="8"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect2" />
+  <text
+     x="155"
+     y="80"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text3">SOC Analyst «role: analyst»</text>
+  <rect
+     x="300"
+     y="60"
+     width="290"
+     height="770"
+     rx="8"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect3" />
+  <text
+     x="445"
+     y="80"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text4">Platform System</text>
+  <rect
+     x="600"
+     y="60"
+     width="280"
+     height="770"
+     rx="8"
+     fill="#fef2f2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect4" />
+  <text
+     x="740"
+     y="80"
+     font-size="12"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text5">Security / Audit Layer</text>
+  <!-- START -->
+  <circle
+     cx="155"
+     cy="110"
+     r="12"
+     fill="#1e293b"
+     id="circle5" />
+  <line
+     x1="155"
+     y1="122"
+     x2="155"
+     y2="148"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line5" />
+  <!-- A1: Receive alert notification -->
+  <rect
+     x="45"
+     y="152"
+     width="220"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect5" />
+  <text
+     x="155"
+     y="174"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text6">Receive Alert (Wazuh Dashboard)</text>
+  <line
+     x1="155"
+     y1="187"
+     x2="155"
+     y2="210"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line6" />
+  <!-- A2: Authenticate -->
+  <line
+     x1="265"
+     y1="170"
+     x2="628"
+     y2="170"
+     stroke="#334155"
+     stroke-width="1"
+     stroke-dasharray="4,3"
+     id="line7" />
+  <rect
+     x="630"
+     y="155"
+     width="220"
+     height="35"
+     rx="8"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect7" />
+  <text
+     x="740"
+     y="172"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text7">🔒 Verify JWT / API Key</text>
+  <text
+     x="740"
+     y="184"
+     font-size="8"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text8">«auth: analyst role required»</text>
+  <!-- A3: View alert details -->
+  <rect
+     x="45"
+     y="215"
+     width="220"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect8" />
+  <text
+     x="155"
+     y="237"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text9">View Alert Details + SHAP</text>
+  <line
+     x1="265"
+     y1="232"
+     x2="318"
+     y2="232"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line9" />
+  <!-- System: Fetch alert data -->
+  <rect
+     x="320"
+     y="215"
+     width="250"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect9" />
+  <text
+     x="445"
+     y="232"
+     font-size="10"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text10">Fetch alert + SHAP explanations</text>
+  <text
+     x="445"
+     y="244"
+     font-size="8"
+     text-anchor="middle"
+     fill="#166534"
+     id="text11">from AlertStore (SQLite)</text>
+  <line
+     x1="155"
+     y1="250"
+     x2="155"
+     y2="275"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line11" />
+  <!-- A4: View attack graph -->
+  <rect
+     x="45"
+     y="280"
+     width="220"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect11" />
+  <text
+     x="155"
+     y="297"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text12">Open Attack Graph (port 8080)</text>
+  <text
+     x="155"
+     y="310"
+     font-size="8"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text13">Trace lateral movement path</text>
+  <line
+     x1="265"
+     y1="297"
+     x2="318"
+     y2="297"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line13" />
+  <!-- System: Render graph -->
+  <rect
+     x="320"
+     y="280"
+     width="250"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect13" />
+  <text
+     x="445"
+     y="297"
+     font-size="10"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text14">Render NetworkX → pyvis HTML</text>
+  <text
+     x="445"
+     y="310"
+     font-size="8"
+     text-anchor="middle"
+     fill="#166534"
+     id="text15">Interactive node/edge visualization</text>
+  <line
+     x1="155"
+     y1="315"
+     x2="155"
+     y2="345"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line15" />
+  <!-- Decision: Threat confirmed? -->
+  <polygon
+     points="155,350 200,380 155,410 110,380"
+     fill="white"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="polygon15" />
+  <text
+     x="155"
+     y="378"
+     font-size="9"
+     text-anchor="middle"
+     fill="#334155"
+     id="text16">Threat</text>
+  <text
+     x="155"
+     y="391"
+     font-size="9"
+     text-anchor="middle"
+     fill="#334155"
+     id="text17">real?</text>
+  <!-- False positive -->
+  <line
+     x1="254.25961"
+     y1="380"
+     x2="200.4529"
+     y2="380"
+     stroke="#94a3b8"
+     stroke-width="1.3151"
+     id="line17" />
+  <text
+     x="202.5732"
+     y="375.95917"
+     font-size="8px"
+     fill="#94a3b8"
+     id="text18"
+     style="font-size:10.6667px">[false positive]</text>
+  <line
+     x1="253.97217"
+     y1="379.91986"
+     x2="254.13608"
+     y2="389.82675"
+     stroke="#94a3b8"
+     stroke-width="0.873521"
+     marker-end="url(#ai1)"
+     id="line19"
+     inkscape:transform-center-x="0.20072224"
+     inkscape:transform-center-y="0.62668975" />
+  <!-- Dismiss alert (false positive path) -->
+  <rect
+     x="215.52087"
+     y="390.25525"
+     width="69.115547"
+     height="27.143869"
+     rx="2.9887805"
+     fill="#f1f5f9"
+     stroke="#94a3b8"
+     stroke-width="0.807409"
+     id="rect19" />
+  <text
+     x="249.97556"
+     y="401.16275"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text19"><tspan
+       sodipodi:role="line"
+       id="tspan41"
+       x="249.97556"
+       y="401.16275">Dismiss as</tspan><tspan
+       sodipodi:role="line"
+       id="tspan42"
+       x="249.97556"
+       y="413.66275">False Positive</tspan></text>
+  <line
+     x1="282.15295"
+     y1="402.99838"
+     x2="628"
+     y2="402.99838"
+     stroke="#dc2626"
+     stroke-width="0.965506"
+     stroke-dasharray="4, 3"
+     id="line20" />
+  <rect
+     x="630"
+     y="385.99838"
+     width="220"
+     height="35"
+     rx="8"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect20" />
+  <text
+     x="740"
+     y="402.99838"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text20">🔒 audit.log(&quot;alert.dismissed&quot;)</text>
+  <text
+     x="740"
+     y="414.99838"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text21">«hash-chained, actor logged»</text>
+  <!-- True positive path -->
+  <line
+     x1="155"
+     y1="410"
+     x2="155"
+     y2="440"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line21" />
+  <text
+     x="160.86174"
+     y="431.31519"
+     font-size="8px"
+     fill="#dc2626"
+     id="text22"
+     style="font-size:10.6667px">[confirmed threat]</text>
+  <!-- A5: Acknowledge alert -->
+  <rect
+     x="45"
+     y="445"
+     width="220"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect22" />
+  <text
+     x="155"
+     y="462"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text23">Acknowledge Alert</text>
+  <text
+     x="155"
+     y="475"
+     font-size="8"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text24">«permission: acknowledge_alerts»</text>
+  <!-- Audit: acknowledge -->
+  <line
+     x1="265"
+     y1="462"
+     x2="628"
+     y2="462"
+     stroke="#dc2626"
+     stroke-width="1"
+     stroke-dasharray="4,3"
+     id="line24" />
+  <rect
+     x="630"
+     y="445"
+     width="220"
+     height="35"
+     rx="8"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect24" />
+  <text
+     x="740"
+     y="462"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text25">🔒 audit.log(&quot;alert.acknowledged&quot;)</text>
+  <text
+     x="740"
+     y="474"
+     font-size="8"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text26">+ persist status to AlertStore</text>
+  <line
+     x1="155"
+     y1="480"
+     x2="155"
+     y2="510"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line26" />
+  <!-- A6: Document findings -->
+  <rect
+     x="45"
+     y="515"
+     width="220"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect26" />
+  <text
+     x="155"
+     y="532"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text27">Add Investigation Notes</text>
+  <text
+     x="155"
+     y="545"
+     font-size="8"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text28">«permission: add_notes»</text>
+  <line
+     x1="155"
+     y1="550"
+     x2="155"
+     y2="605"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line28" />
+  <!-- Merge from false positive path -->
+  <!-- A7: Export report -->
+  <rect
+     x="45"
+     y="610"
+     width="220"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect28" />
+  <text
+     x="155"
+     y="627"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text29">Export Forensic Report</text>
+  <text
+     x="155"
+     y="640"
+     font-size="8"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text30">«permission: export_data»</text>
+  <line
+     x1="265"
+     y1="627"
+     x2="318"
+     y2="627"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line30" />
+  <!-- System: Generate report -->
+  <rect
+     x="320"
+     y="610"
+     width="250"
+     height="45"
+     rx="8"
+     fill="white"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect30" />
+  <text
+     x="445"
+     y="627"
+     font-size="10"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text31">Generate Report</text>
+  <text
+     x="445"
+     y="641"
+     font-size="8"
+     text-anchor="middle"
+     fill="#166534"
+     id="text32">MITRE techniques + timeline</text>
+  <text
+     x="445"
+     y="653"
+     font-size="8"
+     text-anchor="middle"
+     fill="#166534"
+     id="text33">+ attack graph + SHAP features</text>
+  <!-- Audit export -->
+  <line
+     x1="570"
+     y1="627"
+     x2="628"
+     y2="627"
+     stroke="#dc2626"
+     stroke-width="1"
+     stroke-dasharray="4,3"
+     id="line33" />
+  <rect
+     x="630"
+     y="615"
+     width="220"
+     height="30"
+     rx="8"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect33" />
+  <text
+     x="740"
+     y="635"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text34">🔒 audit.log(&quot;data.exported&quot;)</text>
+  <line
+     x1="155"
+     y1="645"
+     x2="155"
+     y2="680"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line34" />
+  <!-- Decision: Escalate? -->
+  <polygon
+     points="155,685 195,710 155,735 115,710"
+     fill="white"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="polygon34" />
+  <text
+     x="155"
+     y="712"
+     font-size="9"
+     text-anchor="middle"
+     fill="#334155"
+     id="text35">Escalate?</text>
+  <line
+     x1="195"
+     y1="710"
+     x2="318"
+     y2="710"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line35" />
+  <text
+     x="239.4785"
+     y="703"
+     font-size="8px"
+     fill="#334155"
+     id="text36"
+     style="font-size:10.6667px">[yes]</text>
+  <rect
+     x="320"
+     y="695"
+     width="250"
+     height="35"
+     rx="8"
+     fill="white"
+     stroke="#16a34a"
+     stroke-width="1.5"
+     id="rect36" />
+  <text
+     x="445"
+     y="712"
+     font-size="10"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text37">Create Incident Ticket</text>
+  <text
+     x="445"
+     y="724"
+     font-size="8"
+     text-anchor="middle"
+     fill="#166534"
+     id="text38">(external SOAR / ticketing system)</text>
+  <line
+     x1="155"
+     y1="735"
+     x2="155"
+     y2="770"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#ai1)"
+     id="line38" />
+  <text
+     x="159.39902"
+     y="753.68481"
+     font-size="8"
+     fill="#94a3b8"
+     id="text39"
+     style="font-size:10.6667px">[no]</text>
+  <!-- A8: Close investigation -->
+  <rect
+     x="45"
+     y="775"
+     width="220"
+     height="30"
+     rx="8"
+     fill="white"
+     stroke="#2563eb"
+     stroke-width="1.5"
+     id="rect39" />
+  <text
+     x="155"
+     y="795"
+     font-size="10"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text40">Close Investigation</text>
+  <!-- END -->
+  <line
+     x1="155"
+     y1="805"
+     x2="155"
+     y2="822"
+     stroke="#334155"
+     stroke-width="1.5"
+     id="line40" />
+  <circle
+     cx="155"
+     cy="830"
+     r="10"
+     fill="white"
+     stroke="#1e293b"
+     stroke-width="2"
+     id="circle40" />
+  <circle
+     cx="155"
+     cy="830"
+     r="6"
+     fill="#1e293b"
+     id="circle41" />
+</svg>

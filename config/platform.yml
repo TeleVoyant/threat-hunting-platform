@@ -1,0 +1,22 @@
+# config/platform.yaml
+platform:
+  name: "APT Threat Hunting Platform"
+  version: "1.0.0"
+  poll_interval_seconds: 120 # How often to pull from Wazuh
+  event_window_minutes: 5 # Analysis window size
+
+threat_intel:
+  mitre_attack:
+    enabled: true
+    data_path: "threat_intel/data/mitre_attack.json"
+  misp:
+    enabled: true
+    url: "https://misp.example.com"
+    api_key: "${MISP_API_KEY}" # From .env file
+
+alerts:
+  min_confidence: 0.5
+  deduplication_window_minutes: 30
+  severity_escalation:
+    multiple_detectors: true # Escalate if both models fire
+

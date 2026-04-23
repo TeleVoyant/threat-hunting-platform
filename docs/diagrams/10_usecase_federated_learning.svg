@@ -1,0 +1,654 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1100 700"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg48"
+   sodipodi:docname="10_usecase_federated_learning.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs48" />
+  <sodipodi:namedview
+     id="namedview48"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.6931177"
+     inkscape:cx="931.59771"
+     inkscape:cy="310.84847"
+     inkscape:window-width="2048"
+     inkscape:window-height="1125"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g13" />
+  <text
+     x="550"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text1">Use Case Diagram — Federated Learning Subsystem (SecureUML)</text>
+  <text
+     x="550"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text2">Cross-organization collaborative training with privacy and trust constraints</text>
+  <!-- System boundary -->
+  <rect
+     x="229.97466"
+     y="59.974655"
+     width="600.05066"
+     height="547.07477"
+     rx="12.001014"
+     fill="#faf5ff"
+     stroke="#7c3aed"
+     stroke-width="2.44931"
+     id="rect2" />
+  <text
+     x="533.06348"
+     y="79.638947"
+     font-size="13"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text3"
+     style="font-size:13.3333px">Federated Learning Subsystem «protected»</text>
+  <text
+     x="533.06348"
+     y="94.638947"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#7c3aed"
+     id="text4">Privacy: Differential Privacy (ε=1.0) • Transport: Encrypted gRPC • Trust: Byzantine fault tolerance</text>
+  <!-- ══ ACTORS ══ -->
+  <!-- FL Client Org -->
+  <g
+     transform="translate(50, 180)"
+     id="g9">
+    <rect
+       x="0"
+       y="0"
+       width="70"
+       height="55"
+       rx="5"
+       fill="#f5f3ff"
+       stroke="#7c3aed"
+       stroke-width="2"
+       id="rect4" />
+    <text
+       x="35"
+       y="20"
+       font-size="16"
+       text-anchor="middle"
+       id="text5">🏢</text>
+    <text
+       x="35.382931"
+       y="33.979214"
+       font-size="8"
+       text-anchor="middle"
+       fill="#5b21b6"
+       id="text6"
+       style="font-size:12px">Participating</text>
+    <text
+       x="35"
+       y="48"
+       font-size="8"
+       text-anchor="middle"
+       fill="#5b21b6"
+       id="text7"
+       style="font-size:12px">Org</text>
+    <text
+       x="35"
+       y="68"
+       font-size="11"
+       font-weight="bold"
+       text-anchor="middle"
+       fill="#5b21b6"
+       id="text8">FL Client</text>
+    <rect
+       x="-10"
+       y="72"
+       width="90"
+       height="16"
+       rx="3"
+       fill="#ede9fe"
+       stroke="#a78bfa"
+       stroke-width="1"
+       id="rect8" />
+    <text
+       x="35"
+       y="84"
+       font-size="8"
+       text-anchor="middle"
+       fill="#5b21b6"
+       id="text9"
+       style="font-size:10.6667px">«actor: fl_client»</text>
+  </g>
+  <!-- Platform Admin -->
+  <g
+     transform="translate(930, 200)"
+     id="g13">
+    <circle
+       cx="30"
+       cy="15"
+       r="14"
+       fill="none"
+       stroke="#dc2626"
+       stroke-width="2.5"
+       id="circle9" />
+    <line
+       x1="30"
+       y1="29"
+       x2="30"
+       y2="60"
+       stroke="#dc2626"
+       stroke-width="2.5"
+       id="line9" />
+    <line
+       x1="10"
+       y1="42"
+       x2="50"
+       y2="42"
+       stroke="#dc2626"
+       stroke-width="2.5"
+       id="line10" />
+    <line
+       x1="30"
+       y1="60"
+       x2="13"
+       y2="82"
+       stroke="#dc2626"
+       stroke-width="2.5"
+       id="line11" />
+    <line
+       x1="30"
+       y1="60"
+       x2="47"
+       y2="82"
+       stroke="#dc2626"
+       stroke-width="2.5"
+       id="line12" />
+    <text
+       x="30"
+       y="100"
+       font-size="11"
+       font-weight="bold"
+       text-anchor="middle"
+       fill="#991b1b"
+       id="text12"
+       style="font-size:12px">Admin</text>
+    <rect
+       x="-10"
+       y="104"
+       width="80"
+       height="16"
+       rx="3"
+       fill="#fee2e2"
+       stroke="#fca5a5"
+       stroke-width="1"
+       id="rect12" />
+    <text
+       x="30"
+       y="116"
+       font-size="8"
+       text-anchor="middle"
+       fill="#991b1b"
+       id="text13"
+       style="font-size:12px">«role: admin»</text>
+  </g>
+  <!-- System (automated) -->
+  <g
+     transform="translate(50, 450)"
+     id="g16">
+    <rect
+       x="0"
+       y="0"
+       width="60"
+       height="45"
+       rx="5"
+       fill="#e2e8f0"
+       stroke="#475569"
+       stroke-width="2"
+       id="rect13" />
+    <text
+       x="30"
+       y="20"
+       font-size="16"
+       text-anchor="middle"
+       id="text14">⚙</text>
+    <text
+       x="30"
+       y="38"
+       font-size="8"
+       text-anchor="middle"
+       fill="#334155"
+       id="text15"
+       style="font-size:12px">Timer</text>
+    <text
+       x="30"
+       y="58"
+       font-size="11"
+       font-weight="bold"
+       text-anchor="middle"
+       fill="#334155"
+       id="text16"
+       style="font-size:12px">System</text>
+  </g>
+  <!-- ══ USE CASES ══ -->
+  <!-- UC1: Train locally -->
+  <ellipse
+     cx="400"
+     cy="160"
+     rx="120"
+     ry="28"
+     fill="white"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     id="ellipse16" />
+  <text
+     x="400"
+     y="157"
+     font-size="10"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text17"
+     style="font-size:13.3333px">Train XGBoost Locally</text>
+  <text
+     x="400"
+     y="172"
+     font-size="8"
+     text-anchor="middle"
+     fill="#7c3aed"
+     id="text18"
+     style="font-size:10.6667px">on own Wazuh data only</text>
+  <!-- UC2: Apply differential privacy -->
+  <ellipse
+     cx="400"
+     cy="240"
+     rx="120"
+     ry="28"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="ellipse18" />
+  <text
+     x="400"
+     y="235"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text19"
+     style="font-size:13.3333px">Apply Differential</text>
+  <text
+     x="400"
+     y="250"
+     font-size="10"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text20"
+     style="font-size:10.6667px">Privacy (ε=1.0)</text>
+  <text
+     x="400"
+     y="263"
+     font-size="7"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text21"
+     style="font-size:10.6667px">«security process»</text>
+  <!-- UC3: Submit tree structures -->
+  <ellipse
+     cx="400"
+     cy="320"
+     rx="120"
+     ry="28"
+     fill="white"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     id="ellipse21" />
+  <text
+     x="400"
+     y="317"
+     font-size="10"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text22"
+     style="font-size:13.3333px">Submit Tree Structures</text>
+  <text
+     x="400"
+     y="332"
+     font-size="8"
+     text-anchor="middle"
+     fill="#7c3aed"
+     id="text23"
+     style="font-size:10.6667px">(NOT raw data)</text>
+  <!-- UC4: Validate contributions -->
+  <ellipse
+     cx="640.67834"
+     cy="240"
+     rx="99.388298"
+     ry="28.066633"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.36674"
+     id="ellipse23" />
+  <text
+     x="641.44421"
+     y="230.40482"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text24"
+     style="font-size:13.3333px">Validate Contribution</text>
+  <text
+     x="641.44421"
+     y="245.40482"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text25"
+     style="font-size:10.6667px">(Trust Manager)</text>
+  <text
+     x="641.44421"
+     y="258.40482"
+     font-size="7px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text26"
+     style="font-size:10.66666667px">«security process»</text>
+  <!-- UC5: Aggregate (federated bagging) -->
+  <ellipse
+     cx="649.48578"
+     cy="340"
+     rx="86.795792"
+     ry="28.110886"
+     fill="#ffffff"
+     stroke="#7c3aed"
+     stroke-width="1.27823"
+     id="ellipse26" />
+  <text
+     x="649.86871"
+     y="335"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text27"
+     style="font-size:13.3333px">Aggregate Trees</text>
+  <text
+     x="649.86871"
+     y="350"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#7c3aed"
+     id="text28"
+     style="font-size:10.6667px">(Federated Bagging)</text>
+  <!-- UC6: Distribute global model -->
+  <ellipse
+     cx="648.33691"
+     cy="430"
+     rx="84.130119"
+     ry="28.125738"
+     fill="#ffffff"
+     stroke="#7c3aed"
+     stroke-width="1.35357"
+     id="ellipse28" />
+  <text
+     x="654.46387"
+     y="424.23413"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text29"
+     style="font-size:13.3333px">Distribute Global</text>
+  <text
+     x="654.46387"
+     y="439.23413"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text30"
+     style="font-size:10.6667px">Model to All Clients</text>
+  <!-- UC7: Receive improved model -->
+  <ellipse
+     cx="398.8512"
+     cy="430"
+     rx="80.697914"
+     ry="28.139925"
+     fill="#ffffff"
+     stroke="#7c3aed"
+     stroke-width="1.35082"
+     id="ellipse30" />
+  <text
+     x="400"
+     y="425"
+     font-size="10"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text31"
+     style="font-size:13.3333px">Receive Improved</text>
+  <text
+     x="400"
+     y="440"
+     font-size="10"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text32"
+     style="font-size:10.6667px">Global Model</text>
+  <!-- UC8: Configure FL parameters -->
+  <ellipse
+     cx="625.36102"
+     cy="530"
+     rx="95.572067"
+     ry="28.079723"
+     fill="#fef3c7"
+     stroke="#d97706"
+     stroke-width="1.34055"
+     id="ellipse32" />
+  <text
+     x="620"
+     y="525"
+     font-size="10"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text33"
+     style="font-size:13.3333px">Configure FL Params</text>
+  <text
+     x="620"
+     y="540"
+     font-size="8"
+     text-anchor="middle"
+     fill="#b45309"
+     id="text34"
+     style="font-size:10.6667px">(rounds, ε, min_clients)</text>
+  <!-- UC9: Trigger FL round -->
+  <ellipse
+     cx="376.25821"
+     cy="530"
+     rx="96.335289"
+     ry="28.077085"
+     fill="#e2e8f0"
+     stroke="#475569"
+     stroke-width="1.34583"
+     id="ellipse34" />
+  <text
+     x="374.72647"
+     y="525.76587"
+     font-size="10px"
+     text-anchor="middle"
+     fill="#334155"
+     id="text35"
+     style="font-size:13.3333px">Trigger FL Round</text>
+  <text
+     x="374.72647"
+     y="540.76587"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text36"
+     style="font-size:10.6667px">(periodic / manual)</text>
+  <!-- ══ ASSOCIATIONS ══ -->
+  <!-- FL Client → UC1,2,3,7 -->
+  <line
+     x1="120"
+     y1="210"
+     x2="280"
+     y2="165"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     id="line36" />
+  <line
+     x1="120"
+     y1="220"
+     x2="280"
+     y2="240"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     id="line37" />
+  <line
+     x1="120"
+     y1="230"
+     x2="280"
+     y2="318"
+     stroke="#7c3aed"
+     stroke-width="1.5"
+     id="line38" />
+  <line
+     x1="120.06207"
+     y1="240.05209"
+     x2="317.46527"
+     y2="425.35272"
+     stroke="#7c3aed"
+     stroke-width="1.64539"
+     id="line39" />
+  <!-- Admin → UC4, UC8 -->
+  <line
+     x1="930"
+     y1="260"
+     x2="740"
+     y2="245"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="line40" />
+  <text
+     x="748.90588"
+     y="240.76585"
+     font-size="8px"
+     fill="#dc2626"
+     id="text40"
+     style="font-size:13.3333px">«manage_fl»</text>
+  <line
+     x1="930.72827"
+     y1="281.60553"
+     x2="722.42273"
+     y2="526.90656"
+     stroke="#dc2626"
+     stroke-width="1.58785"
+     id="line41" />
+  <text
+     x="744.35449"
+     y="511.99124"
+     font-size="8px"
+     fill="#dc2626"
+     id="text41"
+     style="font-size:13.3333px">«admin only»</text>
+  <!-- System → UC9 -->
+  <line
+     x1="110"
+     y1="475"
+     x2="280"
+     y2="528"
+     stroke="#475569"
+     stroke-width="1.5"
+     id="line42" />
+  <!-- «include» UC1 → UC2 -->
+  <line
+     x1="400"
+     y1="188"
+     x2="400"
+     y2="210"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,3"
+     id="line43"
+     style="stroke-width:3;stroke-dasharray:3,3;stroke-dashoffset:0" />
+  <text
+     x="408.55579"
+     y="203.23413"
+     font-size="8px"
+     font-style="italic"
+     fill="#94a3b8"
+     id="text43"
+     style="font-size:13.3333px">«include»</text>
+  <!-- «include» UC3 → UC4 -->
+  <line
+     x1="512.6109"
+     y1="309.57034"
+     x2="549.8299"
+     y2="252.79414"
+     stroke="#94a3b8"
+     stroke-width="1.32701"
+     stroke-dasharray="4, 3"
+     id="line44"
+     style="stroke-dasharray:3,3;stroke-dashoffset:0;stroke-width:3" />
+  <text
+     x="534.27789"
+     y="290"
+     font-size="8"
+     font-style="italic"
+     fill="#94a3b8"
+     id="text44"
+     style="font-size:13.3333px">«include»</text>
+  <!-- «include» UC4 → UC5 -->
+  <line
+     x1="628.4245"
+     y1="268"
+     x2="628.4245"
+     y2="310"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line45"
+     style="stroke-width:3;stroke-linecap:square;stroke-dasharray:3,6;stroke-dashoffset:3" />
+  <text
+     x="633.91687"
+     y="295"
+     font-size="8"
+     font-style="italic"
+     fill="#94a3b8"
+     id="text45"
+     style="font-size:13.3333px">«include»</text>
+  <!-- UC5 → UC6 -->
+  <line
+     x1="627.65869"
+     y1="369.53174"
+     x2="627.65869"
+     y2="401.53174"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line46"
+     style="stroke-dasharray:3,3;stroke-dashoffset:0;stroke-width:3" />
+  <!-- UC6 → UC7 -->
+  <line
+     x1="479.32166"
+     y1="430"
+     x2="565.95184"
+     y2="430"
+     stroke="#94a3b8"
+     stroke-width="2.08122"
+     stroke-dasharray="4, 3"
+     id="line47"
+     style="stroke-width:3;stroke-dasharray:3,3;stroke-dashoffset:0" />
+  <!-- Security constraint note -->
+</svg>

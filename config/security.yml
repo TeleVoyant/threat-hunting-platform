@@ -1,0 +1,20 @@
+# config/security.yaml
+authentication:
+  jwt_secret: "${JWT_SECRET}" # From Docker secrets, NOT .env
+  token_expiry_hours: 8
+
+users:
+  - username: "admin"
+    role: "admin"
+    api_key_hash: "e3b0c44298fc1c149afbf4c8996fb924..." # SHA-256 of actual key
+  - username: "soc_analyst_1"
+    role: "analyst"
+    api_key_hash: "..."
+  - username: "it_admin_view"
+    role: "viewer"
+    api_key_hash: "..."
+
+rate_limiting:
+  enabled: true
+  requests_per_minute: 60
+  burst: 10

@@ -1,0 +1,32 @@
+# Base Dockerfile for the AI Platform (API + Detection Loop)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy platform code
+COPY shared/ shared/
+COPY ingestion/ ingestion/
+COPY features/ features/
+COPY detection/ detection/
+COPY federated/ federated/
+COPY threat_intel/ threat_intel/
+COPY alert_manager/ alert_manager/
+COPY visualization/ visualization/
+COPY observability/ observability/
+COPY api/ api/
+COPY run_server.py .
+
+# Config is mounted as volume, not baked into image
+# Models are mounted as volume
+
+# Non-root user
+RUN useradd -m -u 1000 platform
+USER platform
+
+EXPOSE 8000
+
+CMD ["python", "run_server.py", "--mode", "full"]

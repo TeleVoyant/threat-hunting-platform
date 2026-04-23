@@ -1,0 +1,966 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1100 700"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg49"
+   sodipodi:docname="04_sequence_authentication.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview49"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.3057143"
+     inkscape:cx="527.29758"
+     inkscape:cy="251.20349"
+     inkscape:window-width="1920"
+     inkscape:window-height="1025"
+     inkscape:window-x="128"
+     inkscape:window-y="1179"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg49" />
+  <defs
+     id="defs3">
+    <marker
+       style="overflow:visible"
+       id="marker14"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path14" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker13"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path13" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker12"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path12" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker11"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path11" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker10"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path10" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker9"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path9" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker8"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path8" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker7"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path7" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker4"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path4" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+    <marker
+       id="sa1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="sa2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="0"
+       refY="3"
+       orient="auto">
+      <path
+         d="M7,0 L7,6 L0,3z"
+         fill="#16a34a"
+         id="path2" />
+    </marker>
+    <marker
+       id="sa3"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#dc2626"
+         id="path3" />
+    </marker>
+  </defs>
+  <text
+     x="550"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text3"
+     style="font-size:26.6667px">Sequence Diagram — API Authentication &amp; RBAC (SecureUML)</text>
+  <text
+     x="550"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text4"
+     style="font-size:21.3333px">JWT + API Key authentication with role-based access control and audit logging</text>
+  <!-- Lifeline headers -->
+  <rect
+     x="30"
+     y="65"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="2"
+     id="rect4" />
+  <text
+     x="80"
+     y="82"
+     font-size="10"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text5">SOC Analyst</text>
+  <text
+     x="80"
+     y="96"
+     font-size="8"
+     text-anchor="middle"
+     fill="#3b82f6"
+     id="text6">«role: analyst»</text>
+  <rect
+     x="220"
+     y="65"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="2"
+     id="rect6" />
+  <text
+     x="270"
+     y="82"
+     font-size="10"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text7">FastAPI</text>
+  <text
+     x="270"
+     y="96"
+     font-size="8"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text8">Gateway</text>
+  <rect
+     x="420"
+     y="65"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="2"
+     id="rect8" />
+  <text
+     x="470"
+     y="82"
+     font-size="10"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text9">Auth</text>
+  <text
+     x="470"
+     y="96"
+     font-size="8"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text10">Manager</text>
+  <rect
+     x="620"
+     y="65"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="2"
+     id="rect10" />
+  <text
+     x="670"
+     y="82"
+     font-size="10"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text11">RBAC</text>
+  <text
+     x="670"
+     y="96"
+     font-size="8"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text12">Enforcer</text>
+  <rect
+     x="820"
+     y="65"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="2"
+     id="rect12" />
+  <text
+     x="870"
+     y="82"
+     font-size="10"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text13">Route</text>
+  <text
+     x="870"
+     y="96"
+     font-size="8"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text14">Handler</text>
+  <rect
+     x="980"
+     y="65"
+     width="100"
+     height="40"
+     rx="5"
+     fill="#fef3c7"
+     stroke="#d97706"
+     stroke-width="2"
+     id="rect14" />
+  <text
+     x="1030"
+     y="82"
+     font-size="10"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text15">Audit</text>
+  <text
+     x="1030"
+     y="96"
+     font-size="8"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text16">Trail</text>
+  <!-- Lifelines -->
+  <line
+     x1="80"
+     y1="105"
+     x2="80"
+     y2="670"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,4"
+     id="line16" />
+  <line
+     x1="270"
+     y1="105"
+     x2="270"
+     y2="670"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,4"
+     id="line17" />
+  <line
+     x1="470"
+     y1="105"
+     x2="470"
+     y2="670"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,4"
+     id="line18" />
+  <line
+     x1="670"
+     y1="105"
+     x2="670"
+     y2="670"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,4"
+     id="line19" />
+  <line
+     x1="870"
+     y1="105"
+     x2="870"
+     y2="670"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,4"
+     id="line20" />
+  <line
+     x1="1030"
+     y1="105"
+     x2="1030"
+     y2="670"
+     stroke="#94a3b8"
+     stroke-width="1"
+     stroke-dasharray="4,4"
+     id="line21" />
+  <!-- Activation bars -->
+  <rect
+     x="75"
+     y="130"
+     width="10"
+     height="498.98047"
+     fill="#dbeafe"
+     id="rect21"
+     style="stroke-width:4.07831" />
+  <rect
+     x="265"
+     y="130"
+     width="10"
+     height="507.18918"
+     fill="#dcfce7"
+     id="rect22"
+     style="stroke-width:1.09891" />
+  <rect
+     x="465"
+     y="170"
+     width="10"
+     height="154.15479"
+     fill="#fee2e2"
+     id="rect23"
+     style="stroke-width:1.24159" />
+  <rect
+     x="665"
+     y="365.23788"
+     width="10"
+     height="130.36395"
+     fill="#fee2e2"
+     id="rect24"
+     style="stroke-width:1.27653" />
+  <rect
+     x="865"
+     y="515.34412"
+     width="10"
+     height="68.04158"
+     fill="#dcfce7"
+     id="rect25"
+     style="stroke-width:1.06491" />
+  <rect
+     x="1024.7292"
+     y="591.23218"
+     width="10"
+     height="43.501423"
+     fill="#fef3c7"
+     id="rect26"
+     style="stroke-width:0.932753" />
+  <!-- ══ MESSAGES ══ -->
+  <!-- 1: Request with API Key -->
+  <line
+     x1="88"
+     y1="145"
+     x2="263"
+     y2="145"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#sa1)"
+     id="line26" />
+  <text
+     x="175"
+     y="139.0831"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#334155"
+     id="text26"
+     style="font-size:13.3333px">1: GET /alerts</text>
+  <text
+     x="173.37535"
+     y="155.1662"
+     font-size="8"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text27"
+     style="font-size:10.6667px">Header: X-API-Key: sk_abc123...</text>
+  <rect
+     x="116.20917"
+     y="159.33238"
+     width="110"
+     height="14"
+     rx="2"
+     fill="#fee2e2"
+     id="rect27" />
+  <text
+     x="171.20917"
+     y="170.33238"
+     font-size="7.5px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text28">«HTTPS/TLS 1.3»</text>
+  <!-- 2: Validate credentials -->
+  <line
+     x1="277"
+     y1="190"
+     x2="463"
+     y2="190"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#sa1)"
+     id="line28" />
+  <text
+     x="366.7507"
+     y="183.37535"
+     font-size="9"
+     text-anchor="middle"
+     fill="#334155"
+     id="text29"
+     style="font-size:13.3333px">2: authenticate_api_key(key)</text>
+  <!-- ALT fragment: valid/invalid -->
+  <rect
+     x="249.6916"
+     y="209.6916"
+     width="285.91168"
+     height="130.71983"
+     rx="2.3339734"
+     fill="none"
+     stroke="#475569"
+     stroke-width="0.883221"
+     id="rect29" />
+  <rect
+     x="250"
+     y="210"
+     width="50"
+     height="18"
+     fill="#e2e8f0"
+     stroke="#475569"
+     stroke-width="1.5"
+     id="rect30" />
+  <text
+     x="275"
+     y="223"
+     font-size="8"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#334155"
+     id="text30">alt</text>
+  <!-- Alt: key valid -->
+  <text
+     x="286.71344"
+     y="267.78513"
+     font-size="9px"
+     fill="#16a34a"
+     id="text31">[API key valid — SHA-256 hash matches]</text>
+  <!-- 3: Return user object -->
+  <line
+     x1="463"
+     y1="255"
+     x2="285.0903"
+     y2="255"
+     stroke="#16a34a"
+     stroke-width="1.46701"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line31"
+     style="marker-end:url(#marker7)" />
+  <text
+     x="368.9169"
+     y="248.9169"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#16a34a"
+     id="text32">username=&quot;soc_analyst_1&quot;, role=ANALYST</text>
+  <!-- divider -->
+  <line
+     x1="250"
+     y1="280"
+     x2="535.29492"
+     y2="280"
+     stroke="#475569"
+     stroke-width="0.763043"
+     stroke-dasharray="8, 4"
+     id="line32" />
+  <text
+     x="341.40979"
+     y="321.99429"
+     font-size="9px"
+     fill="#dc2626"
+     id="text33">[API key invalid]</text>
+  <!-- 4: Return 401 -->
+  <line
+     x1="463"
+     y1="310"
+     x2="283.82327"
+     y2="310"
+     stroke="#dc2626"
+     stroke-width="1.47223"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line33"
+     style="marker-end:url(#marker8)" />
+  <text
+     x="370"
+     y="305"
+     font-size="9"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text34"
+     style="font-size:13.3333px">4: None</text>
+  <line
+     x1="260.00287"
+     y1="332.1662"
+     x2="96.349205"
+     y2="332.1662"
+     stroke="#dc2626"
+     stroke-width="1.41081"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line34"
+     style="marker-end:url(#marker9)" />
+  <text
+     x="177.29227"
+     y="325"
+     font-size="9"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text35"
+     style="font-size:13.3333px">HTTP 401 Unauthorized</text>
+  <!-- 4b: Audit failed attempt -->
+  <line
+     x1="277"
+     y1="354.74786"
+     x2="1015.7929"
+     y2="354.74786"
+     stroke="#d97706"
+     stroke-width="1"
+     stroke-dasharray="4, 3"
+     id="line35"
+     style="fill:none;stroke-width:1.5;stroke-dasharray:5.99998491,4.49999263;stroke-dashoffset:0;marker-end:url(#Triangle)" />
+  <text
+     x="690.07452"
+     y="347.04013"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#d97706"
+     id="text36"
+     style="font-size:13.3333px">4b: audit.log(&quot;auth.login_failed&quot;, actor=IP)</text>
+  <!-- End ALT -->
+  <!-- 5: Check permissions -->
+  <line
+     x1="278.62469"
+     y1="385.4155"
+     x2="662.45844"
+     y2="385.4155"
+     stroke="#334155"
+     stroke-width="1.49579"
+     marker-end="url(#sa1)"
+     id="line36" />
+  <text
+     x="469.4585"
+     y="380.4155"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#334155"
+     id="text37"
+     style="font-size:13.3333px">5: has_permission(user, &quot;read_alerts&quot;)</text>
+  <!-- ALT: permission check -->
+  <rect
+     x="249.98521"
+     y="399.31757"
+     width="490.02957"
+     height="105.6972"
+     rx="4.0002413"
+     fill="none"
+     stroke="#dc2626"
+     stroke-width="1.47041"
+     id="rect37" />
+  <rect
+     x="251.0831"
+     y="399.87393"
+     width="50"
+     height="18"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="1.5"
+     id="rect38" />
+  <text
+     x="274.45844"
+     y="411.2493"
+     font-size="8px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text38">alt</text>
+  <text
+     x="340.86823"
+     y="442.32953"
+     font-size="9px"
+     fill="#16a34a"
+     id="text39">[permission granted — ANALYST has read_alerts]</text>
+  <line
+     x1="658.66766"
+     y1="430.7937"
+     x2="287.9559"
+     y2="430.7937"
+     stroke="#16a34a"
+     stroke-width="1.46999"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line39"
+     style="marker-end:url(#marker12)" />
+  <text
+     x="444.00571"
+     y="424.16907"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#16a34a"
+     id="text40"
+     style="font-size:13.3333px">6: True</text>
+  <line
+     x1="250"
+     y1="460"
+     x2="740"
+     y2="460"
+     stroke="#dc2626"
+     stroke-width="1"
+     stroke-dasharray="8,4"
+     id="line40" />
+  <text
+     x="275.88248"
+     y="469.50143"
+     font-size="9px"
+     fill="#dc2626"
+     id="text41">[permission denied]</text>
+  <line
+     x1="261.6275"
+     y1="497.0401"
+     x2="96.622726"
+     y2="497.0401"
+     stroke="#dc2626"
+     stroke-width="1.41662"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line41"
+     style="marker-end:url(#marker10)" />
+  <text
+     x="168.08594"
+     y="490.41547"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text42"
+     style="font-size:13.3333px">HTTP 403 Forbidden</text>
+  <!-- 7: Execute route handler -->
+  <line
+     x1="277"
+     y1="537.32953"
+     x2="863"
+     y2="537.32953"
+     stroke="#334155"
+     stroke-width="1.5"
+     marker-end="url(#sa1)"
+     id="line42" />
+  <text
+     x="570"
+     y="532.32953"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#334155"
+     id="text43"
+     style="font-size:13.3333px">8: handle_request(user, params)</text>
+  <!-- 8: Return data -->
+  <line
+     x1="860.3338"
+     y1="564.94989"
+     x2="288.10123"
+     y2="564.94989"
+     stroke="#16a34a"
+     stroke-width="1.48095"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line43"
+     style="marker-end:url(#marker14)" />
+  <text
+     x="563.00238"
+     y="562.32434"
+     font-size="9.02188px"
+     text-anchor="middle"
+     fill="#16a34a"
+     id="text44"
+     transform="scale(1.0042245,0.99579325)"
+     style="font-size:13.3333px;stroke-width:1.00243">9: AlertList(alerts=[...], count=12)</text>
+  <!-- 9: Audit log -->
+  <line
+     x1="276.45847"
+     y1="614.76392"
+     x2="1016.364"
+     y2="614.76392"
+     stroke="#d97706"
+     stroke-width="1.49386"
+     marker-end="url(#sa1)"
+     id="line44"
+     style="marker-end:url(#marker4)" />
+  <text
+     x="659.2063"
+     y="609.22235"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text45"
+     style="font-size:13.3333px">10: audit.log(&quot;auth.login_success&quot;, actor=&quot;soc_analyst_1&quot;)</text>
+  <rect
+     x="579.45844"
+     y="617.76392"
+     width="140"
+     height="14"
+     rx="2"
+     fill="#fee2e2"
+     id="rect45" />
+  <text
+     x="650.81232"
+     y="626.90833"
+     font-size="7.5px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text46">«hash-chained, tamper-evident»</text>
+  <!-- 10: Response to user -->
+  <line
+     x1="259.20917"
+     y1="610.54156"
+     x2="96.312218"
+     y2="610.54156"
+     stroke="#16a34a"
+     stroke-width="1.4472"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line46"
+     style="marker-end:url(#marker11)" />
+  <text
+     x="175"
+     y="603.37537"
+     font-size="9"
+     text-anchor="middle"
+     fill="#16a34a"
+     id="text47"
+     style="font-size:12px">11: HTTP 200 + JSON payload</text>
+  <!-- Security note -->
+  <text
+     x="369.45844"
+     y="239.16904"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#16a34a"
+     id="text49"
+     style="font-size:13.3333px">3: User</text>
+  <text
+     x="276.42404"
+     y="288.62445"
+     font-size="9px"
+     fill="#dc2626"
+     id="text50">[permission denied]</text>
+  <rect
+     x="1025.1354"
+     y="330.47687"
+     width="10"
+     height="50"
+     fill="#fef3c7"
+     id="rect50" />
+  <text
+     x="390.14911"
+     y="493.66498"
+     font-size="9px"
+     fill="#dc2626"
+     id="text52">[if ANALYST has no read_alerts]</text>
+  <line
+     x1="661.74805"
+     y1="482.21222"
+     x2="290.44321"
+     y2="482.21222"
+     stroke="#dc2626"
+     stroke-width="2.11935"
+     stroke-dasharray="5, 3"
+     marker-end="url(#sa2)"
+     id="line52"
+     style="marker-end:url(#marker13)" />
+  <text
+     x="444.73361"
+     y="477.21222"
+     font-size="9"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text53"
+     style="font-size:13.3333px">7: False</text>
+</svg>

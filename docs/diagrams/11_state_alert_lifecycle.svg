@@ -1,0 +1,786 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1200 700"
+   font-family="Segoe UI, Arial, sans-serif"
+   version="1.1"
+   id="svg57"
+   sodipodi:docname="11_state_alert_lifecycle.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview57"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.3057143"
+     inkscape:cx="653.6652"
+     inkscape:cy="284.13566"
+     inkscape:window-width="1920"
+     inkscape:window-height="1025"
+     inkscape:window-x="128"
+     inkscape:window-y="1179"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg57" />
+  <defs
+     id="defs3">
+    <marker
+       style="overflow:visible"
+       id="Triangle"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+    <marker
+       id="st1"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#334155"
+         id="path1" />
+    </marker>
+    <marker
+       id="st2"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#dc2626"
+         id="path2" />
+    </marker>
+    <marker
+       id="st3"
+       markerWidth="8"
+       markerHeight="8"
+       refX="7"
+       refY="3"
+       orient="auto">
+      <path
+         d="M0,0 L0,6 L7,3z"
+         fill="#16a34a"
+         id="path3" />
+    </marker>
+  </defs>
+  <text
+     x="600"
+     y="25"
+     font-size="18"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0f172a"
+     id="text3"
+     style="font-size:26.6667px">State Diagram — Alert Lifecycle</text>
+  <text
+     x="600"
+     y="44"
+     font-size="11"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text4"
+     style="font-size:17.3333px">States, transitions, guards, and SecureUML permission constraints on state changes</text>
+  <!-- ══ INITIAL STATE ══ -->
+  <circle
+     cx="84.031334"
+     cy="130.61617"
+     r="14"
+     fill="#1e293b"
+     id="circle4" />
+  <line
+     x1="100.90333"
+     y1="131.76497"
+     x2="182.58167"
+     y2="131.76497"
+     stroke="#334155"
+     stroke-width="2.31429"
+     marker-end="url(#st1)"
+     id="line4" />
+  <text
+     x="109.88473"
+     y="115.19167"
+     font-size="8px"
+     fill="#334155"
+     id="text5"
+     style="font-size:12px">Detection</text>
+  <text
+     x="109.11887"
+     y="125.76605"
+     font-size="8px"
+     fill="#334155"
+     id="text6"
+     style="font-size:12px">generated</text>
+  <!-- ══ STATE: Generated ══ -->
+  <rect
+     x="187.58167"
+     y="96.764969"
+     width="180"
+     height="70"
+     rx="12"
+     fill="#e0f2fe"
+     stroke="#0284c7"
+     stroke-width="2"
+     id="rect6" />
+  <line
+     x1="187.58167"
+     y1="121.76497"
+     x2="367.58167"
+     y2="121.76497"
+     stroke="#0284c7"
+     stroke-width="1"
+     id="line6" />
+  <text
+     x="277.58167"
+     y="115.76497"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#0c4a6e"
+     id="text7">Generated</text>
+  <text
+     x="277.58167"
+     y="139.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#0369a1"
+     id="text8">entry / assign detection_id</text>
+  <text
+     x="277.58167"
+     y="153.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#0369a1"
+     id="text9">do / run SHAP explainer</text>
+  <!-- Transition: Generated → Enriched -->
+  <line
+     x1="367.58167"
+     y1="131.76497"
+     x2="477.58167"
+     y2="131.76497"
+     stroke="#334155"
+     stroke-width="2"
+     marker-end="url(#st1)"
+     id="line9"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="371.13464"
+     y="123.76495"
+     font-size="8px"
+     fill="#334155"
+     id="text10"
+     style="font-size:12px">threat_intel.enrich()</text>
+  <!-- ══ STATE: Enriched ══ -->
+  <rect
+     x="482.58167"
+     y="96.764969"
+     width="180"
+     height="70"
+     rx="12"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="2"
+     id="rect10" />
+  <line
+     x1="482.58167"
+     y1="121.76497"
+     x2="662.58173"
+     y2="121.76497"
+     stroke="#16a34a"
+     stroke-width="1"
+     id="line10" />
+  <text
+     x="572.58173"
+     y="115.76497"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text11">Enriched</text>
+  <text
+     x="572.58173"
+     y="139.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#166534"
+     id="text12">entry / map MITRE ATT&amp;CK</text>
+  <text
+     x="572.58173"
+     y="153.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#166534"
+     id="text13">entry / correlate MISP IoCs</text>
+  <!-- Transition: Enriched → Published -->
+  <line
+     x1="662.58173"
+     y1="131.76497"
+     x2="772.58173"
+     y2="131.76497"
+     stroke="#334155"
+     stroke-width="2"
+     marker-end="url(#st1)"
+     id="line13"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="669.21881"
+     y="123.69926"
+     font-size="8px"
+     fill="#334155"
+     id="text14"
+     style="font-size:8px">alert_manager.process()</text>
+  <!-- ══ STATE: Published (Open) ══ -->
+  <rect
+     x="777.58173"
+     y="76.764969"
+     width="200"
+     height="110"
+     rx="12"
+     fill="#fef3c7"
+     stroke="#d97706"
+     stroke-width="2.5"
+     id="rect15" />
+  <line
+     x1="777.58173"
+     y1="106.76497"
+     x2="977.58173"
+     y2="106.76497"
+     stroke="#d97706"
+     stroke-width="1"
+     id="line15" />
+  <text
+     x="877.58173"
+     y="99.764969"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#92400e"
+     id="text16">Open (Published)</text>
+  <text
+     x="877.58173"
+     y="124.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#b45309"
+     id="text17">entry / persist to AlertStore</text>
+  <text
+     x="877.58173"
+     y="138.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#b45309"
+     id="text18">entry / publish to Wazuh</text>
+  <text
+     x="877.58173"
+     y="152.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#b45309"
+     id="text19">entry / build attack graph</text>
+  <text
+     x="877.58173"
+     y="166.76497"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text20">entry / audit.log(&quot;alert.published&quot;)</text>
+  <text
+     x="877.58173"
+     y="179.76497"
+     font-size="8"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text21"
+     style="font-size:10.6667px">«security: hash-chained audit»</text>
+  <!-- Transition: Open → Acknowledged -->
+  <path
+     d="m 879.1134,188.2967 v 85"
+     stroke="#334155"
+     stroke-width="2"
+     marker-end="url(#st1)"
+     id="path21"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <rect
+     x="793.01624"
+     y="203.15106"
+     width="169.89719"
+     height="40.106972"
+     fill="#ffffff"
+     stroke="#94a3b8"
+     stroke-width="0.962355"
+     id="rect21"
+     style="stroke-width:0.991042;stroke-dasharray:none" />
+  <text
+     x="876.81586"
+     y="214.87218"
+     font-size="8"
+     text-anchor="middle"
+     fill="#334155"
+     id="text22"
+     style="font-size:10.6667px">analyst.acknowledge()</text>
+  <text
+     x="876.81586"
+     y="226.87218"
+     font-size="8"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text23"
+     style="font-size:10.6667px">[guard: role ∈ {analyst, admin}]</text>
+  <text
+     x="876.81586"
+     y="236.87218"
+     font-size="7"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text24"
+     style="font-size:10.6667px">«permission: acknowledge_alerts»</text>
+  <!-- ══ STATE: Acknowledged ══ -->
+  <rect
+     x="777.58173"
+     y="276.76498"
+     width="200"
+     height="85"
+     rx="12"
+     fill="#dbeafe"
+     stroke="#2563eb"
+     stroke-width="2"
+     id="rect24" />
+  <line
+     x1="777.58173"
+     y1="306.76498"
+     x2="977.58173"
+     y2="306.76498"
+     stroke="#2563eb"
+     stroke-width="1"
+     id="line24" />
+  <text
+     x="877.58173"
+     y="299.76498"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#1e3a8a"
+     id="text25">Acknowledged</text>
+  <text
+     x="877.58173"
+     y="324.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#1e40af"
+     id="text26">entry / record analyst + timestamp</text>
+  <text
+     x="877.58173"
+     y="338.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text27">entry / audit.log(&quot;alert.ack&quot;)</text>
+  <text
+     x="877.58173"
+     y="352.76498"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#1e40af"
+     id="text28">do / analyst investigates</text>
+  <!-- Transition: Acknowledged → Investigating -->
+  <path
+     d="m 777.58167,331.76497 h -180"
+     stroke="#334155"
+     stroke-width="2"
+     marker-end="url(#st1)"
+     id="path28"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="623.94989"
+     y="324.76498"
+     font-size="8px"
+     fill="#334155"
+     id="text29"
+     style="font-size:12px">analyst.start_investigation()</text>
+  <!-- ══ STATE: Investigating ══ -->
+  <rect
+     x="407.58167"
+     y="296.76498"
+     width="185"
+     height="70"
+     rx="12"
+     fill="#ede9fe"
+     stroke="#7c3aed"
+     stroke-width="2"
+     id="rect29" />
+  <line
+     x1="407.58167"
+     y1="321.76498"
+     x2="592.58173"
+     y2="321.76498"
+     stroke="#7c3aed"
+     stroke-width="1"
+     id="line29" />
+  <text
+     x="499.58167"
+     y="315.76498"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#5b21b6"
+     id="text30">Investigating</text>
+  <text
+     x="499.58167"
+     y="339.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text31">do / trace attack path</text>
+  <text
+     x="499.58167"
+     y="353.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#6d28d9"
+     id="text32">do / review SHAP features</text>
+  <!-- Transition: Investigating → Resolved (true positive) -->
+  <path
+     d="m 499.58167,366.76497 v 75"
+     stroke="#16a34a"
+     stroke-width="2"
+     marker-end="url(#st3)"
+     id="path32"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <rect
+     x="416.8158"
+     y="379.87219"
+     width="165"
+     height="32"
+     fill="#ffffff"
+     stroke="#94a3b8"
+     stroke-width="1"
+     id="rect32" />
+  <text
+     x="498.8158"
+     y="393.87219"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#16a34a"
+     id="text33"
+     style="font-size:10.6667px">[threat confirmed]</text>
+  <text
+     x="498.8158"
+     y="405.87219"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#334155"
+     id="text34"
+     style="font-size:10.6667px">analyst.resolve(notes)</text>
+  <!-- ══ STATE: Resolved ══ -->
+  <rect
+     x="387.58167"
+     y="446.76498"
+     width="225"
+     height="85"
+     rx="12"
+     fill="#dcfce7"
+     stroke="#16a34a"
+     stroke-width="2.5"
+     id="rect34" />
+  <line
+     x1="387.58167"
+     y1="476.76498"
+     x2="612.58173"
+     y2="476.76498"
+     stroke="#16a34a"
+     stroke-width="1"
+     id="line34" />
+  <text
+     x="499.58167"
+     y="469.76498"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#14532d"
+     id="text35">Resolved</text>
+  <text
+     x="499.58167"
+     y="493.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#166534"
+     id="text36">entry / save investigation notes</text>
+  <text
+     x="499.58167"
+     y="507.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text37">entry / audit.log(&quot;alert.resolved&quot;)</text>
+  <text
+     x="499.58167"
+     y="521.76495"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#166534"
+     id="text38">exit / generate forensic report</text>
+  <path
+     d="m 404.32604,328.31875 -191.81705,0.98318 4.72236,83.34026"
+     stroke="#334155"
+     stroke-width="2.27778"
+     marker-end="url(#st1)"
+     id="path57"
+     style="fill:none;stroke-width:3;stroke-dasharray:none" />
+  <!-- Transition: Investigating → Dismissed (false positive) -->
+  <rect
+     x="148.06306"
+     y="340.3208"
+     width="155"
+     height="32"
+     fill="#ffffff"
+     stroke="#94a3b8"
+     stroke-width="1"
+     id="rect38" />
+  <text
+     x="225.06306"
+     y="354.3208"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#94a3b8"
+     id="text39"
+     style="font-size:10.6667px">[false positive]</text>
+  <text
+     x="225.06306"
+     y="366.3208"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#334155"
+     id="text40"
+     style="font-size:10.6667px">analyst.dismiss(reason)</text>
+  <!-- ══ STATE: Dismissed ══ -->
+  <rect
+     x="127.58167"
+     y="416.76498"
+     width="200"
+     height="70"
+     rx="12"
+     fill="#f1f5f9"
+     stroke="#94a3b8"
+     stroke-width="2"
+     id="rect40" />
+  <line
+     x1="127.58167"
+     y1="441.76498"
+     x2="327.58167"
+     y2="441.76498"
+     stroke="#94a3b8"
+     stroke-width="1"
+     id="line40" />
+  <text
+     x="227.58167"
+     y="435.76498"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#475569"
+     id="text41">Dismissed (FP)</text>
+  <text
+     x="227.58167"
+     y="459.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text42">entry / record reason</text>
+  <text
+     x="227.58167"
+     y="473.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text43">entry / audit.log(&quot;alert.dismissed&quot;)</text>
+  <!-- Transition: Dismissed → Reopened (optional) -->
+  <path
+     d="m 329.79751,435.01889 q 32.90473,0 71.79428,-57.2637 3.53542,-5.2058 3.53542,-5.2058"
+     stroke="#d97706"
+     stroke-width="0.746626"
+     stroke-dasharray="5, 3"
+     marker-end="url(#st1)"
+     id="path43"
+     style="fill:none;stroke-width:3;stroke-dasharray:20.09046659,12.05423687;stroke-dashoffset:0;marker-end:url(#Triangle)" />
+  <text
+     x="318.53442"
+     y="388.12146"
+     font-size="8px"
+     fill="#d97706"
+     id="text44"
+     style="font-size:13.3333px">reopen()</text>
+  <text
+     x="310.14044"
+     y="399.66299"
+     font-size="7px"
+     fill="#dc2626"
+     id="text45"
+     style="font-size:13.3333px">[admin only]</text>
+  <!-- Transition: Resolved → Escalated -->
+  <path
+     d="m 612.58167,501.76497 h 125"
+     stroke="#dc2626"
+     stroke-width="2"
+     marker-end="url(#st2)"
+     id="path45"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="654.46136"
+     y="493.76498"
+     font-size="8px"
+     fill="#dc2626"
+     id="text46"
+     style="font-size:12px">escalate()</text>
+  <!-- ══ STATE: Escalated ══ -->
+  <rect
+     x="742.58173"
+     y="461.76498"
+     width="200"
+     height="85"
+     rx="12"
+     fill="#fee2e2"
+     stroke="#dc2626"
+     stroke-width="2.5"
+     id="rect46" />
+  <line
+     x1="742.58173"
+     y1="491.76498"
+     x2="942.58173"
+     y2="491.76498"
+     stroke="#dc2626"
+     stroke-width="1"
+     id="line46" />
+  <text
+     x="842.58173"
+     y="484.76498"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text47">Escalated</text>
+  <text
+     x="842.58173"
+     y="508.76498"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text48">entry / create incident ticket</text>
+  <text
+     x="842.58173"
+     y="522.76495"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#dc2626"
+     id="text49">entry / audit.log(&quot;alert.escalated&quot;)</text>
+  <text
+     x="842.58173"
+     y="536.76495"
+     font-size="8px"
+     text-anchor="middle"
+     fill="#991b1b"
+     id="text50">do / incident response in progress</text>
+  <!-- Transition: Escalated → Closed -->
+  <path
+     d="m 842.58167,546.76497 v 35"
+     stroke="#334155"
+     stroke-width="2"
+     marker-end="url(#st1)"
+     id="path50"
+     style="stroke-width:3;stroke-dasharray:none" />
+  <text
+     x="853.17761"
+     y="566.05579"
+     font-size="8px"
+     fill="#334155"
+     id="text51"
+     style="font-size:12px">close_incident()</text>
+  <!-- Transition: Resolved → Closed -->
+  <path
+     d="m 499.72527,531.7341 v 58.24695 l 253.86064,11.64939"
+     stroke="#334155"
+     stroke-width="2.27778"
+     marker-end="url(#st1)"
+     id="path51"
+     style="fill:none;stroke-width:3;stroke-dasharray:none" />
+  <!-- ══ FINAL STATE: Closed ══ -->
+  <rect
+     x="758.57605"
+     y="583.26355"
+     width="160"
+     height="40"
+     rx="12"
+     fill="#e2e8f0"
+     stroke="#475569"
+     stroke-width="2"
+     id="rect51" />
+  <line
+     x1="758.57605"
+     y1="606.26355"
+     x2="918.57605"
+     y2="606.26355"
+     stroke="#475569"
+     stroke-width="1"
+     id="line51" />
+  <text
+     x="838.57605"
+     y="601.26355"
+     font-size="12px"
+     font-weight="bold"
+     text-anchor="middle"
+     fill="#334155"
+     id="text52">Closed</text>
+  <text
+     x="838.57605"
+     y="618.26355"
+     font-size="9px"
+     text-anchor="middle"
+     fill="#64748b"
+     id="text53">entry / archive alert data</text>
+  <!-- Final pseudo-state -->
+  <line
+     x1="921.77747"
+     y1="605.10449"
+     x2="1006.5812"
+     y2="605.10449"
+     stroke="#334155"
+     stroke-width="2"
+     id="line53"
+     style="stroke-width:4.11834;stroke-dasharray:none" />
+  <circle
+     cx="1021.5812"
+     cy="605.10449"
+     r="12"
+     fill="#ffffff"
+     stroke="#1e293b"
+     stroke-width="2.5"
+     id="circle53" />
+  <circle
+     cx="1021.5812"
+     cy="605.10449"
+     r="7"
+     fill="#1e293b"
+     id="circle54" />
+  <!-- ══ SECURITY CONSTRAINT NOTE ══ -->
+</svg>

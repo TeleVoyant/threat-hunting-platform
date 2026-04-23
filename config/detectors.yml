@@ -1,0 +1,21 @@
+# config/detectors.yaml
+detectors:
+  lateral_movement:
+    enabled: true
+    model_path: "detection/models/lateral_movement_v1.json"
+    threshold: 0.5
+    description: "Credential-based lateral movement (Pass-the-Hash, etc.)"
+    mitre_tactics: ["TA0006", "TA0008"]
+
+  dns_exfiltration:
+    enabled: true
+    model_path: "detection/models/dns_exfiltration_v1.json"
+    threshold: 0.5
+    description: "Covert data exfiltration via DNS tunneling"
+    mitre_tactics: ["TA0010"]
+
+  # Future detectors — just add config, no code changes to core
+  # ransomware:
+  #   enabled: false
+  #   model_path: "detection/models/ransomware_v1.json"
+  #   threshold: 0.6
