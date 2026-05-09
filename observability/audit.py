@@ -18,7 +18,13 @@ class AuditTrail:
 
     def __init__(self, db_path: str = "/data/audit/audit.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
+        # check_same_thread=False because FastAPI handlers may run on
+        # different threads (sync handlers via run_in_threadpool, TestClient).
+        # The hash-chain mutation is guarded by self._lock below.
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        from threading import Lock
+        self._lock = Lock()
         self._create_table()
         self._prev_hash = self._get_last_hash()
 
@@ -45,19 +51,22 @@ class AuditTrail:
         timestamp = time.time()
         details_json = json.dumps(details or {})
 
-        # Chain hash: SHA-256(prev_hash + timestamp + action + actor + target + details)
-        chain_input = (
-            f"{self._prev_hash}{timestamp}{action}{actor}{target}{details_json}"
-        )
-        chain_hash = hashlib.sha256(chain_input.encode()).hexdigest()
+        # Hash-chain mutation must be atomic: read prev_hash, compute, write,
+        # update prev_hash. Lock prevents two concurrent calls from
+        # producing entries with the same prev_hash.
+        with self._lock:
+            chain_input = (
+                f"{self._prev_hash}{timestamp}{action}{actor}{target}{details_json}"
+            )
+            chain_hash = hashlib.sha256(chain_input.encode()).hexdigest()
 
-        self.conn.execute(
-            "INSERT INTO audit_log (timestamp, action, actor, target, details, chain_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (timestamp, action, actor, target, details_json, chain_hash),
-        )
-        self.conn.commit()
-        self._prev_hash = chain_hash
+            self.conn.execute(
+                "INSERT INTO audit_log (timestamp, action, actor, target, details, chain_hash) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (timestamp, action, actor, target, details_json, chain_hash),
+            )
+            self.conn.commit()
+            self._prev_hash = chain_hash
 
         logger.info(
             "AUDIT",

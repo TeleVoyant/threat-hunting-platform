@@ -1,0 +1,116 @@
+<!--
+  Sysmon configuration — LEAN profile
+  APT Threat Hunting Platform: minimal footprint, maximum detection signal.
+
+  Resource impact: ~0.3–0.5% CPU average, ~12MB RAM.
+  Use on: older hardware, shared VMs, endpoints where IT requires low overhead.
+
+  Trade-offs vs. balanced:
+  - No EID 7 (ImageLoad)        — saves ~40% of Sysmon event volume
+  - No EID 8 (RemoteThread)     — covered by EID 10 for the critical LSASS case
+  - No EID 11 (FileCreate)      — file-staging detection relies on server-side rules
+  - No EID 12/14 (RegKey)       — registry value-set (EID 13) still covers Run keys
+  - No EID 17/18 (Pipe)         — named-pipe lateral movement not collected
+  - No EID 19-21 (WMI)          — WMI subscription detection relies on Windows event logs
+  - No EID 25 (ProcessTamper)   — defense evasion detection relies on other indicators
+  - No CheckRevocation           — removes per-process cert validation overhead
+  - No file hashing              — eliminates SHA256 per-process CPU cost
+
+  Core detection coverage retained:
+  - Process creation (credential tools, LOLBins)
+  - Lateral movement network connections (SMB, RDP, WinRM, WMI, SSH)
+  - LSASS access (credential dumping — #1 lateral movement precursor)
+  - Registry Run key persistence
+  - All DNS queries (required for DNS tunneling detection)
+-->
+<Sysmon schemaversion="4.90">
+  <!-- No hashing in lean mode — eliminates per-process SHA256 CPU cost -->
+  <HashAlgorithms>none</HashAlgorithms>
+
+  <EventFiltering>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 1: Process Creation — aggressive exclusion list
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="ProcessCreate" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\conhost.exe</Image>
+        <Image condition="is">C:\Windows\System32\backgroundTaskHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\RuntimeBroker.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\audiodg.exe</Image>
+        <Image condition="is">C:\Windows\System32\WerFault.exe</Image>
+        <Image condition="is">C:\Windows\System32\WerFaultSecure.exe</Image>
+        <Image condition="is">C:\Windows\System32\spoolsv.exe</Image>
+        <!-- Browser rendering — high volume, no lateral movement value -->
+        <Image condition="end with">chrome.exe</Image>
+        <Image condition="end with">msedge.exe</Image>
+        <Image condition="end with">firefox.exe</Image>
+        <Image condition="end with">brave.exe</Image>
+        <!-- Wazuh agent — avoid self-referential events -->
+        <Image condition="begin with">C:\Program Files (x86)\ossec-agent\</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 3: Network Connection — lateral movement ports ONLY
+         HTTP/HTTPS excluded in lean mode (too much browser noise).
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="NetworkConnect" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <DestinationPort condition="is">445</DestinationPort>    <!-- SMB -->
+        <DestinationPort condition="is">3389</DestinationPort>   <!-- RDP -->
+        <DestinationPort condition="is">5985</DestinationPort>   <!-- WinRM HTTP -->
+        <DestinationPort condition="is">5986</DestinationPort>   <!-- WinRM HTTPS -->
+        <DestinationPort condition="is">135</DestinationPort>    <!-- RPC/DCOM/WMI -->
+        <DestinationPort condition="is">22</DestinationPort>     <!-- SSH -->
+        <DestinationPort condition="is">53</DestinationPort>     <!-- DNS (exfiltration) -->
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 10: Process Access — LSASS only (credential dumping)
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="ProcessAccess" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 13: Registry Value Set — persistence Run keys
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="RegistryEvent" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\Winlogon</TargetObject>
+        <TargetObject condition="contains">Policies\Explorer\Run</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 22: DNS Query — ALL (required for exfiltration detection)
+         Even in lean mode, DNS queries must be collected.
+         Tunneling detection depends on query volume and entropy.
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="DnsQuery" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <QueryName condition="end with">.local</QueryName>
+        <QueryName condition="is">wpad</QueryName>
+        <QueryName condition="end with">.arpa</QueryName>
+        <!-- Windows OS noise -->
+        <QueryName condition="end with">microsoft.com</QueryName>
+        <QueryName condition="end with">windowsupdate.com</QueryName>
+        <QueryName condition="end with">windows.com</QueryName>
+        <QueryName condition="end with">msftncsi.com</QueryName>
+        <QueryName condition="end with">msftconnecttest.com</QueryName>
+        <QueryName condition="end with">office.com</QueryName>
+        <QueryName condition="end with">office365.com</QueryName>
+        <QueryName condition="end with">live.com</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

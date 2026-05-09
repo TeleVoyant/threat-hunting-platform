@@ -1,16 +1,22 @@
 <!--
-  Sysmon configuration optimized for APT detection.
-  Focus: Credential-based lateral movement + DNS exfiltration.
+  Sysmon configuration — BALANCED profile (default)
+  APT Threat Hunting Platform: credential-based lateral movement + DNS exfiltration
 
-  Key events collected:
-    EID 1:  Process Creation (detects mimikatz, psexec, LOLBins)
-    EID 3:  Network Connection (detects lateral movement connections)
-    EID 7:  Image Loaded (detects DLL injection)
-    EID 8:  CreateRemoteThread (detects process injection)
-    EID 10: Process Access (detects LSASS credential dumping)
-    EID 13: Registry Value Set (detects persistence mechanisms)
-    EID 22: DNS Query (detects DNS tunneling / exfiltration)
-    EID 25: Process Tampering (detects defense evasion)
+  Resource impact: ~1–3% CPU average, ~25MB RAM.
+
+  Events collected:
+    EID 1:     Process Creation       — LOLBins, mimikatz, psexec, credential tools
+    EID 3:     Network Connection     — lateral movement ports + DNS + C2 channels
+    EID 7:     Image Loaded           — credential-theft DLLs (samlib, wdigest, etc.)
+    EID 8:     CreateRemoteThread     — process injection
+    EID 10:    Process Access         — LSASS credential dumping (critical)
+    EID 11:    File Create            — data staging to temp/suspicious paths
+    EID 12/14: Registry Key Create/Rename — persistence via registry key manipulation
+    EID 13:    Registry Value Set     — Run key persistence
+    EID 17/18: Pipe Created/Connected — named-pipe lateral movement (PsExec, C2)
+    EID 19–21: WMI Event             — WMI-based persistence and lateral movement
+    EID 22:    DNS Query              — DNS tunneling / covert exfiltration
+    EID 25:    Process Tampering      — defense evasion
 -->
 <Sysmon schemaversion="4.90">
   <HashAlgorithms>SHA256</HashAlgorithms>
@@ -18,93 +24,230 @@
 
   <EventFiltering>
 
-    <!-- EID 1: Process Creation — Log everything, filter noise -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 1: Process Creation
+         Default: log everything, exclude known-safe noise.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="ProcessCreate" groupRelation="or">
       <ProcessCreate onmatch="exclude">
-        <!-- Exclude very noisy, low-value processes -->
+        <!-- High-frequency OS housekeeping — zero detection value -->
         <Image condition="is">C:\Windows\System32\conhost.exe</Image>
         <Image condition="is">C:\Windows\System32\backgroundTaskHost.exe</Image>
         <Image condition="is">C:\Windows\System32\RuntimeBroker.exe</Image>
         <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
         <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
         <Image condition="is">C:\Windows\System32\audiodg.exe</Image>
+        <Image condition="is">C:\Windows\System32\WerFault.exe</Image>
+        <Image condition="is">C:\Windows\System32\WerFaultSecure.exe</Image>
+        <Image condition="is">C:\Windows\System32\spoolsv.exe</Image>
+        <!-- Wazuh agent itself — avoid self-referential noise -->
+        <Image condition="begin with">C:\Program Files (x86)\ossec-agent\</Image>
       </ProcessCreate>
     </RuleGroup>
 
-    <!-- EID 3: Network Connection — Focus on lateral movement ports -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 3: Network Connection
+         Strategy: include lateral movement + DNS + selective C2.
+         Exclude common benign HTTP/HTTPS to reduce volume.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="NetworkConnect" groupRelation="or">
       <NetworkConnect onmatch="include">
-        <!-- SMB (lateral movement) -->
-        <DestinationPort condition="is">445</DestinationPort>
-        <!-- RDP -->
-        <DestinationPort condition="is">3389</DestinationPort>
-        <!-- WinRM / PSRemoting -->
-        <DestinationPort condition="is">5985</DestinationPort>
-        <DestinationPort condition="is">5986</DestinationPort>
-        <!-- WMI -->
-        <DestinationPort condition="is">135</DestinationPort>
-        <!-- DNS (for exfiltration detection) -->
+        <!-- Lateral movement protocols -->
+        <DestinationPort condition="is">445</DestinationPort>    <!-- SMB -->
+        <DestinationPort condition="is">3389</DestinationPort>   <!-- RDP -->
+        <DestinationPort condition="is">5985</DestinationPort>   <!-- WinRM HTTP -->
+        <DestinationPort condition="is">5986</DestinationPort>   <!-- WinRM HTTPS -->
+        <DestinationPort condition="is">135</DestinationPort>    <!-- RPC/DCOM/WMI -->
+        <DestinationPort condition="is">22</DestinationPort>     <!-- SSH lateral movement -->
+        <DestinationPort condition="is">23</DestinationPort>     <!-- Telnet (legacy access) -->
+        <!-- DNS — all connections for exfiltration detection -->
         <DestinationPort condition="is">53</DestinationPort>
-        <!-- HTTP/HTTPS (C2 channels) -->
-        <DestinationPort condition="is">80</DestinationPort>
-        <DestinationPort condition="is">443</DestinationPort>
-        <!-- Suspicious high ports from known tools -->
-        <Image condition="contains">powershell</Image>
-        <Image condition="contains">cmd.exe</Image>
-        <Image condition="contains">wmic.exe</Image>
-        <Image condition="contains">psexec</Image>
+        <!-- HTTP/HTTPS only from shells and known attacker tools -->
+        <Image condition="contains" groupRelation="and">powershell</Image>
+        <Image condition="contains" groupRelation="and">cmd.exe</Image>
+        <Image condition="contains" groupRelation="and">wmic.exe</Image>
+        <Image condition="contains" groupRelation="and">mshta.exe</Image>
+        <Image condition="contains" groupRelation="and">wscript.exe</Image>
+        <Image condition="contains" groupRelation="and">cscript.exe</Image>
+        <Image condition="contains" groupRelation="and">regsvr32.exe</Image>
+        <Image condition="contains" groupRelation="and">rundll32.exe</Image>
+        <Image condition="contains" groupRelation="and">certutil.exe</Image>
+        <Image condition="contains" groupRelation="and">bitsadmin.exe</Image>
+        <Image condition="contains" groupRelation="and">psexec</Image>
       </NetworkConnect>
     </RuleGroup>
 
-    <!-- EID 7: Image Loaded — Focus on credential theft DLLs -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 7: Image Loaded
+         Only credential-theft and injection DLLs. Avoid logging
+         every Microsoft-signed DLL (high volume, low value).
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="ImageLoad" groupRelation="or">
       <ImageLoad onmatch="include">
-        <ImageLoaded condition="contains">samlib.dll</ImageLoaded>
-        <ImageLoaded condition="contains">vaultcli.dll</ImageLoaded>
-        <ImageLoaded condition="contains">wdigest.dll</ImageLoaded>
-        <ImageLoaded condition="contains">cryptdll.dll</ImageLoaded>
+        <!-- Credential material DLLs — accessed by mimikatz, etc. -->
+        <ImageLoaded condition="end with">samlib.dll</ImageLoaded>
+        <ImageLoaded condition="end with">vaultcli.dll</ImageLoaded>
+        <ImageLoaded condition="end with">wdigest.dll</ImageLoaded>
+        <ImageLoaded condition="end with">cryptdll.dll</ImageLoaded>
+        <ImageLoaded condition="end with">dpapisrv.dll</ImageLoaded>
+        <ImageLoaded condition="end with">msv1_0.dll</ImageLoaded>
+        <!-- Suspicious: unsigned or unexpected DLL locations -->
+        <ImageLoaded condition="begin with">C:\Users\</ImageLoaded>
+        <ImageLoaded condition="begin with">C:\ProgramData\</ImageLoaded>
+        <ImageLoaded condition="begin with">C:\Windows\Temp\</ImageLoaded>
+        <ImageLoaded condition="begin with">\\</ImageLoaded>        <!-- UNC path DLL -->
       </ImageLoad>
     </RuleGroup>
 
-    <!-- EID 8: CreateRemoteThread — All (always suspicious) -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 8: CreateRemoteThread
+         All remote thread creation is suspicious. Exclude only
+         well-known OS components that legitimately do this.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="CreateRemoteThread" groupRelation="or">
       <CreateRemoteThread onmatch="exclude">
-        <!-- Exclude known legitimate remote thread creators -->
         <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
         <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
         <SourceImage condition="is">C:\Windows\System32\lsass.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\svchost.exe</SourceImage>
       </CreateRemoteThread>
     </RuleGroup>
 
-    <!-- EID 10: Process Access — CRITICAL for credential dumping detection -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 10: Process Access — CRITICAL
+         Any process accessing LSASS memory = credential dumping attempt.
+         This is the #1 indicator for Pass-the-Hash and mimikatz.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="ProcessAccess" groupRelation="or">
       <ProcessAccess onmatch="include">
-        <!-- Alert when ANYTHING accesses LSASS (credential dumping indicator) -->
         <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
       </ProcessAccess>
     </RuleGroup>
 
-    <!-- EID 13: Registry Value Set — Persistence mechanisms -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 11: File Create
+         Watch for data staging and malware drops in writable locations.
+         Exclude high-frequency benign paths (temp installers, etc.)
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="FileCreate" groupRelation="or">
+      <FileCreate onmatch="include">
+        <!-- Executables and scripts in unexpected writable locations -->
+        <TargetFilename condition="begin with">C:\Users\</TargetFilename>
+        <TargetFilename condition="begin with">C:\ProgramData\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\Temp\</TargetFilename>
+        <!-- Specifically: executables/scripts dropped anywhere -->
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="end with">.dll</TargetFilename>
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.vbs</TargetFilename>
+        <TargetFilename condition="end with">.bat</TargetFilename>
+        <TargetFilename condition="end with">.hta</TargetFilename>
+        <!-- Archive files (data staging for exfiltration) -->
+        <TargetFilename condition="end with">.zip</TargetFilename>
+        <TargetFilename condition="end with">.7z</TargetFilename>
+        <TargetFilename condition="end with">.rar</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 12/14: Registry Key Create / Rename
+         Detects persistence techniques that create new keys
+         (not just set values — EID 13 covers value sets).
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="RegistryEvent" groupRelation="or">
+      <!-- EID 12: Key Create / Delete -->
+      <RegistryEvent onmatch="include">
+        <EventType condition="is">CreateKey</EventType>
+        <TargetObject condition="contains">CurrentVersion\Run</TargetObject>
+      </RegistryEvent>
+      <RegistryEvent onmatch="include">
+        <EventType condition="is">CreateKey</EventType>
+        <TargetObject condition="contains">CurrentVersion\Winlogon</TargetObject>
+      </RegistryEvent>
+      <!-- EID 14: Key Rename (used to hide persistence keys) -->
+      <RegistryEvent onmatch="include">
+        <EventType condition="is">RenameKey</EventType>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 13: Registry Value Set
+         Existing persistence mechanism monitoring.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="RegistryEvent" groupRelation="or">
       <RegistryEvent onmatch="include">
         <TargetObject condition="contains">CurrentVersion\Run</TargetObject>
         <TargetObject condition="contains">CurrentVersion\RunOnce</TargetObject>
         <TargetObject condition="contains">CurrentVersion\Winlogon</TargetObject>
         <TargetObject condition="contains">Policies\Explorer\Run</TargetObject>
+        <TargetObject condition="contains">CurrentVersion\Image File Execution Options</TargetObject>
+        <TargetObject condition="contains">CurrentControlSet\Services</TargetObject>
       </RegistryEvent>
     </RuleGroup>
 
-    <!-- EID 22: DNS Query — ALL queries (needed for DNS tunneling detection) -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 17/18: Named Pipe Created / Connected
+         PsExec uses \\pipe\PSEXECSVC. Cobalt Strike uses
+         \\pipe\msse-* and \\pipe\status_*. Low volume, high value.
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="PipeEvent" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <!-- PsExec remote execution -->
+        <PipeName condition="begin with">\PSEXECSVC</PipeName>
+        <PipeName condition="begin with">\psexec</PipeName>
+        <!-- Cobalt Strike default pipe names -->
+        <PipeName condition="begin with">\msse-</PipeName>
+        <PipeName condition="begin with">\status_</PipeName>
+        <PipeName condition="begin with">\msagent_</PipeName>
+        <!-- Metasploit / common C2 patterns -->
+        <PipeName condition="begin with">\DserNamePipe</PipeName>
+        <PipeName condition="contains">postex_</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 19–21: WMI Event Subscription
+         WMI subscriptions are a persistence / lateral movement
+         technique. These events fire when subscriptions are
+         created — low frequency, critical when they occur.
+         EID 19: WmiEventFilter (event query)
+         EID 20: WmiEventConsumer (action to take)
+         EID 21: WmiEventConsumerToFilter (binding)
+         ═══════════════════════════════════════════════════════ -->
+    <RuleGroup name="WmiEvent" groupRelation="or">
+      <!-- Log ALL WMI subscriptions (they are always suspicious in corp env) -->
+      <WmiEvent onmatch="include"/>
+    </RuleGroup>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EID 22: DNS Query — ALL queries
+         Required for DNS tunneling and exfiltration detection.
+         Exclude only internal/infrastructure noise.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="DnsQuery" groupRelation="or">
       <DnsQuery onmatch="exclude">
-        <!-- Exclude only the most noisy internal queries -->
+        <!-- mDNS / reverse DNS noise -->
         <QueryName condition="end with">.local</QueryName>
         <QueryName condition="is">wpad</QueryName>
         <QueryName condition="end with">.arpa</QueryName>
+        <!-- Windows OS telemetry — high volume, no detection value -->
+        <QueryName condition="end with">microsoft.com</QueryName>
+        <QueryName condition="end with">windowsupdate.com</QueryName>
+        <QueryName condition="end with">windows.com</QueryName>
+        <QueryName condition="end with">msftncsi.com</QueryName>
+        <QueryName condition="end with">msftconnecttest.com</QueryName>
+        <!-- Common productivity noise (adjust per org) -->
+        <QueryName condition="end with">office.com</QueryName>
+        <QueryName condition="end with">office365.com</QueryName>
+        <QueryName condition="end with">live.com</QueryName>
       </DnsQuery>
     </RuleGroup>
 
-    <!-- EID 25: Process Tampering — All (defense evasion indicator) -->
+    <!-- ═══════════════════════════════════════════════════════
+         EID 25: Process Tampering
+         Detects hollowing, herpaderping, and ghosting.
+         All instances are highly suspicious.
+         ═══════════════════════════════════════════════════════ -->
     <RuleGroup name="ProcessTampering" groupRelation="or">
       <ProcessTampering onmatch="include"/>
     </RuleGroup>

@@ -20,23 +20,27 @@ class FeaturePipeline:
     def extract_all(
         self, events: list[NormalizedEvent], source_entity: str
     ) -> FeatureVector:
-        """Run all registered extractors and merge into one feature vector."""
-        all_features = {}
+        """
+        Run every registered extractor and merge their outputs.
+
+        Each extractor is ALWAYS called — even when no events match its
+        required_event_types() — so it returns its zero-valued empty
+        feature dict. This guarantees a stable feature schema across every
+        window, which the XGBoost detectors rely on (column count and
+        order must be identical between training and inference).
+        """
+        all_features: dict[str, float] = {}
 
         for extractor in self._extractors:
-            # Filter events to only what this extractor needs
-            relevant = [
-                e
-                for e in events
-                if e.event_type in extractor.required_event_types()
-                or extractor.required_event_types() == ["*"]
-            ]
+            req = extractor.required_event_types()
+            if req == ["*"]:
+                relevant = events
+            else:
+                relevant = [e for e in events if e.event_type in req]
 
-            if relevant:
-                features = extractor.extract(relevant)
-                # Prefix features with extractor name to avoid collisions
-                for key, value in features.items():
-                    all_features[f"{extractor.name()}__{key}"] = value
+            features = extractor.extract(relevant)  # always — empty list returns zeros
+            for key, value in features.items():
+                all_features[f"{extractor.name()}__{key}"] = value
 
         return FeatureVector(
             event_window_id=str(uuid.uuid4()),

@@ -22,7 +22,10 @@ class DnsExfiltrationDetector(BaseDetector):
         self.model.load_model(model_path)
 
     def predict(self, features: FeatureVector) -> Detection:
-        dmatrix = xgb.DMatrix([list(features.features.values())])
+        dmatrix = xgb.DMatrix(
+            [list(features.features.values())],
+            feature_names=list(features.features.keys()),
+        )
         confidence = float(self.model.predict(dmatrix)[0])
 
         return Detection(

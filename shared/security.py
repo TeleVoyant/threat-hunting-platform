@@ -45,6 +45,7 @@ PERMISSIONS = {
         "export_data",
         "update_thresholds",
         "manage_detectors",
+        "manage_fleet",         # send commands to laptops, switch profiles, toggle telemetry
     },
     Role.ADMIN: {
         "read_alerts",
@@ -55,6 +56,8 @@ PERMISSIONS = {
         "export_data",
         "update_thresholds",
         "manage_detectors",
+        "manage_fleet",
+        "enroll_agents",        # generate per-agent secrets (admin-only)
         "retrain_models",
         "manage_users",
         "view_audit_log",

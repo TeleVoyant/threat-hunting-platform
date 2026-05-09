@@ -24,7 +24,12 @@ class LateralMovementDetector(BaseDetector):
     def predict(self, features: FeatureVector) -> Detection:
         import xgboost as xgb
 
-        dmatrix = xgb.DMatrix([list(features.features.values())])
+        # Pass feature_names so XGBoost validates schema match between
+        # training and inference. Mismatch raises a clear error.
+        dmatrix = xgb.DMatrix(
+            [list(features.features.values())],
+            feature_names=list(features.features.keys()),
+        )
         confidence = float(self.model.predict(dmatrix)[0])
 
         return Detection(

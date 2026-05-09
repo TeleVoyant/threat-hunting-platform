@@ -16,6 +16,7 @@ class NormalizedEvent(BaseModel):
     timestamp: datetime
     source_ip: str
     dest_ip: Optional[str] = None
+    dest_port: Optional[int] = None          # Destination port (DNS on non-53 = suspicious)
     user: Optional[str] = None
     hostname: str
     event_type: str  # e.g., "authentication", "process", "dns_query"
@@ -24,8 +25,12 @@ class NormalizedEvent(BaseModel):
     process_name: Optional[str] = None
     parent_process: Optional[str] = None
     command_line: Optional[str] = None
+    # DNS fields — populated from Sysmon EID 22 and DNS Client EID 3006/3008/3020
     dns_query: Optional[str] = None
-    dns_query_type: Optional[str] = None
+    dns_query_type: Optional[str] = None     # A, AAAA, TXT, NULL, MX, CNAME, ANY
+    dns_response_code: Optional[str] = None  # NOERROR, NXDOMAIN, SERVFAIL, REFUSED
+    dns_query_results: Optional[str] = None  # Raw Sysmon QueryResults (IPs, TXT data, etc.)
+    dns_ttl: Optional[int] = None            # Response TTL in seconds (very low = fast-flux C2)
     bytes_sent: int = 0
     bytes_received: int = 0
     raw: dict = Field(default_factory=dict)  # Original event preserved
