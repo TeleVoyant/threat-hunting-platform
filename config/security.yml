@@ -6,13 +6,13 @@ authentication:
 users:
   - username: "admin"
     role: "admin"
-    api_key_hash: "e3b0c44298fc1c149afbf4c8996fb924..." # SHA-256 of actual key
+    api_key_hash: "ac5bb3526d3be432ba19fb1fc0712d350c160bd2169cd24401c9fcaeaac2d860" # SHA-256 of demo-admin-key
   - username: "soc_analyst_1"
     role: "analyst"
-    api_key_hash: "..."
+    api_key_hash: "ba041bbd3d5f84055d10645d916eeace5ad28692224918c320e627f95bccbd3b" # SHA-256 of demo-analyst-key
   - username: "it_admin_view"
     role: "viewer"
-    api_key_hash: "..."
+    api_key_hash: "428d2ac3da6ce4eb5cc58762a03af655a5d836bdecd00b0305afc7b2aa81adfd" # SHA-256 of demo-viewer-key
 
 rate_limiting:
   enabled: true

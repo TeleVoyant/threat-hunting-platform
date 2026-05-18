@@ -13,14 +13,14 @@
       5. Verify services are running
 
     Profiles:
-      Lean     — minimum overhead (~0.3% CPU, ~12MB RAM above baseline).
+      Lean     - minimum overhead (~0.3% CPU, ~12MB RAM above baseline).
                  Collects: process creation, lateral-movement network ports,
                  LSASS access, Run-key registry, DNS queries.
-      Balanced — default. Good coverage with manageable overhead
+      Balanced - default. Good coverage with manageable overhead
                  (~1-3% CPU, ~40MB RAM above baseline).
                  Adds: image loads, remote threads, file creates, WMI events,
                  named pipes, account management, Defender/Firewall logs.
-      Full     — maximum telemetry. Use on servers or dedicated SOC endpoints.
+      Full     - maximum telemetry. Use on servers or dedicated SOC endpoints.
                  Adds: scheduled FIM on sensitive paths, shorter poll interval.
 
 .PARAMETER ServerIP
@@ -81,9 +81,9 @@ $ScriptDir = Split-Path $MyInvocation.MyCommand.Path
 $TempDir   = "$env:TEMP\threat-platform-deploy"
 $WazuhDir  = "C:\Program Files (x86)\ossec-agent"
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # HELPERS
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 function Write-Step  { param($n, $total, $msg) Write-Host "`n[$n/$total] $msg" -ForegroundColor Yellow }
 function Write-OK    { param($msg) Write-Host "  OK  $msg" -ForegroundColor Green }
@@ -93,8 +93,8 @@ function Write-Info  { param($msg) Write-Host "       $msg" -ForegroundColor Gra
 
 function Set-AuditPolicy {
     param([string]$Subcategory, [string]$Success, [string]$Failure)
-    $result = auditpol /set /subcategory:"$Subcategory" /success:$Success /failure:$Failure 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $r = Invoke-Native { auditpol /set /subcategory:"$Subcategory" /success:$Success /failure:$Failure }
+    if ($r.ExitCode -ne 0) {
         Write-Warn "auditpol failed for '$Subcategory' (may require domain policy override)"
     }
 }
@@ -110,9 +110,24 @@ function Wait-ServiceStart {
     return $false
 }
 
-# ─────────────────────────────────────────────────────────────
-# VERIFY MODE — just check status, no changes
-# ─────────────────────────────────────────────────────────────
+function Invoke-Native {
+    # Run a native exe without tripping $ErrorActionPreference="Stop" on its
+    # benign stderr (banners, EULA acceptance, Sysinternals copyright lines).
+    # Caller decides success from $LASTEXITCODE / returned Output.
+    param([Parameter(Mandatory)][scriptblock]$Block)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $Block 2>&1 | Out-String
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
+# -------------------------------------------------------------
+# VERIFY MODE - just check status, no changes
+# -------------------------------------------------------------
 
 if ($Verify) {
     Write-Host "`n=== Endpoint Status Check ===" -ForegroundColor Cyan
@@ -135,27 +150,27 @@ if ($Verify) {
     exit 0
 }
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # SETUP
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 $TotalSteps = if ($PlatformApiUrl -and $EnrollmentToken) { 6 } else { 5 }
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
 Write-Host @"
 
-╔══════════════════════════════════════════════════════╗
-  APT Detection Platform — Endpoint Deployment
++======================================================+
+  APT Detection Platform - Endpoint Deployment
   Server  : $ServerIP`:$ServerPort
   Profile : $Profile
   Host    : $($env:COMPUTERNAME)
-╚══════════════════════════════════════════════════════╝
++======================================================+
 "@ -ForegroundColor Cyan
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # STEP 1: Sysmon
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 Write-Step 1 $TotalSteps "Installing / updating Sysmon"
 
 $SysmonZip = "$TempDir\Sysmon.zip"
@@ -186,26 +201,32 @@ if (-not (Test-Path $SysmonExe)) {
 
 $SysmonSvc = Get-Service -Name "Sysmon64" -ErrorAction SilentlyContinue
 if ($SysmonSvc) {
-    Write-Info "Sysmon already installed — updating config to $Profile profile..."
-    & $SysmonExe -c $SysmonConfigPath 2>&1 | Out-Null
+    Write-Info "Sysmon already installed - updating config to $Profile profile..."
+    $r = Invoke-Native { & $SysmonExe -c $SysmonConfigPath }
+    if ($r.ExitCode -ne 0) {
+        Write-Fail "Sysmon config update failed (exit $($r.ExitCode))"
+        if ($r.Output) { $r.Output -split "`r?`n" | ForEach-Object { Write-Info $_ } }
+        exit 1
+    }
     Write-OK "Sysmon config updated ($Profile)"
 } else {
     Write-Info "Installing Sysmon64 with $Profile profile..."
-    & $SysmonExe -accepteula -i $SysmonConfigPath 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Sysmon installation failed (exit $LASTEXITCODE)"
+    $r = Invoke-Native { & $SysmonExe -accepteula -i $SysmonConfigPath }
+    if ($r.ExitCode -ne 0) {
+        Write-Fail "Sysmon installation failed (exit $($r.ExitCode))"
+        if ($r.Output) { $r.Output -split "`r?`n" | ForEach-Object { Write-Info $_ } }
         exit 1
     }
     Write-OK "Sysmon installed ($Profile)"
 }
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # STEP 2: Windows Audit Policies
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 Write-Step 2 $TotalSteps "Configuring Windows audit policies"
 
-# Authentication events — core for lateral movement detection
+# Authentication events - core for lateral movement detection
 Set-AuditPolicy "Logon"                              "enable"  "enable"
 Set-AuditPolicy "Logoff"                             "enable"  "disable"
 Set-AuditPolicy "Special Logon"                      "enable"  "disable"
@@ -213,15 +234,15 @@ Set-AuditPolicy "Credential Validation"              "enable"  "enable"
 Set-AuditPolicy "Kerberos Authentication Service"    "enable"  "enable"
 Set-AuditPolicy "Kerberos Service Ticket Operations" "enable"  "enable"
 
-# Process creation — command-line logging for LOLBin detection
+# Process creation - command-line logging for LOLBin detection
 Set-AuditPolicy "Process Creation"                   "enable"  "disable"
 
-# Account management — detect persistence via new accounts (T1136)
+# Account management - detect persistence via new accounts (T1136)
 Set-AuditPolicy "User Account Management"            "enable"  "enable"
 Set-AuditPolicy "Security Group Management"          "enable"  "disable"
 Set-AuditPolicy "Computer Account Management"        "enable"  "disable"
 
-# Filtering Platform Packet Drop — security signal at low volume (firewall blocks).
+# Filtering Platform Packet Drop - security signal at low volume (firewall blocks).
 # NOTE: Filtering Platform CONNECTION (5156) is intentionally NOT enabled. It fires
 # on every successful TCP/UDP flow, generating thousands of events per hour on a
 # normal laptop. Sysmon EID 3 already covers lateral-movement port connections.
@@ -229,19 +250,19 @@ if ($Profile -eq "Full") {
     Set-AuditPolicy "Filtering Platform Packet Drop" "disable" "enable"
 }
 
-# Object Access (Full only) — for SAM database access detection (T1003.002).
+# Object Access (Full only) - for SAM database access detection (T1003.002).
 # Verbose; only worth it on dedicated SOC endpoints.
 if ($Profile -eq "Full") {
     Set-AuditPolicy "SAM"                            "disable" "enable"
     Set-AuditPolicy "Detailed File Share"            "enable"  "disable"
 }
 
-# Policy changes — detect audit policy tampering (anti-forensics)
+# Policy changes - detect audit policy tampering (anti-forensics)
 Set-AuditPolicy "Audit Policy Change"                "enable"  "disable"
 
 Write-OK "Audit policies configured"
 
-# Enable PowerShell ScriptBlock logging (Event ID 4104) — detect encoded/obfuscated commands
+# Enable PowerShell ScriptBlock logging (Event ID 4104) - detect encoded/obfuscated commands
 $PSLogPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
 if (-not (Test-Path $PSLogPath)) { New-Item -Path $PSLogPath -Force | Out-Null }
 Set-ItemProperty -Path $PSLogPath -Name "EnableScriptBlockLogging" -Value 1
@@ -254,7 +275,7 @@ if (-not (Test-Path $CmdLinePath)) { New-Item -Path $CmdLinePath -Force | Out-Nu
 Set-ItemProperty -Path $CmdLinePath -Name "ProcessCreationIncludeCmdLine_Enabled" -Value 1
 Write-OK "Process command-line auditing enabled"
 
-# DNS Client Operational log — provides dns_query_type for ALL queries (incl. NXDOMAIN)
+# DNS Client Operational log - provides dns_query_type for ALL queries (incl. NXDOMAIN)
 # and TTL for fast-flux detection. High volume (~100-500 evt/min on busy laptops),
 # so Lean relies solely on Sysmon EID 22 (which covers query name + type for resolved
 # queries via parsed QueryResults).
@@ -274,7 +295,7 @@ if ($Profile -ne "Lean") {
     }
 }
 
-# Enable WMI Activity log — WMI-based lateral movement and persistence
+# Enable WMI Activity log - WMI-based lateral movement and persistence
 if ($Profile -ne "Lean") {
     try {
         $wmiLog = Get-WinEvent -ListLog "Microsoft-Windows-WMI-Activity/Operational" -ErrorAction Stop
@@ -289,7 +310,7 @@ if ($Profile -ne "Lean") {
         Write-Warn "Could not enable WMI Activity log: $_"
     }
 
-    # Enable Task Scheduler Operational log — scheduled task persistence (T1053)
+    # Enable Task Scheduler Operational log - scheduled task persistence (T1053)
     try {
         $tsLog = Get-WinEvent -ListLog "Microsoft-Windows-TaskScheduler/Operational" -ErrorAction Stop
         if (-not $tsLog.IsEnabled) {
@@ -310,23 +331,23 @@ if ($Profile -ne "Lean") {
     $FwLogDir  = "$env:SystemRoot\System32\LogFiles\Firewall"
     $FwLogFile = "$FwLogDir\pfirewall.log"
     New-Item -ItemType Directory -Path $FwLogDir -Force -ErrorAction SilentlyContinue | Out-Null
-    netsh advfirewall set allprofiles logging filename $FwLogFile 2>&1 | Out-Null
-    netsh advfirewall set allprofiles logging maxfilesize 4096 2>&1 | Out-Null
-    netsh advfirewall set allprofiles logging droppedconnections enable 2>&1 | Out-Null
+    Invoke-Native { netsh advfirewall set allprofiles logging filename $FwLogFile } | Out-Null
+    Invoke-Native { netsh advfirewall set allprofiles logging maxfilesize 4096 } | Out-Null
+    Invoke-Native { netsh advfirewall set allprofiles logging droppedconnections enable } | Out-Null
 
     if ($Profile -eq "Full") {
-        netsh advfirewall set allprofiles logging allowedconnections enable 2>&1 | Out-Null
+        Invoke-Native { netsh advfirewall set allprofiles logging allowedconnections enable } | Out-Null
         Write-OK "Windows Firewall logging: dropped + allowed -> $FwLogFile"
     } else {
-        netsh advfirewall set allprofiles logging allowedconnections disable 2>&1 | Out-Null
+        Invoke-Native { netsh advfirewall set allprofiles logging allowedconnections disable } | Out-Null
         Write-OK "Windows Firewall logging: dropped only -> $FwLogFile"
     }
 }
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # STEP 3: Install Wazuh Agent
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 Write-Step 3 $TotalSteps "Installing Wazuh Agent $WazuhVersion"
 
 $WazuhSvc = Get-Service -Name "WazuhSvc" -ErrorAction SilentlyContinue
@@ -365,9 +386,9 @@ if (-not $WazuhSvc) {
 }
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # STEP 4: Configure Wazuh Agent (ossec.conf)
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 Write-Step 4 $TotalSteps "Configuring Wazuh Agent ($Profile profile)"
 
 # Profile-specific resource settings
@@ -376,20 +397,20 @@ $FimFrequency = switch ($Profile) { "Lean" { 86400 } "Balanced" { 43200 } "Full"
 $FimEnabled   = if ($Profile -eq "Lean") { "no" } else { "yes" }
 $QueueSize    = switch ($Profile) { "Lean" { 8192 } "Balanced" { 16384 } "Full" { 32768 } }
 
-# Wazuh agent internal_options.conf — controls memory/CPU per profile
+# Wazuh agent internal_options.conf - controls memory/CPU per profile
 $LogcollQueueSize  = switch ($Profile) { "Lean" { 2048 }  "Balanced" { 8192 }  "Full" { 16384 } }
 $LogcollMaxLines   = switch ($Profile) { "Lean" { 2000 }  "Balanced" { 5000 }  "Full" { 10000 } }
-$LogcollSampleLen  = 256   # cap individual log line length (bytes) — clips runaway events
+$LogcollSampleLen  = 256   # cap individual log line length (bytes) - clips runaway events
 
 # 5156/5158 (WFP allowed connection/bind) is intentionally Full-only:
-# fires on every TCP/UDP flow → thousands of events/hour on a normal laptop.
+# fires on every TCP/UDP flow -> thousands of events/hour on a normal laptop.
 $ExtraSecEvents    = if ($Profile -eq "Full") { " or EventID=5156 or EventID=5158" } else { "" }
 
 # Build ossec.conf content
 $AgentConfig = @"
 <ossec_config>
 
-  <!-- ══ SERVER CONNECTION ══════════════════════════════ -->
+  <!-- == SERVER CONNECTION ============================== -->
   <client>
     <server>
       <address>$ServerIP</address>
@@ -405,40 +426,48 @@ $AgentConfig = @"
     <!-- Profile: $Profile | notify_time controls event send frequency -->
     <notify_time>$NotifyTime</notify_time>
     <time-reconnect>60</time-reconnect>
-    <!-- Buffer events locally if server is unreachable -->
-    <queue_size>$QueueSize</queue_size>
   </client>
 
-  <!-- ══ SYSMON EVENTS (primary APT telemetry source) ════ -->
+  <!-- == LOCAL EVENT BUFFER ============================== -->
+  <!-- queue_size lives here, NOT inside <client>. The Wazuh 4.7 Windows
+       agent rejects <queue_size> as an invalid <client> child element
+       (error 1230) and refuses to start. -->
+  <client_buffer>
+    <disabled>no</disabled>
+    <queue_size>$QueueSize</queue_size>
+    <events_per_second>500</events_per_second>
+  </client_buffer>
+
+  <!-- == SYSMON EVENTS (primary APT telemetry source) ==== -->
   <localfile>
     <location>Microsoft-Windows-Sysmon/Operational</location>
     <log_format>eventchannel</log_format>
-    <!-- All Sysmon events — filtering is done in sysmon_config.xml -->
+    <!-- All Sysmon events - filtering is done in sysmon_config.xml -->
   </localfile>
 
-  <!-- ══ WINDOWS SECURITY LOG ════════════════════════════ -->
+  <!-- == WINDOWS SECURITY LOG ============================ -->
   <!--
     Events collected:
-    4624  Successful logon             → lateral movement detection
-    4625  Failed logon                 → brute force / credential stuffing
-    4648  Explicit credential logon    → Pass-the-Hash (T1550.002)
-    4672  Special privileges logon     → privilege escalation
-    4768  Kerberos TGT request         → Kerberoasting detection
-    4769  Kerberos service ticket req  → lateral movement via Kerberos
-    4776  NTLM authentication          → Pass-the-Hash (T1550.002)
-    4728  Member added to global group → privilege escalation
-    4732  Member added to local group  → privilege escalation
-    4698  Scheduled task created       → persistence (T1053)
-    4657  Registry value modified      → persistence (backup to EID 13)
-    4673  Sensitive privilege use      → lateral movement prereqs
-    4720  User account created         → persistence (T1136)
-    4722  User account enabled         → persistence
-    4724  Password reset attempt       → credential manipulation
-    4725  User account disabled        → defense evasion / clean-up
-    4726  User account deleted         → clean-up after attack
-    4738  User account changed         → persistence or privilege change
-    5156  WFP permitted connection     → Full profile only (very high volume)
-    5158  WFP permitted bind           → Full profile only
+    4624  Successful logon             -> lateral movement detection
+    4625  Failed logon                 -> brute force / credential stuffing
+    4648  Explicit credential logon    -> Pass-the-Hash (T1550.002)
+    4672  Special privileges logon     -> privilege escalation
+    4768  Kerberos TGT request         -> Kerberoasting detection
+    4769  Kerberos service ticket req  -> lateral movement via Kerberos
+    4776  NTLM authentication          -> Pass-the-Hash (T1550.002)
+    4728  Member added to global group -> privilege escalation
+    4732  Member added to local group  -> privilege escalation
+    4698  Scheduled task created       -> persistence (T1053)
+    4657  Registry value modified      -> persistence (backup to EID 13)
+    4673  Sensitive privilege use      -> lateral movement prereqs
+    4720  User account created         -> persistence (T1136)
+    4722  User account enabled         -> persistence
+    4724  Password reset attempt       -> credential manipulation
+    4725  User account disabled        -> defense evasion / clean-up
+    4726  User account deleted         -> clean-up after attack
+    4738  User account changed         -> persistence or privilege change
+    5156  WFP permitted connection     -> Full profile only (very high volume)
+    5158  WFP permitted bind           -> Full profile only
   -->
   <localfile>
     <location>Security</location>
@@ -461,7 +490,7 @@ $AgentConfig = @"
     </query>
   </localfile>
 
-  <!-- ══ POWERSHELL LOGS ══════════════════════════════════ -->
+  <!-- == POWERSHELL LOGS ================================== -->
   <!-- EID 4103: Module logging | EID 4104: ScriptBlock logging -->
   <!-- Detects encoded commands, Invoke-Expression, AMSI bypass -->
   <localfile>
@@ -478,7 +507,7 @@ $AgentConfig = @"
     </query>
   </localfile>
 
-  <!-- ══ SYSTEM LOG ═══════════════════════════════════════ -->
+  <!-- == SYSTEM LOG ======================================= -->
   <!-- EID 7045: New service installed (lateral movement via service creation) -->
   <!-- EID 7040: Service start type changed                                   -->
   <localfile>
@@ -500,11 +529,11 @@ $AgentConfig = @"
 # Balanced/Full: add additional log sources
 if ($Profile -ne "Lean") {
     $AgentConfig += @"
-  <!-- ══ DNS CLIENT OPERATIONAL ══════════════════════════ -->
+  <!-- == DNS CLIENT OPERATIONAL ========================== -->
   <!--
     Supplies dns_query_type for ALL queries (including NXDOMAIN responses
     where Sysmon EID 22 has no QueryResults to parse) and TTL for fast-flux
-    detection. High volume — Lean profile relies solely on Sysmon EID 22.
+    detection. High volume - Lean profile relies solely on Sysmon EID 22.
 
     EID 3006: DNS query initiated
     EID 3008: DNS response received (query type + TTL + response data)
@@ -524,7 +553,7 @@ if ($Profile -ne "Lean") {
     </query>
   </localfile>
 
-  <!-- ══ WINDOWS DEFENDER OPERATIONAL ════════════════════ -->
+  <!-- == WINDOWS DEFENDER OPERATIONAL ==================== -->
   <!--
     Malware detection context: if Defender fires on the same
     endpoint that shows lateral movement indicators, confidence
@@ -549,7 +578,7 @@ if ($Profile -ne "Lean") {
     </query>
   </localfile>
 
-  <!-- ══ WMI ACTIVITY OPERATIONAL ════════════════════════ -->
+  <!-- == WMI ACTIVITY OPERATIONAL ======================== -->
   <!--
     WMI-based lateral movement (T1047) and persistence via
     WMI event subscriptions (T1546.003).
@@ -572,7 +601,7 @@ if ($Profile -ne "Lean") {
     </query>
   </localfile>
 
-  <!-- ══ TASK SCHEDULER OPERATIONAL ══════════════════════ -->
+  <!-- == TASK SCHEDULER OPERATIONAL ====================== -->
   <!--
     Scheduled task persistence (T1053.005).
     More granular than Security EID 4698.
@@ -596,7 +625,7 @@ if ($Profile -ne "Lean") {
     </query>
   </localfile>
 
-  <!-- ══ WINDOWS FIREWALL CONNECTION LOG ════════════════ -->
+  <!-- == WINDOWS FIREWALL CONNECTION LOG ================ -->
   <!--
     Provides bytes_sent / bytes_received for network connections.
     Used by feature pipeline to compute traffic volume features.
@@ -611,18 +640,18 @@ if ($Profile -ne "Lean") {
 }
 
 # File Integrity Monitoring
-# NOTE: NEVER use realtime="yes" on System32 — it generates hundreds of events per
+# NOTE: NEVER use realtime="yes" on System32 - it generates hundreds of events per
 # minute from legitimate Windows activity and will exhaust CPU/RAM.
 # Use scheduled scans on targeted high-value paths only.
 if ($FimEnabled -eq "yes") {
     $AgentConfig += @"
-  <!-- ══ FILE INTEGRITY MONITORING ═══════════════════════ -->
+  <!-- == FILE INTEGRITY MONITORING ======================= -->
   <!--
     Scheduled scan (NOT realtime) on targeted paths.
-    Profile: $Profile — scan frequency: every $FimFrequency seconds
+    Profile: $Profile - scan frequency: every $FimFrequency seconds
     Detects: malware drops, credential file theft, config tampering.
 
-    INTENTIONALLY excluded: C:\Windows\System32\ (entire dir) — realtime
+    INTENTIONALLY excluded: C:\Windows\System32\ (entire dir) - realtime
     monitoring there generates unmanageable event volume.
   -->
   <syscheck>
@@ -653,7 +682,7 @@ if ($FimEnabled -eq "yes") {
 "@
 } else {
     $AgentConfig += @"
-  <!-- ══ FILE INTEGRITY MONITORING ═══════════════════════ -->
+  <!-- == FILE INTEGRITY MONITORING ======================= -->
   <!-- Disabled in Lean profile to minimise resource usage. -->
   <syscheck>
     <disabled>yes</disabled>
@@ -663,13 +692,13 @@ if ($FimEnabled -eq "yes") {
 }
 
 $AgentConfig += @"
-  <!-- ══ ACTIVE RESPONSE ═════════════════════════════════ -->
-  <!-- Disabled — out of scope for this FYP deployment.     -->
+  <!-- == ACTIVE RESPONSE ================================= -->
+  <!-- Disabled - out of scope for this FYP deployment.     -->
   <active-response>
     <disabled>yes</disabled>
   </active-response>
 
-  <!-- ══ AGENT LOGGING ════════════════════════════════════ -->
+  <!-- == AGENT LOGGING ==================================== -->
   <logging>
     <log_format>json</log_format>
   </logging>
@@ -684,7 +713,10 @@ if (-not (Test-Path $WazuhDir)) {
     exit 1
 }
 
-Set-Content -Path $OssecConf -Value $AgentConfig -Encoding UTF8
+# Write as UTF-8 WITHOUT BOM. PowerShell 5.1's "-Encoding UTF8" emits a BOM,
+# and the Wazuh agent's XML parser silently aborts on the leading BOM bytes
+# (no log written, service crashes immediately, no Application event log entry).
+[System.IO.File]::WriteAllText($OssecConf, $AgentConfig, (New-Object System.Text.UTF8Encoding $false))
 Write-OK "ossec.conf written ($Profile profile)"
 
 # Write registration password file
@@ -693,18 +725,18 @@ New-Item -ItemType Directory -Path "$WazuhDir\etc" -Force -ErrorAction SilentlyC
 Set-Content -Path $AuthPassPath -Value $RegistrationPassword -NoNewline -Encoding ASCII
 Write-OK "Registration password written"
 
-# ─────────────────────────────────────────────────────────────
-# Wazuh agent internal_options.local.conf — per-profile resource tuning
+# -------------------------------------------------------------
+# Wazuh agent internal_options.local.conf - per-profile resource tuning
 # Caps memory/CPU used by the logcollector. Default Wazuh settings target
 # server-class hosts; defaults on a laptop can spike RAM during event bursts.
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 $InternalConf = @"
-# Auto-generated by deploy_endpoint.ps1 — profile: $Profile
+# Auto-generated by deploy_endpoint.ps1 - profile: $Profile
 # Logcollector: caps in-memory event queue and per-cycle read size
 logcollector.queue_size=$LogcollQueueSize
 logcollector.max_lines=$LogcollMaxLines
 logcollector.sample_log_length=$LogcollSampleLen
-# Throttle eventchannel polling — lower values = lower CPU spikes
+# Throttle eventchannel polling - lower values = lower CPU spikes
 logcollector.remote_commands=0
 # Cap agent memory usage by trimming buffered messages
 agent.recv_timeout=60
@@ -714,20 +746,21 @@ Set-Content -Path $InternalConfPath -Value $InternalConf -Encoding ASCII
 Write-OK "internal_options.local.conf written (queue=$LogcollQueueSize, max_lines=$LogcollMaxLines)"
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # STEP 5: Start services and verify
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 Write-Step 5 $TotalSteps "Starting and verifying services"
 
-# Sysmon
+# Sysmon - installer sets StartupType=Automatic; we don't call Set-Service
+# here because Sysmon hardens its service DACL against Set-Service's implicit
+# description-update (would fail with "Access is denied" even as Admin).
 $SysmonSvc2 = Get-Service -Name "Sysmon64" -ErrorAction SilentlyContinue
 if ($SysmonSvc2 -and $SysmonSvc2.Status -ne "Running") {
     Start-Service -Name "Sysmon64"
 }
-Set-Service -Name "Sysmon64" -StartupType Automatic
 $sysmonRunning = Wait-ServiceStart "Sysmon64" 15
 if ($sysmonRunning) { Write-OK "Sysmon64 running" }
-else                { Write-Fail "Sysmon64 did not start — check Event Viewer" ; exit 1 }
+else                { Write-Fail "Sysmon64 did not start - check Event Viewer" ; exit 1 }
 
 # Wazuh Agent (restart to pick up new config)
 $wazuhSvc2 = Get-Service -Name "WazuhSvc" -ErrorAction SilentlyContinue
@@ -740,19 +773,19 @@ if ($wazuhSvc2) {
     Set-Service -Name "WazuhSvc" -StartupType Automatic
     $wazuhRunning = Wait-ServiceStart "WazuhSvc" 30
     if ($wazuhRunning) { Write-OK "WazuhSvc running" }
-    else               { Write-Fail "WazuhSvc did not start — check $WazuhDir\ossec.log" ; exit 1 }
+    else               { Write-Fail "WazuhSvc did not start - check $WazuhDir\ossec.log" ; exit 1 }
 } else {
     Write-Fail "WazuhSvc not found after installation"
     exit 1
 }
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # STEP 6: Fleet remote-control bootstrap (optional)
 # Enroll with AI Platform, store DPAPI-encrypted secret in registry,
 # install command-handler scheduled task. Skipped if either of
 # -PlatformApiUrl / -EnrollmentToken is missing.
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 if ($PlatformApiUrl -and $EnrollmentToken) {
     Write-Step 6 $TotalSteps "Enrolling with AI Platform for remote control"
 
@@ -761,7 +794,7 @@ if ($PlatformApiUrl -and $EnrollmentToken) {
     if (-not (Test-Path $RegBase))    { New-Item -Path $RegBase -Force | Out-Null }
     if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
 
-    # 1. Enroll — ask the API for a fresh per-agent secret
+    # 1. Enroll - ask the API for a fresh per-agent secret
     $enrollUrl = "$($PlatformApiUrl.TrimEnd('/'))/fleet/agents/enroll"
     $body = @{ agent_id = $env:COMPUTERNAME; profile = $Profile } | ConvertTo-Json -Compress
     Write-Info "Enrolling at $enrollUrl"
@@ -774,14 +807,22 @@ if ($PlatformApiUrl -and $EnrollmentToken) {
             -Body $body -TimeoutSec 30 -UseBasicParsing
     } catch {
         Write-Fail "Enrollment failed: $_"
-        Write-Info "Skipping remote-control setup — endpoint will still collect telemetry."
+        Write-Info "Skipping remote-control setup - endpoint will still collect telemetry."
         $resp = $null
     }
 
     if ($resp -and $resp.agent_secret) {
         # 2. Encrypt secret with DPAPI (machine scope) and store in registry
         Add-Type -AssemblyName System.Security
-        $secretBytes = [System.Text.Encoding]::ASCII.GetBytes($resp.agent_secret)
+        # API returns the secret base64url-encoded (no padding). We need the
+        # RAW decoded bytes for HMAC, because the server's get_agent_secret()
+        # returns decode_secret(...) which is the raw bytes. Storing ASCII of
+        # the base64 string would make HMAC signatures never match the server.
+        $b64url = $resp.agent_secret
+        $std    = $b64url.Replace('-', '+').Replace('_', '/')
+        $pad    = (4 - ($std.Length % 4)) % 4
+        if ($pad -gt 0) { $std += ('=' * $pad) }
+        $secretBytes = [Convert]::FromBase64String($std)
         $cipher = [System.Security.Cryptography.ProtectedData]::Protect(
             $secretBytes, $null,
             [System.Security.Cryptography.DataProtectionScope]::LocalMachine
@@ -839,29 +880,29 @@ if ($PlatformApiUrl -and $EnrollmentToken) {
 
         Register-ScheduledTask -TaskName $taskName -Action $action `
             -Trigger $trigger -Principal $principal -Settings $settings `
-            -Description "APT Platform fleet command handler — polls every $PollIntervalSeconds`s" `
+            -Description "APT Platform fleet command handler - polls every $PollIntervalSeconds`s" `
             | Out-Null
 
         Write-OK "Scheduled task '$taskName' installed (every $PollIntervalSeconds`s as SYSTEM)"
 
         # 5. Trigger immediate first poll for verification
         Start-ScheduledTask -TaskName $taskName
-        Write-OK "Triggered first poll — see $InstallDir\handler.log"
+        Write-OK "Triggered first poll - see $InstallDir\handler.log"
     }
 }
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # SUMMARY
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 Write-Host @"
 
-╔══════════════════════════════════════════════════════╗
++======================================================+
   Deployment Complete
   Profile  : $Profile
   Server   : $ServerIP`:$ServerPort
   Agent    : $($env:COMPUTERNAME)
-╚══════════════════════════════════════════════════════╝
++======================================================+
 "@ -ForegroundColor Green
 
 Write-Host "  Verify agent connected (run on server):" -ForegroundColor Yellow

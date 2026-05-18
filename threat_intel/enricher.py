@@ -9,9 +9,12 @@ Takes raw Detections and enriches them with:
 
 import uuid
 from datetime import datetime
+from typing import Optional
+
 from shared.schemas import Detection, EnrichedAlert
 from shared.enums import Severity
 from shared.logging import get_logger
+from threat_intel.misp_client import MispClient
 
 logger = get_logger("threat_intel.enricher")
 
@@ -58,8 +61,17 @@ RESPONSE_ACTIONS = {
 
 class ThreatIntelEnricher:
 
-    def enrich(self, detections: list[Detection]) -> EnrichedAlert:
-        """Enrich a list of related detections into a single alert."""
+    def __init__(self, misp_client: Optional[MispClient] = None):
+        # MISP correlation is optional. When supplied, populates
+        # EnrichedAlert.ioc_matches with hits against IPs/domains/hashes
+        # observed in the related events.
+        self.misp = misp_client
+
+    def enrich(self, detections: list[Detection],
+                related_events: Optional[list] = None) -> EnrichedAlert:
+        """Enrich a list of related detections into a single alert.
+        related_events: optional NormalizedEvent list whose IPs/domains/hashes
+        get cross-referenced against the MISP IoC index."""
 
         all_techniques = []
         all_tactics = set()
@@ -89,6 +101,32 @@ class ThreatIntelEnricher:
 
         overall_confidence = max(d.confidence for d in detections)
 
+        # ── MISP IoC correlation (FR-06) ────────────────────────────────────
+        ioc_matches: list[dict] = []
+        if self.misp is not None and related_events:
+            ips = sorted({e.dest_ip for e in related_events if e.dest_ip} |
+                          {e.source_ip for e in related_events if e.source_ip})
+            # Base domains from any DNS query
+            domains = set()
+            for e in related_events:
+                if e.dns_query:
+                    parts = e.dns_query.rstrip(".").split(".")
+                    if len(parts) >= 2:
+                        domains.add(".".join(parts[-2:]))
+            try:
+                ioc_matches = self.misp.match(
+                    ips=ips, domains=sorted(domains),
+                )
+                if ioc_matches:
+                    logger.info("MISP IoC matches found",
+                                count=len(ioc_matches),
+                                indicators=[m["indicator"] for m in ioc_matches])
+                    # Any IoC match escalates severity to CRITICAL — by
+                    # definition the source is on a known-bad list
+                    worst_severity = Severity.CRITICAL
+            except Exception as e:
+                logger.warning("MISP correlation failed", error=str(e))
+
         alert = EnrichedAlert(
             alert_id=f"alert_{uuid.uuid4().hex[:12]}",
             detections=detections,
@@ -96,7 +134,7 @@ class ThreatIntelEnricher:
             overall_confidence=overall_confidence,
             mitre_techniques=list(set(all_techniques)),
             mitre_tactics=sorted(all_tactics),
-            ioc_matches=[],  # TODO: MISP integration
+            ioc_matches=ioc_matches,
             attack_path=None,  # Filled by visualization module
             recommended_actions=actions,
             timestamp=datetime.utcnow(),

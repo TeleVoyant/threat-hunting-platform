@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Attack Graph — APT Platform{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h2 class="text-xl font-semibold text-slate-100">Attack Graph</h2>
+  <div class="text-sm text-slate-400">
+    Auto-rendered from DETECTION_MADE events. {{ files|length }} snapshot(s) on disk.
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+  <div class="md:col-span-3">
+    {% if current_exists %}
+    <div class="panel" style="padding: 0;">
+      <iframe
+        src="/dashboard/graph/file/current.html"
+        class="w-full"
+        style="height: 720px; border: 0; border-radius: 6px; background: #1e1e1e;"
+        title="Live attack graph"></iframe>
+    </div>
+    {% else %}
+    <div class="panel text-slate-400 italic text-center py-12">
+      No attack graph rendered yet.
+      Detections will populate this graph automatically as they fire.
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3 class="text-xs uppercase text-slate-400 tracking-wide mb-2">Snapshots</h3>
+      <ul class="text-sm space-y-1">
+        {% for f in files %}
+        <li>
+          <a href="/dashboard/graph/file/{{ f }}" target="_blank" class="font-mono text-xs">
+            {{ f }}
+          </a>
+        </li>
+        {% else %}
+        <li class="text-slate-500 italic">none</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

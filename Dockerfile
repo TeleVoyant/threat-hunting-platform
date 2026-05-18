@@ -4,8 +4,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.lock.txt .
+RUN pip install --no-cache-dir -r requirements.lock.txt
 
 # Copy platform code
 COPY shared/ shared/
@@ -25,6 +25,8 @@ COPY run_server.py .
 
 # Non-root user
 RUN useradd -m -u 1000 platform
+RUN mkdir -p /app/data/{dead_letter,audit,alerts,graphs,allowlist,fl_local,fleet,drift} \
+       && chown -R platform:platform /app/data
 USER platform
 
 EXPOSE 8000

@@ -1,0 +1,39 @@
+[
+  {
+    "type": "domain",
+    "indicator": "attacker.com",
+    "threat_type": "C2",
+    "source": "internal-ti",
+    "first_seen": "2026-04-01T00:00:00Z"
+  },
+  {
+    "type": "domain",
+    "indicator": "evil.net",
+    "threat_type": "C2",
+    "source": "internal-ti"
+  },
+  {
+    "type": "domain",
+    "indicator": "malicious.io",
+    "threat_type": "phishing",
+    "source": "internal-ti"
+  },
+  {
+    "type": "ip",
+    "indicator": "203.0.113.42",
+    "threat_type": "C2",
+    "source": "abuse.ch"
+  },
+  {
+    "type": "ip",
+    "indicator": "198.51.100.5",
+    "threat_type": "scanner",
+    "source": "abuse.ch"
+  },
+  {
+    "type": "sha256",
+    "indicator": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "threat_type": "ransomware",
+    "source": "virustotal"
+  }
+]

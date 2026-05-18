@@ -26,9 +26,10 @@ events from different users/hosts into one vector would dilute the signal. The
 from collections import defaultdict
 from typing import Optional
 
-from features.pipeline import FeaturePipeline
+from detection.drift_monitor import DriftMonitor
 from detection.registry import registry
-from shared.events import bus, DETECTION_MADE, EVENT_INGESTED
+from features.pipeline import FeaturePipeline
+from shared.events import bus, DETECTION_MADE, EVENT_INGESTED, MODEL_DRIFT_DETECTED
 from shared.logging import get_logger
 from shared.schemas import NormalizedEvent
 
@@ -49,6 +50,8 @@ class DetectionSubscriber:
         self,
         pipeline: FeaturePipeline,
         detector_config: dict,
+        *,
+        drift_persistence_dir: str = "data/drift",
     ):
         self.pipeline = pipeline
         # detector_config matches config/detectors.yml structure:
@@ -56,6 +59,14 @@ class DetectionSubscriber:
         #                         "model_path": "detection/models/.."}, ...}
         self.detector_config = detector_config
         self._loaded: set[str] = set()
+        # One DriftMonitor per loaded detector. Tracks confidence distribution
+        # and detection rate. check_drift() is called per batch (cheap — just
+        # rolling stats over the last 1000 predictions).
+        self._monitors: dict[str, DriftMonitor] = {}
+        # Debounce: only emit MODEL_DRIFT_DETECTED on state TRANSITIONS
+        # (clean → drift). Without this we'd fire on every batch while drift
+        # persists, swamping subscribers.
+        self._drift_state: dict[str, bool] = {}
 
         for name, cfg in detector_config.items():
             if not cfg.get("enabled"):
@@ -66,6 +77,10 @@ class DetectionSubscriber:
                 if model_path:
                     det.load_model(model_path)
                     self._loaded.add(name)
+                    self._monitors[name] = DriftMonitor(
+                        detector_name=name,
+                        persistence_dir=drift_persistence_dir,
+                    )
                     logger.info("Detector model loaded", name=name, path=model_path)
                 else:
                     logger.warning("Detector enabled but no model_path", name=name)
@@ -89,6 +104,20 @@ class DetectionSubscriber:
             "DetectionSubscriber registered",
             loaded_detectors=sorted(self._loaded),
         )
+
+    def set_drift_baselines(self) -> dict[str, bool]:
+        """
+        Snapshot current per-detector confidence distributions as the drift
+        baseline. Call after the platform has processed enough events for the
+        models to be in a representative steady state (e.g., after 1 hour
+        of normal traffic). Returns {detector_name: success_bool}.
+        """
+        results = {}
+        for name, monitor in self._monitors.items():
+            had_baseline_before = monitor.baseline_stats is not None
+            monitor.set_baseline()
+            results[name] = monitor.baseline_stats is not None and not had_baseline_before
+        return results
 
     # ── Handler ─────────────────────────────────────────────────────────────
 
@@ -126,6 +155,10 @@ class DetectionSubscriber:
                                  detector=name, error=str(e))
                     continue
 
+                # Drift monitor sees EVERY prediction (above OR below threshold)
+                # — that's how it tracks confidence distribution shifts.
+                self._monitors[name].record_prediction(detection)
+
                 if detection.confidence < threshold:
                     continue
 
@@ -143,6 +176,25 @@ class DetectionSubscriber:
                     "features":  features,
                     "events":    group_events,
                 })
+
+        # ── Per-batch drift check (cheap — just compares rolling stats) ──────
+        for name, monitor in self._monitors.items():
+            report = monitor.check_drift()
+            currently_drifting = report is not None
+            previously_drifting = self._drift_state.get(name, False)
+
+            # Emit only on state transition: was-clean → now-drifting
+            if currently_drifting and not previously_drifting:
+                await bus.emit(MODEL_DRIFT_DETECTED, {
+                    "detector": name,
+                    "drift":    report,
+                })
+                logger.warning("Drift state transition: clean → drifting",
+                               detector=name)
+            elif not currently_drifting and previously_drifting:
+                logger.info("Drift state transition: drifting → clean",
+                            detector=name)
+            self._drift_state[name] = currently_drifting
 
     # ── Grouping ────────────────────────────────────────────────────────────
 

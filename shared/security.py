@@ -61,6 +61,11 @@ PERMISSIONS = {
         "retrain_models",
         "manage_users",
         "view_audit_log",
+        # Narrowly scoped: opt THIS organization into the next FL round and
+        # view our own contribution history. Does NOT grant access to the FL
+        # coordinator itself, other orgs' contributions, or aggregated weights.
+        # See federated/fl_security.py for FL coordinator's separate user base.
+        "manage_fl_local",
     },
 }
 

@@ -10,6 +10,7 @@ Every model file is:
 """
 
 import hashlib
+import hmac as _hmac
 import json
 import shutil
 import time
@@ -18,6 +19,11 @@ from typing import Optional
 
 import xgboost as xgb
 from shared.logging import get_logger
+
+
+def hmac_compare(a: str, b: str) -> bool:
+    """Constant-time string comparison for HMAC verification."""
+    return _hmac.compare_digest(a, b)
 
 logger = get_logger("detection.model_store")
 
@@ -81,21 +87,69 @@ class ModelStore:
 
     def load_model(self, name: str, version: str = "latest") -> xgb.Booster:
         """
-        Load model with integrity verification.
+        Load model from the store with integrity verification.
         Raises SecurityError if signature doesn't match.
         """
         if version == "latest":
             version_dir = (self.base_dir / name / "latest").resolve()
         else:
             version_dir = self.base_dir / name / version
+        return self._load_verified(version_dir / "model.json", version_dir / "manifest.json",
+                                    name=name, version=version)
 
-        model_path = version_dir / "model.json"
-        manifest_path = version_dir / "manifest.json"
+    def load_from_path(self, model_ref: str) -> xgb.Booster:
+        """
+        Flexible loader that takes any of:
+          - A versioned directory path  (e.g. detection/models/lateral_movement/v123/)
+          - A model.json file with a sibling manifest.json (verified)
+          - A flat .json model file with NO manifest (loaded with a warning — legacy/dev)
 
+        Production deployments should always have manifests; the legacy path
+        is preserved so existing flat models keep working during migration.
+        """
+        path = Path(model_ref)
+
+        if path.is_dir():
+            model_path    = path / "model.json"
+            manifest_path = path / "manifest.json"
+            return self._load_verified(model_path, manifest_path,
+                                        name=path.parent.name, version=path.name)
+
+        if not path.exists():
+            raise FileNotFoundError(f"Model not found: {model_ref}")
+
+        # File path — check for sibling manifest
+        manifest_path = path.parent / "manifest.json"
+        if manifest_path.exists():
+            return self._load_verified(path, manifest_path,
+                                        name=path.parent.parent.name,
+                                        version=path.parent.name)
+
+        # Flat file with no manifest — load without verification
+        logger.warning(
+            "Loading model WITHOUT integrity verification (no sibling manifest)",
+            path=str(path),
+        )
+        model = xgb.Booster()
+        model.load_model(str(path))
+        return model
+
+    def _load_verified(
+        self,
+        model_path: Path,
+        manifest_path: Path,
+        *,
+        name: str,
+        version: str,
+    ) -> xgb.Booster:
+        """Shared verification path used by both load_model and load_from_path."""
         if not model_path.exists():
-            raise FileNotFoundError(f"Model not found: {name}/{version}")
+            raise FileNotFoundError(f"Model not found: {name}/{version} at {model_path}")
+        if not manifest_path.exists():
+            raise SecurityError(
+                f"Manifest missing for {name}/{version} — refusing to load unverified model"
+            )
 
-        # ── INTEGRITY CHECK ──
         manifest = json.loads(manifest_path.read_text())
         model_bytes = model_path.read_bytes()
         actual_hash = hashlib.sha256(model_bytes).hexdigest()
@@ -103,28 +157,23 @@ class ModelStore:
         if actual_hash != manifest["content_hash"]:
             logger.critical(
                 "MODEL INTEGRITY VIOLATION",
-                name=name,
-                version=version,
-                expected_hash=manifest["content_hash"][:16],
-                actual_hash=actual_hash[:16],
+                name=name, version=version,
+                expected=manifest["content_hash"][:16], actual=actual_hash[:16],
             )
             raise SecurityError(
-                f"Model file has been tampered with! "
-                f"Expected hash {manifest['content_hash'][:16]}..., "
-                f"got {actual_hash[:16]}..."
+                f"Model file tampered: expected hash "
+                f"{manifest['content_hash'][:16]}…, got {actual_hash[:16]}…"
             )
 
         expected_sig = self._sign(actual_hash)
-        if expected_sig != manifest["signature"]:
+        if not hmac_compare(expected_sig, manifest["signature"]):
             logger.critical("MODEL SIGNATURE INVALID", name=name, version=version)
-            raise SecurityError(
-                f"Model signature verification failed for {name}/{version}"
-            )
+            raise SecurityError(f"Model signature verification failed for {name}/{version}")
 
-        # ── LOAD ──
         model = xgb.Booster()
         model.load_model(str(model_path))
-        logger.info("Model loaded and verified", name=name, version=version)
+        logger.info("Model loaded and verified", name=name, version=version,
+                    hash=actual_hash[:16])
         return model
 
     def rollback(self, name: str, to_version: str) -> None:

@@ -1,28 +1,28 @@
 # scripts/agent_command_handler.ps1
-# ═══════════════════════════════════════════════════════════════════════════
-#   APT Threat Hunting Platform — Agent Command Handler
+# ===========================================================================
+#   APT Threat Hunting Platform - Agent Command Handler
 #
 #   Runs as SYSTEM via Task Scheduler every 60 seconds. Polls the AI Platform
 #   for pending commands, verifies HMAC signatures, executes WHITELISTED
 #   operations, and reports results back.
 #
 #   Configuration (registry HKLM:\SOFTWARE\APTPlatform):
-#     AgentId               — this host's identifier (e.g. computer name)
-#     ServerUrl             — base URL of AI Platform API (e.g. https://api:8000)
-#     AgentSecret           — base64 of DPAPI-encrypted HMAC secret (machine scope)
-#     ServerIP              — Wazuh manager IP (used by SET_PROFILE re-deploy)
-#     RegistrationPassword  — used by SET_PROFILE re-deploy
-#     Profile               — current profile (Lean|Balanced|Full)
-#     ScriptDir             — directory containing deploy_endpoint.ps1
+#     AgentId               - this host's identifier (e.g. computer name)
+#     ServerUrl             - base URL of AI Platform API (e.g. https://api:8000)
+#     AgentSecret           - base64 of DPAPI-encrypted HMAC secret (machine scope)
+#     ServerIP              - Wazuh manager IP (used by SET_PROFILE re-deploy)
+#     RegistrationPassword  - used by SET_PROFILE re-deploy
+#     Profile               - current profile (Lean|Balanced|Full)
+#     ScriptDir             - directory containing deploy_endpoint.ps1
 #
 #   SECURITY MODEL
-#   • Agent secret: never leaves DPAPI-encrypted form on disk.
-#   • Every command from server is HMAC-SHA256 signed; we verify before exec.
-#   • Replay defense: server includes monotonic sequence + expires_at; we
+#   * Agent secret: never leaves DPAPI-encrypted form on disk.
+#   * Every command from server is HMAC-SHA256 signed; we verify before exec.
+#   * Replay defense: server includes monotonic sequence + expires_at; we
 #     drop expired commands and the server itself drops out-of-window auth.
-#   • Whitelist: only command types in $Handlers will execute. Anything else
+#   * Whitelist: only command types in $Handlers will execute. Anything else
 #     is rejected and reported back as "rejected".
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 $ErrorActionPreference = "Stop"
 
@@ -48,7 +48,7 @@ function Get-Setting {
     }
 }
 
-# ── Load configuration ─────────────────────────────────────────────────────
+# -- Load configuration -----------------------------------------------------
 
 try {
     $AgentId   = Get-Setting "AgentId"
@@ -60,7 +60,7 @@ try {
     exit 1
 }
 
-# ── Decrypt agent secret via DPAPI (machine scope) ─────────────────────────
+# -- Decrypt agent secret via DPAPI (machine scope) -------------------------
 
 Add-Type -AssemblyName System.Security
 try {
@@ -74,7 +74,7 @@ try {
     exit 1
 }
 
-# ── Crypto helpers ─────────────────────────────────────────────────────────
+# -- Crypto helpers ---------------------------------------------------------
 
 function Get-HmacHex {
     param([byte[]]$Key, [string]$Message)
@@ -89,13 +89,17 @@ function Get-HmacHex {
 }
 
 function Get-AuthHeader {
-    $ts      = [int][double]::Parse((Get-Date -UFormat %s))
+    # PS 5.1 bug: Get-Date -UFormat %s returns LOCAL time treated as UTC.
+    # On a non-UTC host this signs a timestamp offset by the local TZ, and
+    # the server rejects it as "Timestamp out of range".
+    # Use UtcNow + epoch math instead.
+    $ts      = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
     $payload = "{0}:{1}" -f $AgentId, $ts
     $sig     = Get-HmacHex -Key $secretBytes -Message $payload
     return "APT-HMAC agent_id=$AgentId,ts=$ts,sig=$sig"
 }
 
-# ── Whitelisted command handlers ───────────────────────────────────────────
+# -- Whitelisted command handlers -------------------------------------------
 # Each handler returns @{ status = "success|failure|rejected"; output = "..." }
 
 function Invoke-SetProfile {
@@ -179,20 +183,49 @@ function Invoke-ToggleTelemetry {
 function Invoke-RestartServices {
     param($Params)
     $svc = "$($Params.service)"
-    try {
-        switch ($svc) {
-            "wazuh"  { Restart-Service WazuhSvc -Force -ErrorAction Stop }
-            "sysmon" { Restart-Service Sysmon64 -Force -ErrorAction Stop }
-            "all"    {
-                Restart-Service WazuhSvc -Force -ErrorAction Stop
-                Restart-Service Sysmon64 -Force -ErrorAction Stop
-            }
-            default { return @{ status = "rejected"; output = "Invalid service: $svc" } }
+
+    # Sysmon hardens its service DACL against SCM stop/start as an anti-tamper
+    # measure. The supported way to apply a new Sysmon config is `Sysmon64.exe
+    # -c <config.xml>` (live reload, no service restart) - which is what the
+    # update_sysmon handler does. So "sysmon" maps to a no-op here, and "all"
+    # only actually restarts Wazuh.
+    $results = @()
+    $hadFailure = $false
+
+    function Try-Restart {
+        param([string]$Name)
+        try {
+            Restart-Service -Name $Name -Force -ErrorAction Stop
+            return @{ ok = $true; msg = "$Name restarted" }
+        } catch {
+            return @{ ok = $false; msg = "$Name failed: $_" }
         }
-        return @{ status = "success"; output = "$svc restarted" }
-    } catch {
-        return @{ status = "failure"; output = "$_" }
     }
+
+    switch ($svc) {
+        "wazuh"  {
+            $r = Try-Restart "WazuhSvc"
+            $results += $r.msg
+            if (-not $r.ok) { $hadFailure = $true }
+        }
+        "sysmon" {
+            $results += "Sysmon cannot be restarted via SCM (hardened DACL). Use update_sysmon to push a new config."
+            $hadFailure = $true
+        }
+        "all"    {
+            $r = Try-Restart "WazuhSvc"
+            $results += $r.msg
+            if (-not $r.ok) { $hadFailure = $true }
+            $results += "Sysmon left running (anti-tamper DACL; use update_sysmon to apply config changes)."
+        }
+        default {
+            return @{ status = "rejected"; output = "Invalid service: $svc" }
+        }
+    }
+
+    $output = $results -join "; "
+    $status = if ($hadFailure) { "failure" } else { "success" }
+    return @{ status = $status; output = $output }
 }
 
 function Invoke-GetStatus {
@@ -220,7 +253,7 @@ function Invoke-UpdateSysmon {
     }
     try {
         $xml = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
-        # Basic sanity check — must contain <Sysmon> root
+        # Basic sanity check - must contain <Sysmon> root
         if ($xml -notmatch "<Sysmon\s") {
             return @{ status = "rejected"; output = "Payload is not a Sysmon config" }
         }
@@ -239,7 +272,7 @@ function Invoke-UpdateSysmon {
     }
 }
 
-# ── Dispatch table — WHITELIST ─────────────────────────────────────────────
+# -- Dispatch table - WHITELIST ---------------------------------------------
 $Handlers = @{
     "set_profile"      = ${function:Invoke-SetProfile}
     "toggle_telemetry" = ${function:Invoke-ToggleTelemetry}
@@ -248,7 +281,7 @@ $Handlers = @{
     "update_sysmon"    = ${function:Invoke-UpdateSysmon}
 }
 
-# ── Send result back to server ─────────────────────────────────────────────
+# -- Send result back to server ---------------------------------------------
 
 function Send-Result {
     param([string]$CommandId, [hashtable]$Result)
@@ -273,9 +306,9 @@ function Send-Result {
     }
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 #                              MAIN POLL LOOP
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 try {
     Write-Log "INFO" "Polling $ServerUrl/agents/$AgentId/poll"
@@ -294,7 +327,7 @@ try {
         # 1. Verify signature over the inner payload bytes
         $expectedSig = Get-HmacHex -Key $secretBytes -Message $env.signed_payload
         if ($expectedSig -ne $env.signature) {
-            Write-Log "SECURITY" "Signature mismatch — DROPPING command (possible tamper)"
+            Write-Log "SECURITY" "Signature mismatch - DROPPING command (possible tamper)"
             continue
         }
 
@@ -308,7 +341,7 @@ try {
 
         # 3. Verify it's targeted at us
         if ($cmd.agent_id -ne $AgentId) {
-            Write-Log "SECURITY" "Command targeted $($cmd.agent_id) but we are $AgentId — DROPPING"
+            Write-Log "SECURITY" "Command targeted $($cmd.agent_id) but we are $AgentId - DROPPING"
             continue
         }
 
@@ -316,7 +349,7 @@ try {
         try {
             $expUtc = [DateTime]::Parse($cmd.expires_at).ToUniversalTime()
             if ($expUtc -lt [DateTime]::UtcNow) {
-                Write-Log "WARN" "Command $($cmd.command_id) ($($cmd.command_type)) expired — skipping"
+                Write-Log "WARN" "Command $($cmd.command_id) ($($cmd.command_type)) expired - skipping"
                 Send-Result $cmd.command_id @{ status = "rejected"; output = "Command expired before execution" }
                 continue
             }

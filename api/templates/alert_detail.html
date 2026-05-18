@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Alert {{ alert.alert_id[:8] }} — APT Platform{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <a href="/dashboard/alerts" class="text-sm">← back to alerts</a>
+</div>
+
+<div class="flex items-start justify-between mb-4">
+  <div>
+    <h2 class="text-xl font-semibold text-slate-100 mb-1">
+      <span class="pill sev-{{ alert.overall_severity }}">{{ alert.overall_severity }}</span>
+      Alert <span class="font-mono text-base">{{ alert.alert_id }}</span>
+    </h2>
+    <div class="text-sm text-slate-400">
+      Confidence: <strong class="text-slate-200">{{ "%.1f%%"|format(alert.overall_confidence * 100) }}</strong>
+      &middot;
+      Status: <span class="status-{{ alert.status or 'open' }}">●</span> {{ alert.status or 'open' }}
+      &middot;
+      Time: {{ alert.timestamp[:19] }} UTC
+    </div>
+  </div>
+  <div class="flex gap-2">
+    {% if can_ack and (alert.status or 'open') == 'open' %}
+    <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/ack">
+      <button type="submit">Acknowledge</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+  <div class="panel md:col-span-2">
+    <h3 class="text-xs uppercase text-slate-400 tracking-wide mb-2">Detections</h3>
+    {% for d in alert.detections %}
+    <div class="border-b border-slate-700 pb-3 mb-3 last:border-0 last:mb-0 last:pb-0">
+      <div class="flex items-center gap-3 mb-1">
+        <strong class="text-slate-100">{{ d.detector_name }}</strong>
+        <span class="pill sev-{{ d.severity }}">{{ d.severity }}</span>
+        <span class="text-xs text-slate-400">conf {{ "%.1f%%"|format(d.confidence * 100) }}</span>
+      </div>
+      <div class="text-sm text-slate-300">{{ d.description }}</div>
+      <div class="text-xs text-slate-400 mt-1">
+        Source: <span class="font-mono">{{ d.source_entity }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="panel">
+    <h3 class="text-xs uppercase text-slate-400 tracking-wide mb-2">MITRE ATT&CK</h3>
+    {% for t in alert.mitre_techniques %}
+      <span class="pill bg-slate-700 text-slate-200 mr-1 mb-1 inline-block font-mono">{{ t }}</span>
+    {% endfor %}
+    <h3 class="text-xs uppercase text-slate-400 tracking-wide mt-4 mb-2">Tactics</h3>
+    {% for t in alert.mitre_tactics %}
+      <div class="text-xs text-slate-300 mb-1">{{ t }}</div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="panel mb-4">
+  <h3 class="text-xs uppercase text-slate-400 tracking-wide mb-2">Recommended actions</h3>
+  <ul class="text-sm text-slate-300 list-disc list-inside space-y-1">
+  {% for a in alert.recommended_actions %}
+    <li>{{ a }}</li>
+  {% endfor %}
+  </ul>
+</div>
+
+<div class="panel">
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="text-xs uppercase text-slate-400 tracking-wide">Why did this fire? (SHAP + global importance)</h3>
+    <a href="/alerts/{{ alert.alert_id }}/explanation" class="text-xs">Raw JSON</a>
+  </div>
+  <iframe
+    src="/alerts/{{ alert.alert_id }}/explanation.html"
+    class="w-full"
+    style="height: 720px; border: 1px solid #334155; border-radius: 4px;"
+    title="Alert explanation"></iframe>
+</div>
+
+{% endblock %}

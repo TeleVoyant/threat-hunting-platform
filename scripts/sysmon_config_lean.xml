@@ -1,37 +1,37 @@
 <!--
-  Sysmon configuration — LEAN profile
+  Sysmon configuration - LEAN profile
   APT Threat Hunting Platform: minimal footprint, maximum detection signal.
 
-  Resource impact: ~0.3–0.5% CPU average, ~12MB RAM.
+  Resource impact: ~0.3-0.5% CPU average, ~12MB RAM.
   Use on: older hardware, shared VMs, endpoints where IT requires low overhead.
 
   Trade-offs vs. balanced:
-  - No EID 7 (ImageLoad)        — saves ~40% of Sysmon event volume
-  - No EID 8 (RemoteThread)     — covered by EID 10 for the critical LSASS case
-  - No EID 11 (FileCreate)      — file-staging detection relies on server-side rules
-  - No EID 12/14 (RegKey)       — registry value-set (EID 13) still covers Run keys
-  - No EID 17/18 (Pipe)         — named-pipe lateral movement not collected
-  - No EID 19-21 (WMI)          — WMI subscription detection relies on Windows event logs
-  - No EID 25 (ProcessTamper)   — defense evasion detection relies on other indicators
-  - No CheckRevocation           — removes per-process cert validation overhead
-  - No file hashing              — eliminates SHA256 per-process CPU cost
+  - No EID 7 (ImageLoad)        - saves ~40% of Sysmon event volume
+  - No EID 8 (RemoteThread)     - covered by EID 10 for the critical LSASS case
+  - No EID 11 (FileCreate)      - file-staging detection relies on server-side rules
+  - No EID 12/14 (RegKey)       - registry value-set (EID 13) still covers Run keys
+  - No EID 17/18 (Pipe)         - named-pipe lateral movement not collected
+  - No EID 19-21 (WMI)          - WMI subscription detection relies on Windows event logs
+  - No EID 25 (ProcessTamper)   - defense evasion detection relies on other indicators
+  - No CheckRevocation           - removes per-process cert validation overhead
+  - SHA256-only hashing          - one cheap algorithm (Sysmon requires at least one)
 
   Core detection coverage retained:
   - Process creation (credential tools, LOLBins)
   - Lateral movement network connections (SMB, RDP, WinRM, WMI, SSH)
-  - LSASS access (credential dumping — #1 lateral movement precursor)
+  - LSASS access (credential dumping - #1 lateral movement precursor)
   - Registry Run key persistence
   - All DNS queries (required for DNS tunneling detection)
 -->
 <Sysmon schemaversion="4.90">
-  <!-- No hashing in lean mode — eliminates per-process SHA256 CPU cost -->
-  <HashAlgorithms>none</HashAlgorithms>
+  <!-- Sysmon requires at least one valid algorithm; SHA256 is the cheapest single choice -->
+  <HashAlgorithms>SHA256</HashAlgorithms>
 
   <EventFiltering>
 
-    <!-- ═══════════════════════════════════════════════════════
-         EID 1: Process Creation — aggressive exclusion list
-         ═══════════════════════════════════════════════════════ -->
+    <!-- =======================================================
+         EID 1: Process Creation - aggressive exclusion list
+         ======================================================= -->
     <RuleGroup name="ProcessCreate" groupRelation="or">
       <ProcessCreate onmatch="exclude">
         <Image condition="is">C:\Windows\System32\conhost.exe</Image>
@@ -43,20 +43,20 @@
         <Image condition="is">C:\Windows\System32\WerFault.exe</Image>
         <Image condition="is">C:\Windows\System32\WerFaultSecure.exe</Image>
         <Image condition="is">C:\Windows\System32\spoolsv.exe</Image>
-        <!-- Browser rendering — high volume, no lateral movement value -->
+        <!-- Browser rendering - high volume, no lateral movement value -->
         <Image condition="end with">chrome.exe</Image>
         <Image condition="end with">msedge.exe</Image>
         <Image condition="end with">firefox.exe</Image>
         <Image condition="end with">brave.exe</Image>
-        <!-- Wazuh agent — avoid self-referential events -->
+        <!-- Wazuh agent - avoid self-referential events -->
         <Image condition="begin with">C:\Program Files (x86)\ossec-agent\</Image>
       </ProcessCreate>
     </RuleGroup>
 
-    <!-- ═══════════════════════════════════════════════════════
-         EID 3: Network Connection — lateral movement ports ONLY
+    <!-- =======================================================
+         EID 3: Network Connection - lateral movement ports ONLY
          HTTP/HTTPS excluded in lean mode (too much browser noise).
-         ═══════════════════════════════════════════════════════ -->
+         ======================================================= -->
     <RuleGroup name="NetworkConnect" groupRelation="or">
       <NetworkConnect onmatch="include">
         <DestinationPort condition="is">445</DestinationPort>    <!-- SMB -->
@@ -69,18 +69,18 @@
       </NetworkConnect>
     </RuleGroup>
 
-    <!-- ═══════════════════════════════════════════════════════
-         EID 10: Process Access — LSASS only (credential dumping)
-         ═══════════════════════════════════════════════════════ -->
+    <!-- =======================================================
+         EID 10: Process Access - LSASS only (credential dumping)
+         ======================================================= -->
     <RuleGroup name="ProcessAccess" groupRelation="or">
       <ProcessAccess onmatch="include">
         <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
       </ProcessAccess>
     </RuleGroup>
 
-    <!-- ═══════════════════════════════════════════════════════
-         EID 13: Registry Value Set — persistence Run keys
-         ═══════════════════════════════════════════════════════ -->
+    <!-- =======================================================
+         EID 13: Registry Value Set - persistence Run keys
+         ======================================================= -->
     <RuleGroup name="RegistryEvent" groupRelation="or">
       <RegistryEvent onmatch="include">
         <TargetObject condition="contains">CurrentVersion\Run</TargetObject>
@@ -90,11 +90,11 @@
       </RegistryEvent>
     </RuleGroup>
 
-    <!-- ═══════════════════════════════════════════════════════
-         EID 22: DNS Query — ALL (required for exfiltration detection)
+    <!-- =======================================================
+         EID 22: DNS Query - ALL (required for exfiltration detection)
          Even in lean mode, DNS queries must be collected.
          Tunneling detection depends on query volume and entropy.
-         ═══════════════════════════════════════════════════════ -->
+         ======================================================= -->
     <RuleGroup name="DnsQuery" groupRelation="or">
       <DnsQuery onmatch="exclude">
         <QueryName condition="end with">.local</QueryName>

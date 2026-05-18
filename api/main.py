@@ -105,8 +105,26 @@ async def lifespan(app: FastAPI):
         with open(detectors_yml) as f:
             import yaml as _yaml
             detector_config = (_yaml.safe_load(f) or {}).get("detectors", {})
-    detection_subscriber = DetectionSubscriber(_feature_pipeline, detector_config)
+    detection_subscriber = DetectionSubscriber(
+        _feature_pipeline, detector_config,
+        drift_persistence_dir=f"{data_dir}/drift",
+    )
     detection_subscriber.register()
+    app.state.detection_subscriber = detection_subscriber
+
+    # ── Attack graph subscriber (DETECTION_MADE → graph + HTML) ──
+    from visualization.subscriber import GraphSubscriber
+    graph_subscriber = GraphSubscriber(
+        output_dir=f"{data_dir}/graphs",
+        keep_snapshots=True,
+    )
+    graph_subscriber.register()
+    app.state.graph_subscriber = graph_subscriber
+
+    # ── Initialize Audit Trail (hash-chained) ──
+    # Must be first — alert pipeline depends on it for immutable alert-logging.
+    from observability.audit import AuditTrail
+    audit_trail = AuditTrail(db_path=f"{data_dir}/audit/audit.db")
 
     # ── Alert pipeline: DETECTION_MADE → enrich → store → publish ──
     from alert_manager.store           import AlertStore
@@ -115,7 +133,29 @@ async def lifespan(app: FastAPI):
     from threat_intel.enricher         import ThreatIntelEnricher
 
     alert_store = AlertStore(db_path=f"{data_dir}/alerts/alerts.db")
-    enricher    = ThreatIntelEnricher()
+
+    # MISP IoC correlation (FR-06) — file-mode by default; live MISP via env vars
+    from threat_intel.misp_client import MispClient
+    misp_client: "MispClient | None" = None
+    if os.environ.get("MISP_ENABLED", "1") not in ("0", "false", "False"):
+        try:
+            mode = os.environ.get("MISP_MODE", "file").lower()
+            misp_client = MispClient(
+                mode=mode,
+                path=os.environ.get("MISP_FILE_PATH", "threat_intel/iocs.json"),
+                url=os.environ.get("MISP_URL", ""),
+                api_key=os.environ.get("MISP_API_KEY", ""),
+                verify_ssl=os.environ.get("MISP_VERIFY_SSL", "1") != "0",
+                cache_ttl_seconds=int(os.environ.get("MISP_CACHE_TTL_SECONDS", "3600")),
+            )
+            logger.info("MISP IoC client initialised", mode=mode,
+                        stats=misp_client.stats())
+        except Exception as e:
+            logger.warning("MISP client init failed — alerts won't have IoC matches",
+                            error=str(e))
+            misp_client = None
+
+    enricher = ThreatIntelEnricher(misp_client=misp_client)
     wazuh_alert_path = os.environ.get(
         "WAZUH_ALERT_FILE",
         f"{data_dir}/alerts/wazuh_external.json",
@@ -128,10 +168,6 @@ async def lifespan(app: FastAPI):
     )
     alert_subscriber.register()
     app.state.alert_store = alert_store
-
-    # ── Initialize Audit Trail (hash-chained) ──
-    from observability.audit import AuditTrail
-    audit_trail = AuditTrail(db_path=f"{data_dir}/audit/audit.db")
 
     # ── Initialize Auth Manager ──
     # For FYP, JWT secret + users come from env / config/security.yml.
@@ -154,6 +190,21 @@ async def lifespan(app: FastAPI):
     ]
     auth_manager = AuthManager(jwt_secret=jwt_secret, users=users)
 
+    # ── Initialize DNS allowlist + install as the live default ──
+    # Graph builder + any future hot-path consumer reads from this store
+    # via shared.allowlist.get_default() — admin add/remove operations
+    # take effect immediately without restart.
+    from shared.allowlist import DnsAllowlist, configure_default
+    dns_allowlist = DnsAllowlist(db_path=f"{data_dir}/allowlist/dns.db")
+    configure_default(dns_allowlist)
+    app.state.dns_allowlist = dns_allowlist
+    logger.info("DNS allowlist loaded", count=dns_allowlist.count())
+
+    # ── Org-side FL state (THIS org only — never sees other orgs) ──
+    from federated.local_state import LocalFLState
+    fl_local_state = LocalFLState(db_path=f"{data_dir}/fl_local/state.db")
+    app.state.fl_local_state = fl_local_state
+
     # ── Initialize Fleet Command Queue ──
     from api.command_queue import CommandQueue
     command_queue = CommandQueue(db_path=f"{data_dir}/fleet/fleet.db")
@@ -162,6 +213,10 @@ async def lifespan(app: FastAPI):
         bootstrap_token_set=bool(os.environ.get("FLEET_BOOTSTRAP_TOKEN")),
     )
 
+    # ── Jinja2 templates for dashboard ──
+    from fastapi.templating import Jinja2Templates
+    templates = Jinja2Templates(directory="api/templates")
+
     # ── Store references on app state for route access ──
     app.state.wazuh = _wazuh
     app.state.config = _config
@@ -169,6 +224,7 @@ async def lifespan(app: FastAPI):
     app.state.audit_trail = audit_trail
     app.state.auth_manager = auth_manager
     app.state.command_queue = command_queue
+    app.state.templates = templates
 
     # ── Start background detection loop ──
     detection_enabled = os.environ.get("DETECTION_LOOP_ENABLED", "true").lower() == "true"
@@ -250,17 +306,45 @@ app.add_middleware(
 )
 
 # ── Include route modules ──
-from api.routes.health import router as health_router
-from api.routes.models import router as models_router
-from api.routes.fleet  import router as fleet_router
-from api.routes.agent  import router as agent_router
-from api.routes.alerts import router as alerts_router
+from fastapi import HTTPException
+from fastapi.responses import RedirectResponse
+
+
+@app.exception_handler(HTTPException)
+async def _redirect_303_handler(request, exc: HTTPException):
+    """When dashboard dep raises 303 (not authenticated) → real redirect."""
+    if exc.status_code == 303 and "Location" in (exc.headers or {}):
+        return RedirectResponse(
+            url=exc.headers["Location"], status_code=303,
+        )
+    # Fall through to default handling
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=exc.headers or {},
+    )
+
+
+from api.routes.health    import router as health_router
+from api.routes.models    import router as models_router
+from api.routes.fleet     import router as fleet_router
+from api.routes.agent     import router as agent_router
+from api.routes.alerts    import router as alerts_router
+from api.routes.allowlist import router as allowlist_router
+from api.routes.fl_local  import router as fl_local_router
+from api.routes.auth      import router as auth_router
+from api.routes.dashboard import router as dashboard_router
 
 app.include_router(health_router)
 app.include_router(models_router)
-app.include_router(fleet_router)   # admin: /fleet/* (JWT/API-key + manage_fleet)
-app.include_router(agent_router)   # agent: /agents/* (per-agent HMAC)
-app.include_router(alerts_router)  # dashboard: /alerts/* (read_alerts / acknowledge_alerts)
+app.include_router(fleet_router)      # admin: /fleet/* (JWT/API-key + manage_fleet)
+app.include_router(agent_router)      # agent: /agents/* (per-agent HMAC)
+app.include_router(alerts_router)     # dashboard: /alerts/* (read_alerts / acknowledge_alerts)
+app.include_router(allowlist_router)  # admin: /allowlist/dns/* (manage_detectors)
+app.include_router(fl_local_router)   # org admin: /fl/local/* (manage_fl_local) — NOT FL coordinator
+app.include_router(auth_router)       # /auth/login + /auth/logout (HTML + cookie)
+app.include_router(dashboard_router)  # /dashboard/* (HTML, cookie auth)
 
 
 @app.get("/")

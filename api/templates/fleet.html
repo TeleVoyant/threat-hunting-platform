@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Fleet — APT Platform{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h2 class="text-xl font-semibold text-slate-100">Fleet</h2>
+  <div class="text-sm text-slate-400">
+    {{ agents|length }} enrolled agent(s)
+  </div>
+</div>
+
+<div class="panel">
+  <table class="w-full">
+    <thead>
+      <tr>
+        <th>Agent</th>
+        <th>Profile</th>
+        <th>Last status</th>
+        <th>Last seen</th>
+        <th>Sequence</th>
+        <th>Pending</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in agents %}
+      <tr>
+        <td class="font-mono">{{ a.agent_id }}</td>
+        <td>
+          <span class="pill bg-slate-700 text-slate-200">{{ a.profile or '—' }}</span>
+        </td>
+        <td>
+          {% if a.last_status %}
+            <span class="status-{{ 'active' if a.last_status == 'ok' else 'open' }}">●</span> {{ a.last_status }}
+          {% else %}
+            <span class="text-slate-500">never seen</span>
+          {% endif %}
+        </td>
+        <td class="text-xs text-slate-400">
+          {% if a.last_seen_at %}
+            {{ ((a.last_seen_at)|round)|int }}
+          {% else %}—{% endif %}
+        </td>
+        <td class="text-slate-400">{{ a.current_sequence }}</td>
+        <td>
+          {% if a.pending_commands > 0 %}
+          <span class="pill bg-amber-900 text-amber-200">{{ a.pending_commands }}</span>
+          {% else %}
+          <span class="text-slate-500">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <details class="inline-block">
+            <summary class="btn btn-secondary cursor-pointer" style="display:inline-block;">Send command</summary>
+            <div class="mt-2 panel" style="background:#0f172a; padding:10px; min-width:280px;">
+              <form method="post" action="/dashboard/fleet/{{ a.agent_id }}/command" class="space-y-2">
+                <select name="command_type" required>
+                  <option value="set_profile">Set profile</option>
+                  <option value="toggle_telemetry">Toggle telemetry</option>
+                  <option value="restart_services">Restart services</option>
+                  <option value="get_status">Get status</option>
+                </select>
+
+                <select name="profile" class="text-xs">
+                  <option value="">— profile (set_profile only) —</option>
+                  <option value="Lean">Lean</option>
+                  <option value="Balanced">Balanced</option>
+                  <option value="Full">Full</option>
+                </select>
+
+                <select name="source" class="text-xs">
+                  <option value="">— source (toggle_telemetry only) —</option>
+                  <option value="sysmon">sysmon</option>
+                  <option value="dns_client">dns_client</option>
+                  <option value="firewall">firewall</option>
+                  <option value="wmi">wmi</option>
+                  <option value="defender">defender</option>
+                  <option value="tasksched">tasksched</option>
+                  <option value="powershell">powershell</option>
+                </select>
+
+                <label class="text-xs text-slate-400">
+                  <input type="checkbox" name="enabled"> enabled (toggle_telemetry only)
+                </label>
+
+                <select name="service" class="text-xs">
+                  <option value="">— service (restart_services only) —</option>
+                  <option value="wazuh">wazuh</option>
+                  <option value="sysmon">sysmon</option>
+                  <option value="all">all</option>
+                </select>
+
+                <button type="submit" class="w-full">Enqueue</button>
+              </form>
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-slate-500 italic text-center py-6">
+        No agents enrolled. Run <code class="font-mono text-xs bg-slate-900 px-2 py-1 rounded">deploy_endpoint.ps1</code> on a Windows endpoint to enroll one.
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

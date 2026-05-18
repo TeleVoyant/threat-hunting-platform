@@ -3,7 +3,7 @@
 wazuh:
   manager:
     # Central server address — change this to your Wazuh Manager IP/hostname
-    host: "localhost"
+    host: "localhost" # docker-compose service name; resolved to container IP on internal-net
     api_port: 55000
     api_protocol: "https"
     # Agent registration port (for laptops connecting to this server)
@@ -12,14 +12,14 @@ wazuh:
   credentials:
     # For FYP dev: inline credentials. Production: use Docker secrets.
     username: "wazuh-wui"
-    password: "${WAZUH_API_PASSWORD}"    # Resolved from env var or Docker secret
+    password: "${WAZUH_API_PASSWORD}" # Resolved from env var or Docker secret
 
   api:
-    verify_ssl: false                     # false for self-signed certs in Docker
+    verify_ssl: false # false for self-signed certs in Docker
     timeout_seconds: 30
     max_retries: 3
-    circuit_breaker_threshold: 5          # Open circuit after 5 consecutive failures
-    circuit_breaker_reset_seconds: 60     # Try again after 60s
+    circuit_breaker_threshold: 5 # Open circuit after 5 consecutive failures
+    circuit_breaker_reset_seconds: 60 # Try again after 60s
 
   # Dashboard (for alert viewing by SOC analysts)
   dashboard:

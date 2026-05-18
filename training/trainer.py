@@ -213,21 +213,32 @@ def train_booster(
 def train_model(
     labeled_events: list[tuple[NormalizedEvent, int]],
     pipeline: FeaturePipeline,
-    output_path: str,
     *,
+    model_name: Optional[str] = None,
+    model_store=None,
+    output_path: Optional[str] = None,
     window_minutes: int = 5,
     grouping: str = "hostname",
     num_boost_round: int = 200,
+    extra_params: Optional[dict] = None,
 ) -> dict:
     """
-    Train a model end-to-end and persist it to output_path.
+    Train a model end-to-end and persist it.
 
-    Pipeline must already have the right extractors registered (e.g., for
-    the lateral_movement model, register all six; for dns_exfiltration,
-    register all six too — the model will simply learn that DNS features
-    matter most. Using one pipeline for all detectors keeps train/serve
-    consistent).
+    Two save modes:
+      - PRODUCTION: pass `model_store` (ModelStore) and `model_name`.
+        Saves to {store.base_dir}/{model_name}/v{ts}/{model.json,manifest.json}
+        with HMAC signature. Updates the `latest` symlink.
+      - LEGACY/TEST: pass `output_path` (flat .json file). No manifest.
+        DetectionSubscriber will load it without integrity verification.
+
+    Returns the metrics dict (always includes "saved_at" with the resolved path).
     """
+    if not (model_store and model_name) and not output_path:
+        raise ValueError(
+            "Provide either (model_store + model_name) or output_path"
+        )
+
     windowed = window_events(labeled_events, window_minutes, grouping)
     logger.info("Windowing complete",
                 window_count=len(windowed),
@@ -238,13 +249,27 @@ def train_model(
                 shape=tuple(X.shape), positives=int(y.sum()))
 
     booster, metrics = train_booster(
-        X, y, feature_names, num_boost_round=num_boost_round
+        X, y, feature_names,
+        num_boost_round=num_boost_round,
+        params=extra_params,    # tuner-supplied overrides win over DEFAULT_PARAMS
     )
     metrics["window_minutes"] = window_minutes
     metrics["grouping"]       = grouping
+    metrics["feature_names"]  = feature_names  # persisted in manifest
+    if extra_params:
+        metrics["tuned_params"] = extra_params
 
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    booster.save_model(output_path)
-    logger.info("Model saved", path=output_path, metrics=metrics)
+    if model_store and model_name:
+        version = model_store.save_model(booster, model_name, metadata=metrics)
+        saved_at = str(model_store.base_dir / model_name / version)
+        metrics["saved_at"] = saved_at
+        metrics["version"]  = version
+        logger.info("Model saved (signed)", name=model_name,
+                    version=version, path=saved_at)
+    else:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        booster.save_model(output_path)
+        metrics["saved_at"] = output_path
+        logger.info("Model saved (UNSIGNED — legacy mode)", path=output_path)
 
     return metrics

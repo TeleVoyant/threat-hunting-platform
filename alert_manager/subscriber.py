@@ -78,8 +78,16 @@ class AlertSubscriber:
             return
 
         # ── 2. Enrich ─────────────────────────────────────────────────────────
+        # Pass the events that triggered this detection so the enricher can
+        # pull IPs/domains for MISP IoC correlation. Older enricher versions
+        # ignored the kwarg; we use a guarded call for back-compat.
+        events = data.get("events", []) or []
         try:
-            alert: EnrichedAlert = self.enricher.enrich([det])
+            try:
+                alert: EnrichedAlert = self.enricher.enrich([det], related_events=events)
+            except TypeError:
+                # Enricher predates the related_events kwarg
+                alert = self.enricher.enrich([det])
         except Exception as e:
             logger.error("Enrichment failed",
                          detector=det.detector_name, error=str(e))

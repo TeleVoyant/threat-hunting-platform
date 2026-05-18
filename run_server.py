@@ -224,8 +224,8 @@ def main():
     print(f"""
     ╔══════════════════════════════════════════════════════╗
     ║   APT Threat Hunting Platform v1.0.0                 ║
-    ║   Mode: {args.mode:<44}                              ║
-    ║   Config: {args.config_dir:<42}                      ║
+    ║   Mode: {args.mode:<44}                     ║
+    ║   Config: {args.config_dir:<42}         ║
     ╚══════════════════════════════════════════════════════╝
     """)
 

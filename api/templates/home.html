@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Home — APT Platform{% endblock %}
+{% block content %}
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+  <div class="panel">
+    <div class="text-xs uppercase text-slate-400 tracking-wide">Total alerts</div>
+    <div class="text-3xl font-bold text-slate-100">{{ stats.total_alerts }}</div>
+  </div>
+  <div class="panel">
+    <div class="text-xs uppercase text-slate-400 tracking-wide">Open</div>
+    <div class="text-3xl font-bold text-amber-400">{{ stats.open_alerts }}</div>
+  </div>
+  <div class="panel">
+    <div class="text-xs uppercase text-slate-400 tracking-wide">Critical (open)</div>
+    <div class="text-3xl font-bold text-red-500">{{ stats.by_severity.get('critical', 0) }}</div>
+  </div>
+  <div class="panel">
+    <div class="text-xs uppercase text-slate-400 tracking-wide">High (open)</div>
+    <div class="text-3xl font-bold text-orange-500">{{ stats.by_severity.get('high', 0) }}</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Recent alerts (last 24h)</h2>
+    <a href="/dashboard/alerts" class="text-xs">View all →</a>
+  </div>
+  <table class="w-full">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Detection</th>
+        <th>Source entity</th>
+        <th>Confidence</th>
+        <th>Status</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in recent %}
+      <tr>
+        <td><span class="pill sev-{{ a.overall_severity }}">{{ a.overall_severity }}</span></td>
+        <td>
+          <a href="/dashboard/alerts/{{ a.alert_id }}">
+            {% for d in a.detections %}<div>{{ d.detector_name }}</div>{% endfor %}
+          </a>
+        </td>
+        <td>{% for d in a.detections %}<div class="font-mono text-xs">{{ d.source_entity }}</div>{% endfor %}</td>
+        <td>{{ "%.0f%%"|format(a.overall_confidence * 100) }}</td>
+        <td><span class="status-{{ a.status if a.status else 'open' }}">●</span> {{ a.status if a.status else 'open' }}</td>
+        <td class="text-slate-400 text-xs">{{ a.timestamp[:19] }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-slate-500 italic text-center py-6">No alerts in the last 24 hours.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

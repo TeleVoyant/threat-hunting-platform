@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Login — APT Threat Hunting Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    input { background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+            padding: 8px 12px; border-radius: 4px; width: 100%; font-size: 14px; }
+    input:focus { outline: none; border-color: #3b82f6; }
+    button { background: #3b82f6; color: white; padding: 8px 16px;
+              border-radius: 4px; font-size: 14px; font-weight: 500;
+              border: none; cursor: pointer; width: 100%; }
+    button:hover { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen flex items-center justify-center">
+    <div class="bg-slate-800 p-8 rounded-lg shadow-xl w-96">
+      <h1 class="text-xl font-bold text-slate-100 mb-2">APT Threat Hunting Platform</h1>
+      <p class="text-sm text-slate-400 mb-6">Sign in with your operator credentials</p>
+
+      {% if error %}
+      <div class="bg-red-900/40 border border-red-700 text-red-200 px-3 py-2 rounded mb-4 text-sm">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="post" action="/auth/login">
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <label class="block text-xs text-slate-400 uppercase tracking-wide mb-1">Username</label>
+        <input type="text" name="username" autofocus required class="mb-4">
+
+        <label class="block text-xs text-slate-400 uppercase tracking-wide mb-1">API Key</label>
+        <input type="password" name="api_key" required class="mb-6">
+
+        <button type="submit">Sign in</button>
+      </form>
+
+      <p class="text-xs text-slate-500 mt-6 text-center">
+        Don't have an API key? Contact your platform administrator.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

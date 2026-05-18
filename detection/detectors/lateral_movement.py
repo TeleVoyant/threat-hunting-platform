@@ -1,9 +1,13 @@
 # detection/detectors/lateral_movement.py
+import os
+
 import xgboost as xgb
-from shared.interfaces import BaseDetector
-from shared.schemas import FeatureVector, Detection
-from shared.enums import Severity, DetectionType
+
+from detection.model_store import ModelStore
 from detection.registry import registry
+from shared.enums import DetectionType, Severity
+from shared.interfaces import BaseDetector
+from shared.schemas import Detection, FeatureVector
 
 
 class LateralMovementDetector(BaseDetector):
@@ -18,19 +22,28 @@ class LateralMovementDetector(BaseDetector):
         return ["auth", "process", "temporal", "behavioral", "network"]
 
     def load_model(self, model_path: str) -> None:
-        self.model = xgb.Booster()
-        self.model.load_model(model_path)
+        # Use ModelStore for HMAC-verified loading. Falls back to plain load
+        # only when no manifest is present (logged as a warning).
+        store = ModelStore(
+            base_dir="detection/models",
+            signing_key=os.environ.get("MODEL_SIGNING_KEY", ""),
+        )
+        self.model = store.load_from_path(model_path)
 
     def predict(self, features: FeatureVector) -> Detection:
-        import xgboost as xgb
+        from detection.explainer import SHAPExplainer
 
-        # Pass feature_names so XGBoost validates schema match between
-        # training and inference. Mismatch raises a clear error.
+        feature_names = list(features.features.keys())
         dmatrix = xgb.DMatrix(
             [list(features.features.values())],
-            feature_names=list(features.features.keys()),
+            feature_names=feature_names,
         )
         confidence = float(self.model.predict(dmatrix)[0])
+
+        # SHAP explainability — top 5 features that drove this prediction
+        contributing = SHAPExplainer(top_k=5).explain(
+            self.model, dmatrix, feature_names
+        )
 
         return Detection(
             detection_id=f"det_{features.event_window_id}_{self.name()}",
@@ -40,7 +53,7 @@ class LateralMovementDetector(BaseDetector):
             severity=self._score_severity(confidence),
             source_entity=features.source_entity,
             description=f"Credential-based lateral movement detected (confidence: {confidence:.0%})",
-            contributing_features={},  # Filled by explainer
+            contributing_features=contributing,
             mitre_techniques=self.get_mitre_techniques(),
             timestamp=features.timestamp_end,
             event_window_id=features.event_window_id,

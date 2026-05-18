@@ -290,6 +290,12 @@ class EventPreprocessor:
         # Extract from Wazuh nested format first
         flat = self._extract_wazuh_event(raw)
 
+        # FR-01: pseudonymize PII fields (usernames, user-path embeddings)
+        # before they enter the NormalizedEvent + downstream stores.
+        # Toggleable via APT_ANONYMIZE env var (default on).
+        from shared.anonymizer import anonymize_event
+        flat = anonymize_event(flat)
+
         # ── Timestamp ────────────────────────────────────────────────────────
         ts = flat.get("timestamp")
         if ts:

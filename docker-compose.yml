@@ -23,21 +23,34 @@
 #
 # ══════════════════════════════════════════════════════════════
 
-version: "3.8"
+# version: "3.8"
 
 services:
-
   # ── WAZUH SIEM STACK ──────────────────────────────────
   wazuh-manager:
     image: wazuh/wazuh-manager:4.7.0
     hostname: wazuh-manager
     ports:
-      - "1514:1514"           # Agent communication (laptops connect here)
-      - "1515:1515"           # Agent registration
-      - "55000:55000"         # REST API (AI Platform connects here)
+      - "1514:1514" # Agent communication (laptops connect here)
+      - "1515:1515" # Agent registration
+      - "55000:55000" # REST API (AI Platform connects here)
     volumes:
       - wazuh-data:/var/ossec/data
       - wazuh-etc:/var/ossec/etc
+      # Bind-mount the registration password so authd enforces it. Without this,
+      # the manager logs "No password required" and accepts any agent.
+      # File must be world-readable (chmod 644) because the in-container wazuh
+      # user (UID 101) won't match the host owner UID.
+      # ALSO REQUIRED in /var/ossec/etc/ossec.conf:
+      #   <use_password>yes</use_password>     -- enforces the bind-mounted password
+      #   <logall_json>yes</logall_json>       -- writes raw events to archives.json
+      #                                          (the AI ingestion pipeline reads this)
+      # If you ever wipe the wazuh-etc volume (docker compose down -v), re-apply:
+      #   docker exec threat-hunting-platform-wazuh-manager-1 sh -c \
+      #     "sed -i 's|<use_password>no|<use_password>yes|;
+      #              s|<logall_json>no|<logall_json>yes|' /var/ossec/etc/ossec.conf && \
+      #      /var/ossec/bin/wazuh-control restart"
+      - ./secrets/wazuh_registration_password.txt:/var/ossec/etc/authd.pass:ro
     environment:
       - WAZUH_CLUSTER_DISABLED=true
     env_file:
@@ -80,7 +93,7 @@ services:
     image: wazuh/wazuh-dashboard:4.7.0
     hostname: wazuh-dashboard
     ports:
-      - "5601:5601"           # SOC analysts access this
+      - "5601:5601" # SOC analysts access this
     depends_on:
       - wazuh-indexer
       - wazuh-manager
@@ -100,12 +113,16 @@ services:
       context: .
       dockerfile: Dockerfile
     hostname: threat-platform-api
+    user: "1000:1000" # SR-06: non-root (matches Dockerfile)
+    read_only: true # SR-06: read-only rootfs
     ports:
-      - "8000:8000"           # REST API
+      - "8000:8000" # REST API
     volumes:
       - ./config:/app/config:ro
       - ./detection/models:/app/detection/models:ro
-      - platform-data:/app/data
+      - platform-data:/app/data # writable model/audit/alert state
+    tmpfs:
+      - /tmp:size=64M,mode=1777 # scratch (read_only rootfs forbids /tmp writes)
     depends_on:
       wazuh-manager:
         condition: service_healthy
@@ -117,16 +134,23 @@ services:
     env_file:
       - .env
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges:true # SR-06: no privesc via setuid
     cap_drop:
-      - ALL
+      - ALL # SR-06: drop ALL Linux capabilities
     deploy:
       resources:
         limits:
           memory: 2G
           cpus: "2.0"
+    #pids_limit: 256 # cap process count (defence vs fork bombs)
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8000/health'); exit(0 if r.status_code==200 else 1)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; r=httpx.get('http://localhost:8000/health'); exit(0 if r.status_code==200 else 1)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -139,34 +163,115 @@ services:
       context: .
       dockerfile: Dockerfile
     hostname: attack-graph-viz
+    user: "1000:1000"
+    read_only: true
     ports:
-      - "8080:8080"           # Standalone attack graph viewer
-    command: ["python", "-m", "uvicorn", "visualization.web:app", "--host", "0.0.0.0", "--port", "8080"]
+      - "8080:8080" # Standalone attack graph viewer
+    command:
+      [
+        "python",
+        "-m",
+        "uvicorn",
+        "visualization.web:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+      ]
     volumes:
-      - platform-data:/app/data:ro
+      - platform-data:/app/data:ro # graph snapshots are read-only here
+    tmpfs:
+      - /tmp:size=32M,mode=1777
     depends_on:
       - api
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     deploy:
       resources:
         limits:
           memory: 512M
+          cpus: "1"
+    #pids_limit: 64
     networks:
       - internal-net
 
-  # ── FEDERATED LEARNING ────────────────────────────────
+  # ── FEDERATED LEARNING COORDINATOR (REST + mTLS, separate auth) ──
+  # Hosted by a neutral consortium — NOT operated by any single org.
+  # See federated/coordinator_app.py + federated/fl_security.py for the
+  # separate trust boundary.
+  fl-coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: fl-coordinator
+    user: "1000:1000"
+    read_only: true
+    ports:
+      - "8889:8889" # Coordinator REST + mTLS
+    command: >
+      python -m uvicorn federated.coordinator_app:app
+      --host 0.0.0.0 --port 8889
+      --ssl-certfile /app/data/ca/coordinator_cert.pem
+      --ssl-keyfile  /app/data/ca/coordinator_key.pem
+      --ssl-ca-certs /app/data/ca/ca_cert.pem
+      --ssl-cert-reqs 2
+    volumes:
+      - fl-coordinator-data:/app/data # CA + DB + audit (writable)
+      - ./config:/app/config:ro
+    tmpfs:
+      - /tmp:size=32M,mode=1777
+    environment:
+      - FL_DATA_DIR=/app/data
+      - FL_CA_DIR=/app/data/ca
+      - FL_USERS_FILE=/app/config/fl_users.yml
+    env_file:
+      - .env # FL_JWT_SECRET lives here
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    #pids_limit: 128
+    networks:
+      - fl-net # isolated from internal-net by intent
+
+  # ── LEGACY FL SERVER (Flower gRPC, used by the in-process demo simulator) ──
   fl-server:
     build:
       context: .
       dockerfile: federated/Dockerfile
     hostname: fl-server
-    command: ["python", "run_server.py", "--mode", "fl-server", "--config-dir", "config"]
+    user: "1000:1000"
+    read_only: true
+    command:
+      [
+        "python",
+        "run_server.py",
+        "--mode",
+        "fl-server",
+        "--config-dir",
+        "config",
+      ]
     volumes:
       - ./config:/app/config:ro
+    tmpfs:
+      - /tmp:size=32M,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     deploy:
       resources:
         limits:
           memory: 2G
           cpus: "2.0"
+    #pids_limit: 128
     networks:
       - fl-net
 
@@ -174,6 +279,8 @@ services:
     build:
       context: .
       dockerfile: federated/Dockerfile
+    user: "1000:1000"
+    read_only: true
     command: >
       python run_server.py --mode fl-client
       --fl-server-address fl-server:8888
@@ -181,8 +288,20 @@ services:
       --fl-data-path /data/partition_1/train.csv
     volumes:
       - ./training/data/partition_1:/data/partition_1:ro
+    tmpfs:
+      - /tmp:size=64M,mode=1777
     depends_on:
       - fl-server
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.5"
+    #pids_limit: 128
     networks:
       - fl-net
 
@@ -190,6 +309,8 @@ services:
     build:
       context: .
       dockerfile: federated/Dockerfile
+    user: "1000:1000"
+    read_only: true
     command: >
       python run_server.py --mode fl-client
       --fl-server-address fl-server:8888
@@ -197,8 +318,20 @@ services:
       --fl-data-path /data/partition_2/train.csv
     volumes:
       - ./training/data/partition_2:/data/partition_2:ro
+    tmpfs:
+      - /tmp:size=64M,mode=1777
     depends_on:
       - fl-server
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.5"
+    #pids_limit: 128
     networks:
       - fl-net
 
@@ -206,6 +339,8 @@ services:
     build:
       context: .
       dockerfile: federated/Dockerfile
+    user: "1000:1000"
+    read_only: true
     command: >
       python run_server.py --mode fl-client
       --fl-server-address fl-server:8888
@@ -213,8 +348,20 @@ services:
       --fl-data-path /data/partition_3/train.csv
     volumes:
       - ./training/data/partition_3:/data/partition_3:ro
+    tmpfs:
+      - /tmp:size=64M,mode=1777
     depends_on:
       - fl-server
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.5"
+    #pids_limit: 128
     networks:
       - fl-net
 
@@ -223,6 +370,7 @@ volumes:
   wazuh-etc:
   wazuh-indexer-data:
   platform-data:
+  fl-coordinator-data:
 
 networks:
   internal-net:
