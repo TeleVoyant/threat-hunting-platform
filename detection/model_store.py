@@ -25,6 +25,7 @@ def hmac_compare(a: str, b: str) -> bool:
     """Constant-time string comparison for HMAC verification."""
     return _hmac.compare_digest(a, b)
 
+
 logger = get_logger("detection.model_store")
 
 
@@ -40,11 +41,18 @@ class ModelStore:
         model: xgb.Booster,
         name: str,
         metadata: dict = None,
+        status: str = "active",
     ) -> str:
         """
         Save model with version and integrity signature.
         Returns version string.
+
+        status: "active" (default — production-ready, the latest symlink points
+        here) or "staged" (awaits admin promotion via promote() before being
+        used by detectors). Auto-retrain writes "staged"; CLI writes "active".
         """
+        if status not in ("staged", "active", "archived"):
+            raise ValueError(f"Invalid status: {status!r}")
         version = f"v{int(time.time())}"
         model_dir = self.base_dir / name / version
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -65,25 +73,32 @@ class ModelStore:
             "created_at": time.time(),
             "content_hash": content_hash,
             "signature": signature,
+            "status": status,
             "metadata": metadata or {},
             "file_size_bytes": len(model_bytes),
         }
         (model_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
-        # Update "latest" symlink
-        latest_link = self.base_dir / name / "latest"
-        if latest_link.exists():
-            latest_link.unlink()
-        latest_link.symlink_to(version)
+        # Only advance the "latest" pointer for active versions — staged
+        # versions wait for promote() to flip the symlink.
+        if status == "active":
+            self._set_latest(name, version)
 
         logger.info(
             "Model saved",
             name=name,
             version=version,
+            status=status,
             hash=content_hash[:16],
             size=len(model_bytes),
         )
         return version
+
+    def _set_latest(self, name: str, version: str) -> None:
+        latest_link = self.base_dir / name / "latest"
+        if latest_link.exists() or latest_link.is_symlink():
+            latest_link.unlink()
+        latest_link.symlink_to(version)
 
     def load_model(self, name: str, version: str = "latest") -> xgb.Booster:
         """
@@ -94,8 +109,12 @@ class ModelStore:
             version_dir = (self.base_dir / name / "latest").resolve()
         else:
             version_dir = self.base_dir / name / version
-        return self._load_verified(version_dir / "model.json", version_dir / "manifest.json",
-                                    name=name, version=version)
+        return self._load_verified(
+            version_dir / "model.json",
+            version_dir / "manifest.json",
+            name=name,
+            version=version,
+        )
 
     def load_from_path(self, model_ref: str) -> xgb.Booster:
         """
@@ -110,10 +129,11 @@ class ModelStore:
         path = Path(model_ref)
 
         if path.is_dir():
-            model_path    = path / "model.json"
+            model_path = path / "model.json"
             manifest_path = path / "manifest.json"
-            return self._load_verified(model_path, manifest_path,
-                                        name=path.parent.name, version=path.name)
+            return self._load_verified(
+                model_path, manifest_path, name=path.parent.name, version=path.name
+            )
 
         if not path.exists():
             raise FileNotFoundError(f"Model not found: {model_ref}")
@@ -121,9 +141,12 @@ class ModelStore:
         # File path — check for sibling manifest
         manifest_path = path.parent / "manifest.json"
         if manifest_path.exists():
-            return self._load_verified(path, manifest_path,
-                                        name=path.parent.parent.name,
-                                        version=path.parent.name)
+            return self._load_verified(
+                path,
+                manifest_path,
+                name=path.parent.parent.name,
+                version=path.parent.name,
+            )
 
         # Flat file with no manifest — load without verification
         logger.warning(
@@ -144,7 +167,9 @@ class ModelStore:
     ) -> xgb.Booster:
         """Shared verification path used by both load_model and load_from_path."""
         if not model_path.exists():
-            raise FileNotFoundError(f"Model not found: {name}/{version} at {model_path}")
+            raise FileNotFoundError(
+                f"Model not found: {name}/{version} at {model_path}"
+            )
         if not manifest_path.exists():
             raise SecurityError(
                 f"Manifest missing for {name}/{version} — refusing to load unverified model"
@@ -157,8 +182,10 @@ class ModelStore:
         if actual_hash != manifest["content_hash"]:
             logger.critical(
                 "MODEL INTEGRITY VIOLATION",
-                name=name, version=version,
-                expected=manifest["content_hash"][:16], actual=actual_hash[:16],
+                name=name,
+                version=version,
+                expected=manifest["content_hash"][:16],
+                actual=actual_hash[:16],
             )
             raise SecurityError(
                 f"Model file tampered: expected hash "
@@ -168,36 +195,103 @@ class ModelStore:
         expected_sig = self._sign(actual_hash)
         if not hmac_compare(expected_sig, manifest["signature"]):
             logger.critical("MODEL SIGNATURE INVALID", name=name, version=version)
-            raise SecurityError(f"Model signature verification failed for {name}/{version}")
+            raise SecurityError(
+                f"Model signature verification failed for {name}/{version}"
+            )
 
         model = xgb.Booster()
         model.load_model(str(model_path))
-        logger.info("Model loaded and verified", name=name, version=version,
-                    hash=actual_hash[:16])
+        logger.info(
+            "Model loaded and verified",
+            name=name,
+            version=version,
+            hash=actual_hash[:16],
+        )
         return model
 
     def rollback(self, name: str, to_version: str) -> None:
-        """Roll back to a previous model version."""
+        """Roll back to a previous model version (sets it active)."""
         version_dir = self.base_dir / name / to_version
         if not version_dir.exists():
             raise FileNotFoundError(f"Version {to_version} not found for {name}")
-
-        latest_link = self.base_dir / name / "latest"
-        if latest_link.exists():
-            latest_link.unlink()
-        latest_link.symlink_to(to_version)
+        self._update_status(name, to_version, "active")
+        self._set_latest(name, to_version)
         logger.warning("Model rolled back", name=name, to_version=to_version)
 
+    def promote(self, name: str, version: str) -> dict:
+        """Mark a staged version as the new active one.
+
+        Flips the named version's manifest status to "active", archives the
+        previously-active version (so list_versions still surfaces it for
+        rollback), and updates the "latest" symlink. Returns the new manifest.
+        Used by the admin promotion endpoint after reviewing a staged build's
+        evaluation report.
+        """
+        version_dir = self.base_dir / name / version
+        if not version_dir.exists():
+            raise FileNotFoundError(f"Version {version} not found for {name}")
+        # Demote prior active (if any) → archived
+        for v in self.list_versions(name):
+            if v.get("status") == "active" and v["version"] != version:
+                self._update_status(name, v["version"], "archived")
+        # Promote the target
+        new_manifest = self._update_status(name, version, "active")
+        self._set_latest(name, version)
+        logger.info("Model promoted", name=name, version=version)
+        return new_manifest
+
+    def _update_status(self, name: str, version: str, status: str) -> dict:
+        if status not in ("staged", "active", "archived"):
+            raise ValueError(f"Invalid status: {status!r}")
+        manifest_path = self.base_dir / name / version / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Manifest missing for {name}/{version}")
+        manifest = json.loads(manifest_path.read_text())
+        manifest["status"] = status
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+        return manifest
+
     def list_versions(self, name: str) -> list[dict]:
-        """List all versions of a model with metadata."""
+        """List all versions of a model with metadata.
+
+        Sorted oldest-first. Adds an implicit `status="active"` to legacy
+        manifests so callers written against the new field still work, and
+        sanitises any NaN/Infinity floats (left behind by old training runs
+        where the eval set had only one class) so the dict is JSON-safe for
+        the dashboard.
+        """
+        import math
+
+        def _clean(v):
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                return None
+            if isinstance(v, dict):
+                return {k: _clean(x) for k, x in v.items()}
+            if isinstance(v, list):
+                return [_clean(x) for x in v]
+            return v
+
         model_dir = self.base_dir / name
         versions = []
+        if not model_dir.exists():
+            return versions
         for d in sorted(model_dir.iterdir()):
             if d.is_dir() and d.name.startswith("v"):
                 manifest_path = d / "manifest.json"
                 if manifest_path.exists():
-                    versions.append(json.loads(manifest_path.read_text()))
+                    # parse_constant lets us survive non-standard NaN/Infinity
+                    # tokens written by older json.dumps invocations.
+                    m = json.loads(
+                        manifest_path.read_text(), parse_constant=lambda c: None
+                    )
+                    m = _clean(m)
+                    m.setdefault("status", "active")
+                    versions.append(m)
         return versions
+
+    def list_staged(self, name: str) -> list[dict]:
+        """Staged versions only — the admin promotion queue."""
+        return [v for v in self.list_versions(name) if v.get("status") == "staged"]
 
     def _sign(self, content_hash: str) -> str:
         """HMAC signature of the content hash."""

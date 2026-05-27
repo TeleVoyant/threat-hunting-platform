@@ -221,6 +221,7 @@ def train_model(
     grouping: str = "hostname",
     num_boost_round: int = 200,
     extra_params: Optional[dict] = None,
+    status: str = "active",
 ) -> dict:
     """
     Train a model end-to-end and persist it.
@@ -260,7 +261,7 @@ def train_model(
         metrics["tuned_params"] = extra_params
 
     if model_store and model_name:
-        version = model_store.save_model(booster, model_name, metadata=metrics)
+        version = model_store.save_model(booster, model_name, metadata=metrics, status=status)
         saved_at = str(model_store.base_dir / model_name / version)
         metrics["saved_at"] = saved_at
         metrics["version"]  = version

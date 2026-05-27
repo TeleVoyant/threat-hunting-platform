@@ -1,0 +1,31 @@
+# Build / dev cruft
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.git/
+.gitignore
+.github/
+.venv/
+venv/
+
+# Local runtime state — must come from volumes / .env at deploy time
+data/
+.env
+.env.local
+
+# Secrets
+secrets/
+
+# FL training data partitions (multi-GB) — fetched out-of-band, not baked in
+training/data/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

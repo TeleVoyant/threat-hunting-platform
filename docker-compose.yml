@@ -30,6 +30,13 @@ services:
   wazuh-manager:
     image: wazuh/wazuh-manager:4.7.0
     hostname: wazuh-manager
+    # Wrap the image's /init so we patch ossec.conf *before* wazuh-control
+    # starts. The patch enables <use_password> and <logall_json>; both are
+    # required by the AI ingestion pipeline and otherwise revert to "no"
+    # whenever the wazuh-etc volume is wiped (e.g. `docker compose down -v`).
+    # The wrapper exec's /init at the end so Wazuh's normal startup is
+    # unchanged. Idempotent — safe to run on every boot.
+    entrypoint: ["/bin/bash", "/wazuh-bootstrap-entrypoint.sh"]
     ports:
       - "1514:1514" # Agent communication (laptops connect here)
       - "1515:1515" # Agent registration
@@ -37,22 +44,36 @@ services:
     volumes:
       - wazuh-data:/var/ossec/data
       - wazuh-etc:/var/ossec/etc
-      # Bind-mount the registration password so authd enforces it. Without this,
-      # the manager logs "No password required" and accepts any agent.
-      # File must be world-readable (chmod 644) because the in-container wazuh
-      # user (UID 101) won't match the host owner UID.
-      # ALSO REQUIRED in /var/ossec/etc/ossec.conf:
-      #   <use_password>yes</use_password>     -- enforces the bind-mounted password
-      #   <logall_json>yes</logall_json>       -- writes raw events to archives.json
-      #                                          (the AI ingestion pipeline reads this)
-      # If you ever wipe the wazuh-etc volume (docker compose down -v), re-apply:
-      #   docker exec threat-hunting-platform-wazuh-manager-1 sh -c \
-      #     "sed -i 's|<use_password>no|<use_password>yes|;
-      #              s|<logall_json>no|<logall_json>yes|' /var/ossec/etc/ossec.conf && \
-      #      /var/ossec/bin/wazuh-control restart"
-      - ./secrets/wazuh_registration_password.txt:/var/ossec/etc/authd.pass:ro
+      # IMPORTANT: bind-mounts to /var/ossec/etc/* trick the image's
+      # `mount_permanent_data()` into thinking the volume is already populated,
+      # so it skips copying defaults (rules, decoders, shared/, agent.conf).
+      # Use /wazuh-config-mount/* instead — that's specifically designed for
+      # overlay files and runs *after* defaults are restored.
+      - ./secrets/wazuh_registration_password.txt:/wazuh-config-mount/etc/authd.pass:ro
+      # The ossec.conf bootstrap wrapper — runs before /init. Now a no-op
+      # safety-net because wazuh_manager.conf below already has <use_password>
+      # and <logall_json> patched at rest, but kept so a future wipe-of-
+      # config still produces a working setup.
+      - ./scripts/wazuh-bootstrap-entrypoint.sh:/wazuh-bootstrap-entrypoint.sh:ro
+      # Source-of-truth ossec.conf — copied by cont-init.d into /var/ossec/etc/
+      # on first boot. The two `<use_password>yes` + `<logall_json>yes` toggles
+      # required by the AI pipeline are baked in (see file on host).
+      - ./config/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      # ── Wazuh 4.7 stack TLS (filebeat → indexer) ──
+      - ./config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key:ro
     environment:
       - WAZUH_CLUSTER_DISABLED=true
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
+      - FILEBEAT_SSL_VERIFICATION_MODE=full
+      - SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+      - SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+      - SSL_KEY=/etc/ssl/filebeat.key
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=MyS3cr37P450r.*-
     env_file:
       - .env
     deploy:
@@ -66,8 +87,10 @@ services:
       timeout: 15s
       retries: 3
     networks:
-      - internal-net
-      - agent-net
+      internal-net:
+        aliases:
+          - wazuh.manager   # certs are issued for this name (config/certs.yml)
+      agent-net: {}
 
   wazuh-indexer:
     image: wazuh/wazuh-indexer:4.7.0
@@ -80,14 +103,27 @@ services:
       memlock:
         soft: -1
         hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     volumes:
       - wazuh-indexer-data:/var/lib/wazuh-indexer
+      # ── Upstream TLS + opensearch security configs ──
+      - ./config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.key:ro
+      - ./config/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem:ro
+      - ./config/wazuh_indexer/wazuh.indexer.yml:/usr/share/wazuh-indexer/opensearch.yml:ro
+      - ./config/wazuh_indexer/internal_users.yml:/usr/share/wazuh-indexer/opensearch-security/internal_users.yml:ro
     deploy:
       resources:
         limits:
           memory: 2G
     networks:
-      - internal-net
+      internal-net:
+        aliases:
+          - wazuh.indexer   # cert CN — required for dashboard → indexer TLS
 
   wazuh-dashboard:
     image: wazuh/wazuh-dashboard:4.7.0
@@ -98,14 +134,29 @@ services:
       - wazuh-indexer
       - wazuh-manager
     environment:
-      - WAZUH_API_URL=https://wazuh-manager:55000
-      - INDEXER_URL=https://wazuh-indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
+      - WAZUH_API_URL=https://wazuh.manager
+      - DASHBOARD_USERNAME=kibanaserver
+      - DASHBOARD_PASSWORD=kibanaserver
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=MyS3cr37P450r.*-
+    volumes:
+      - ./config/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro
+      - ./config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
+      - ./config/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      - ./config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
+      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
+      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
     deploy:
       resources:
         limits:
           memory: 1G
     networks:
-      - internal-net
+      internal-net:
+        aliases:
+          - wazuh.dashboard
 
   # ── AI THREAT HUNTING PLATFORM ────────────────────────
   api:
@@ -119,7 +170,11 @@ services:
       - "8000:8000" # REST API
     volumes:
       - ./config:/app/config:ro
-      - ./detection/models:/app/detection/models:ro
+      # Writable so the auto-retrain scheduler can save new staged versions
+      # (each cycle creates detection/models/<name>/v<ts>/). Active versions
+      # are still verified via HMAC signatures on load, so a tampered file
+      # would fail the integrity check at registry.hot_reload() time.
+      - ./detection/models:/app/detection/models
       - platform-data:/app/data # writable model/audit/alert state
     tmpfs:
       - /tmp:size=64M,mode=1777 # scratch (read_only rootfs forbids /tmp writes)
@@ -131,6 +186,10 @@ services:
       - DATA_DIR=data
       - LOG_LEVEL=INFO
       - DETECTION_LOOP_ENABLED=true
+      # The host's LAN IP, injected by ./scripts/pair-up.sh. Used by the
+      # companion-app QR endpoint so phones can reach the api over WiFi
+      # without the operator hand-editing config/notifications.yml.
+      - PUBLIC_HOST_URL=${PUBLIC_HOST_URL:-}
     env_file:
       - .env
     security_opt:
@@ -275,100 +334,102 @@ services:
     networks:
       - fl-net
 
-  fl-client-udom:
-    build:
-      context: .
-      dockerfile: federated/Dockerfile
-    user: "1000:1000"
-    read_only: true
-    command: >
-      python run_server.py --mode fl-client
-      --fl-server-address fl-server:8888
-      --fl-client-name udom
-      --fl-data-path /data/partition_1/train.csv
-    volumes:
-      - ./training/data/partition_1:/data/partition_1:ro
-    tmpfs:
-      - /tmp:size=64M,mode=1777
-    depends_on:
-      - fl-server
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: "1.5"
-    #pids_limit: 128
-    networks:
-      - fl-net
+  # fl-client-udom:
+  #   build:
+  #     context: .
+  #     dockerfile: federated/Dockerfile
+  #   user: "1000:1000"
+  #   read_only: true
+  #   command: >
+  #     python run_server.py --mode fl-client
+  #     --fl-server-address fl-server:8888
+  #     --fl-client-name udom
+  #     --fl-data-path /data/partition_1/train.csv
+  #   volumes:
+  #     - ./training/data/partition_1:/data/partition_1:ro
+  #   tmpfs:
+  #     - /tmp:size=64M,mode=1777
+  #   depends_on:
+  #     - fl-server
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   cap_drop:
+  #     - ALL
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #         cpus: "1.5"
+  #   #pids_limit: 128
+  #   networks:
+  #     - fl-net
 
-  fl-client-hospital:
-    build:
-      context: .
-      dockerfile: federated/Dockerfile
-    user: "1000:1000"
-    read_only: true
-    command: >
-      python run_server.py --mode fl-client
-      --fl-server-address fl-server:8888
-      --fl-client-name hospital
-      --fl-data-path /data/partition_2/train.csv
-    volumes:
-      - ./training/data/partition_2:/data/partition_2:ro
-    tmpfs:
-      - /tmp:size=64M,mode=1777
-    depends_on:
-      - fl-server
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: "1.5"
-    #pids_limit: 128
-    networks:
-      - fl-net
+  # fl-client-hospital:
+  #   build:
+  #     context: .
+  #     dockerfile: federated/Dockerfile
+  #   user: "1000:1000"
+  #   read_only: true
+  #   command: >
+  #     python run_server.py --mode fl-client
+  #     --fl-server-address fl-server:8888
+  #     --fl-client-name hospital
+  #     --fl-data-path /data/partition_2/train.csv
+  #   volumes:
+  #     - ./training/data/partition_2:/data/partition_2:ro
+  #   tmpfs:
+  #     - /tmp:size=64M,mode=1777
+  #   depends_on:
+  #     - fl-server
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   cap_drop:
+  #     - ALL
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #         cpus: "1.5"
+  #   #pids_limit: 128
+  #   networks:
+  #     - fl-net
 
-  fl-client-bank:
-    build:
-      context: .
-      dockerfile: federated/Dockerfile
-    user: "1000:1000"
-    read_only: true
-    command: >
-      python run_server.py --mode fl-client
-      --fl-server-address fl-server:8888
-      --fl-client-name bank
-      --fl-data-path /data/partition_3/train.csv
-    volumes:
-      - ./training/data/partition_3:/data/partition_3:ro
-    tmpfs:
-      - /tmp:size=64M,mode=1777
-    depends_on:
-      - fl-server
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: "1.5"
-    #pids_limit: 128
-    networks:
-      - fl-net
+  # fl-client-bank:
+  #   build:
+  #     context: .
+  #     dockerfile: federated/Dockerfile
+  #   user: "1000:1000"
+  #   read_only: true
+  #   command: >
+  #     python run_server.py --mode fl-client
+  #     --fl-server-address fl-server:8888
+  #     --fl-client-name bank
+  #     --fl-data-path /data/partition_3/train.csv
+  #   volumes:
+  #     - ./training/data/partition_3:/data/partition_3:ro
+  #   tmpfs:
+  #     - /tmp:size=64M,mode=1777
+  #   depends_on:
+  #     - fl-server
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   cap_drop:
+  #     - ALL
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #         cpus: "1.5"
+  #   #pids_limit: 128
+  #   networks:
+  #     - fl-net
 
 volumes:
   wazuh-data:
   wazuh-etc:
   wazuh-indexer-data:
+  wazuh-dashboard-config:
+  wazuh-dashboard-custom:
   platform-data:
   fl-coordinator-data:
 

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Notification settings — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="notifSettings()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Notification settings</h1>
+    <div class="eyebrow" style="margin-top:4px;">Your contact info · channel preferences · severity threshold</div>
+  </div>
+  <a class="btn btn-secondary" href="/dashboard/notifications">
+    <i data-lucide="bell"></i> Notification center
+  </a>
+</div>
+
+<div class="card card-pad" style="margin-bottom:14px;">
+  <h2 class="apt-h3" style="margin-bottom:12px;">My contact info</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label class="field-label">Email</label>
+      <input class="input" type="email" x-model="contact.email" placeholder="analyst@org.tz">
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button class="btn btn-secondary" x-on:click="saveContact()">Save</button>
+        <button class="btn btn-secondary" x-on:click="testEmail()" :disabled="!contact.email">
+          <i data-lucide="send"></i> Send test email
+        </button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">Phone</label>
+      <input class="input" type="tel" x-model="contact.phone" placeholder="255712345678">
+      <div class="apt-small" style="color:var(--fg-3); margin-top:4px;">Format: 255 + 9 digits (no +)</div>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button class="btn btn-secondary" x-on:click="saveContact()">Save</button>
+        <button class="btn btn-secondary" x-on:click="testSms()" :disabled="!contact.phone">
+          <i data-lucide="message-square"></i> Send test SMS
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-bottom:14px;">
+  <h2 class="apt-h3" style="margin-bottom:12px;">Preferences</h2>
+  <div class="field" style="margin-bottom:14px;">
+    <label class="field-label">Minimum severity to notify me</label>
+    <div style="display:flex; gap:6px; margin-top:6px;">
+      <template x-for="s in ['low','medium','high','critical']" :key="s">
+        <button class="chip" x-on:click="prefs.min_severity = s; savePrefs()"
+                :class="prefs.min_severity === s ? 'active' : ''"
+                x-text="s.toUpperCase()"></button>
+      </template>
+    </div>
+  </div>
+  <div class="field" style="margin-bottom:14px;">
+    <label class="field-label">Channels</label>
+    <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" x-model="prefs.channel_sse" x-on:change="savePrefs()"
+               :true-value="1" :false-value="0">
+        <strong>In-dashboard</strong> &nbsp; <span class="apt-small" style="color:var(--fg-3);">Real-time toast + topbar bell.</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" x-model="prefs.channel_email" x-on:change="savePrefs()"
+               :true-value="1" :false-value="0">
+        <strong>Email</strong> &nbsp; <span class="apt-small" style="color:var(--fg-3);">In-country SMTP, redacted body, click-through to dashboard.</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" x-model="prefs.channel_sms" x-on:change="savePrefs()"
+               :true-value="1" :false-value="0">
+        <strong>SMS</strong> &nbsp; <span class="apt-small" style="color:var(--fg-3);">Beem Africa; works when mobile data is off. Redacted body, ≤160 chars.</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" x-model="prefs.channel_app" x-on:change="savePrefs()"
+               :true-value="1" :false-value="0">
+        <strong>Companion app</strong> &nbsp; <span class="apt-small" style="color:var(--fg-3);">Native phone push via the Android companion app (same SSE stream).</span>
+      </label>
+    </div>
+  </div>
+  <div class="form-grid">
+    <div class="field">
+      <label class="field-label">Quiet start (optional, HH:MM)</label>
+      <input class="input" type="text" placeholder="22:00" x-model="prefs.quiet_start" x-on:change="savePrefs()">
+    </div>
+    <div class="field">
+      <label class="field-label">Quiet end (optional, HH:MM)</label>
+      <input class="input" type="text" placeholder="06:00" x-model="prefs.quiet_end" x-on:change="savePrefs()">
+    </div>
+  </div>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function notifSettings() {
+  return {
+    contact: { email: '', phone: '' },
+    prefs: { min_severity: 'high', channel_sse: 1, channel_email: 0, channel_sms: 0, channel_app: 1, quiet_start: '', quiet_end: '' },
+
+    async load() {
+      const c = await (await fetch('/me/contact', { credentials: 'same-origin' })).json();
+      this.contact = { email: c.email || '', phone: c.phone || '' };
+      const p = await (await fetch('/notifications/prefs', { credentials: 'same-origin' })).json();
+      this.prefs = {
+        min_severity: p.min_severity || 'high',
+        channel_sse:  p.channel_sse  ?? 1,
+        channel_email: p.channel_email ?? 0,
+        channel_sms:   p.channel_sms   ?? 0,
+        channel_app:   p.channel_app   ?? 1,
+        quiet_start:   p.quiet_start || '',
+        quiet_end:     p.quiet_end || '',
+      };
+    },
+
+    async saveContact() {
+      const r = await fetch('/me/contact', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.contact),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Contact info saved.', 'ok');
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Failed: ' + t, 'error');
+      }
+    },
+
+    async savePrefs() {
+      const body = { ...this.prefs };
+      // strip empty quiet fields so PUT validation doesn't reject 0-len strings
+      if (!body.quiet_start) delete body.quiet_start;
+      if (!body.quiet_end)   delete body.quiet_end;
+      await fetch('/notifications/prefs', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      Alpine.store('toast').push('Preferences updated.', 'ok', 1800);
+    },
+
+    async testEmail() {
+      const r = await fetch('/diag/notifications/test/email',
+                            { method: 'POST', credentials: 'same-origin' });
+      const j = await r.json().catch(() => ({}));
+      Alpine.store('toast').push(j.message || (r.ok ? 'Test email sent.' : 'Send failed.'),
+                                   r.ok ? 'ok' : 'error', 6000);
+    },
+    async testSms() {
+      const r = await fetch('/diag/notifications/test/sms',
+                            { method: 'POST', credentials: 'same-origin' });
+      const j = await r.json().catch(() => ({}));
+      Alpine.store('toast').push(j.message || (r.ok ? 'Test SMS sent.' : 'Send failed.'),
+                                   r.ok ? 'ok' : 'error', 6000);
+    },
+  };
+}
+</script>
+{% endblock %}

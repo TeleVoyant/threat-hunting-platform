@@ -1,0 +1,1 @@
+Drop the platform's TLS leaf certificate here as `server.crt` (PEM) once HTTPS is in front of the API. Then uncomment the @raw/server reference in res/xml/network_security_config.xml.

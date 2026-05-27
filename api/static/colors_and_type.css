@@ -1,0 +1,238 @@
+/* ============================================================
+   APT Threat Hunting Platform — Foundation Tokens
+   Colors, typography, spacing, radii, shadows, motion
+   ============================================================ */
+
+/* Brand font: Roboto Variable (uploaded). Local file is canonical;
+   Google Fonts CDN is loaded so inlined artifacts render correctly. */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+@font-face {
+  font-family: 'Roboto Brand';
+  src: url('fonts/Roboto-VariableFont_wdth_wght.ttf') format('truetype-variations'),
+       url('fonts/Roboto-VariableFont_wdth_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-stretch: 75% 100%;
+  font-display: swap;
+}
+
+:root {
+  /* ─── BRAND PALETTE ──────────────────────────────────────── */
+  --apt-navy:           #072147;  /* Primary Navy — trust, intelligence */
+  --apt-navy-deep:      #051634;  /* Deeper navy for shadows / accents */
+  --apt-navy-700:       #0a2a58;
+  --apt-navy-600:       #0e3469;
+  --apt-navy-500:       #14457f;
+  --apt-teal:           #12B5B0;  /* Threat Teal — active scanning, signals */
+  --apt-teal-bright:    #1dd6d0;  /* Hover/active highlight */
+  --apt-teal-dim:       #0d8a86;  /* Pressed */
+  --apt-teal-tint:      rgba(18,181,176,0.12);
+
+  /* ─── DARK MODE SURFACES (default operational mode) ──────── */
+  --bg-0:               #050f22;  /* Deepest — page background */
+  --bg-1:               #081B34;  /* Dashboard background */
+  --bg-2:               #0c2444;  /* Card / panel */
+  --bg-3:               #122f55;  /* Raised card / hover */
+  --bg-4:               #1a3b67;  /* Selected row, popover */
+  --border-1:           #163659;  /* Subtle divider */
+  --border-2:           #1f4a75;  /* Stronger border */
+  --border-focus:       var(--apt-teal);
+
+  /* ─── LIGHT MODE SURFACES ────────────────────────────────── */
+  --light-bg-0:         #F7FAFC;
+  --light-bg-1:         #FFFFFF;
+  --light-bg-2:         #EDF2F7;
+  --light-border:       #D7DEE7;
+  --light-border-strong:#B8C3D1;
+
+  /* ─── FOREGROUND ─────────────────────────────────────────── */
+  --fg-1:               #E8F0FA;  /* Primary text on dark */
+  --fg-2:               #A9BBD2;  /* Secondary text on dark */
+  --fg-3:               #6E84A0;  /* Tertiary / labels */
+  --fg-mute:            #4a6082;  /* Disabled / placeholder */
+  --fg-on-teal:         #03161f;  /* Text on teal */
+  --fg-on-light:        #0a1d3a;
+
+  /* ─── SEMANTIC STATUS ────────────────────────────────────── */
+  --success:            #2ECC71;
+  --success-bg:         rgba(46,204,113,0.14);
+  --warning:            #F39C12;
+  --warning-bg:         rgba(243,156,18,0.16);
+  --critical:           #E74C3C;
+  --critical-bg:        rgba(231,76,60,0.16);
+  --info:               #3498DB;
+  --info-bg:            rgba(52,152,219,0.14);
+
+  /* ─── SEVERITY (analyst-tuned) ───────────────────────────── */
+  --sev-low:            #2ECC71;
+  --sev-medium:         #F39C12;
+  --sev-high:           #FF7B3A;
+  --sev-critical:       #E74C3C;
+
+  /* ─── CHART PALETTE (muted, long-session safe) ───────────── */
+  --chart-1: #12B5B0;
+  --chart-2: #5B8DEF;
+  --chart-3: #F39C12;
+  --chart-4: #B284E6;
+  --chart-5: #E74C3C;
+  --chart-6: #6CCB9F;
+  --chart-7: #E8C46A;
+
+  /* ─── TYPOGRAPHY ─────────────────────────────────────────── */
+  --font-sans: 'Roboto Brand', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --font-display: 'Roboto Brand', 'Roboto', system-ui, sans-serif;
+
+  /* Type scale */
+  --fs-display: 40px;   --lh-display: 48px; --tk-display: -0.02em;
+  --fs-h1:      28px;   --lh-h1:      36px; --tk-h1:     -0.015em;
+  --fs-h2:      22px;   --lh-h2:      30px; --tk-h2:     -0.01em;
+  --fs-h3:      18px;   --lh-h3:      26px;
+  --fs-h4:      15px;   --lh-h4:      22px;
+  --fs-body:    14px;   --lh-body:    20px;
+  --fs-small:   13px;   --lh-small:   18px;
+  --fs-micro:   11px;   --lh-micro:   16px; --tk-micro: 0.06em;  /* uppercase eyebrows */
+  --fs-metric:  32px;   --lh-metric:  38px; --tk-metric:-0.02em; /* dashboard KPIs */
+  --fs-mono:    13px;   --lh-mono:    20px;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semibold:600;
+  --fw-bold:    700;
+
+  /* ─── SPACING (4px grid) ─────────────────────────────────── */
+  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 20px;  --sp-6: 24px;  --sp-7: 32px;  --sp-8: 40px;
+  --sp-9: 56px;  --sp-10: 72px;
+
+  /* ─── RADIUS ─────────────────────────────────────────────── */
+  --r-1: 4px;     /* tag, chip */
+  --r-2: 6px;     /* button, input — per brand guide */
+  --r-3: 8px;     /* card */
+  --r-4: 12px;    /* large card / panel */
+  --r-pill: 999px;
+
+  /* ─── ELEVATION / SHADOWS ────────────────────────────────── */
+  /* Dark mode uses inner highlight + deep drop. Light is softer. */
+  --shadow-1: 0 1px 0 rgba(255,255,255,0.04) inset,
+              0 1px 2px rgba(0,0,0,0.4);
+  --shadow-2: 0 1px 0 rgba(255,255,255,0.05) inset,
+              0 4px 12px rgba(0,0,0,0.45);
+  --shadow-3: 0 1px 0 rgba(255,255,255,0.06) inset,
+              0 12px 32px rgba(0,0,0,0.55);
+  --shadow-glow-teal: 0 0 0 1px rgba(18,181,176,0.4),
+                      0 0 24px rgba(18,181,176,0.25);
+  --shadow-glow-critical: 0 0 0 1px rgba(231,76,60,0.45),
+                          0 0 18px rgba(231,76,60,0.3);
+
+  /* Light shadows */
+  --shadow-light-1: 0 1px 2px rgba(7,33,71,0.08);
+  --shadow-light-2: 0 4px 14px rgba(7,33,71,0.10);
+
+  /* ─── MOTION ─────────────────────────────────────────────── */
+  --ease-out:   cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out:cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast:   120ms;
+  --dur-base:   180ms;
+  --dur-slow:   320ms;
+
+  /* ─── LAYOUT ─────────────────────────────────────────────── */
+  --sidebar-w:        232px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h:         56px;
+  --content-max:      1440px;
+}
+
+/* ============================================================
+   SEMANTIC ELEMENT STYLES
+   Apply on <body> or wrap with .apt-typography to opt-in.
+   ============================================================ */
+
+.apt-typography, .apt-dark {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-1);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.apt-display {
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--tk-display);
+  font-weight: var(--fw-bold);
+  color: var(--fg-1);
+}
+
+.apt-h1, h1.apt {
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  letter-spacing: var(--tk-h1);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  margin: 0;
+}
+.apt-h2, h2.apt {
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  letter-spacing: var(--tk-h2);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  margin: 0;
+}
+.apt-h3, h3.apt {
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  margin: 0;
+}
+.apt-body, p.apt {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-2);
+  margin: 0;
+}
+.apt-small {
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--fg-2);
+}
+.apt-eyebrow {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--tk-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.apt-metric {
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric);
+  line-height: var(--lh-metric);
+  letter-spacing: var(--tk-metric);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+}
+.apt-code, code.apt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  color: var(--apt-teal-bright);
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  padding: 1px 6px;
+  border-radius: var(--r-1);
+}
+
+/* Severity / status text helpers */
+.apt-text-success  { color: var(--success); }
+.apt-text-warning  { color: var(--warning); }
+.apt-text-critical { color: var(--critical); }
+.apt-text-info     { color: var(--info);    }
+.apt-text-teal     { color: var(--apt-teal); }
+.apt-text-mute     { color: var(--fg-3);    }

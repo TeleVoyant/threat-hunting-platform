@@ -1,0 +1,6 @@
+<div class="toast-region" x-data>
+  <template x-for="t in $store.toast.items" :key="t.id">
+    <div class="toast" :class="'toast-' + t.kind" x-text="t.text"
+         x-transition.opacity></div>
+  </template>
+</div>

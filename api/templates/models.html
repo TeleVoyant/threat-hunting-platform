@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% block title %}Models — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="modelsPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Models</h1>
+    <div class="eyebrow" style="margin-top:4px;">Detectors · versioning · drift · feature importance</div>
+  </div>
+  {% if can_manage_detectors %}
+  <button class="btn btn-secondary" x-on:click="snapshotDrift()">
+    <i data-lucide="camera"></i> Snapshot drift baseline
+  </button>
+  {% endif %}
+</div>
+
+<template x-for="m in models" :key="m.name">
+  <div class="card" style="margin-bottom:18px;">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <h2 class="apt-h2" x-text="m.name"></h2>
+          <span class="pill" style="background:var(--bg-3); color:var(--fg-2);" x-text="m.current_version || 'no version'"></span>
+          <span class="pill" :style="m.registered ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--warning-bg);color:var(--warning);'"
+                x-text="m.registered ? 'LOADED' : 'NOT LOADED'"></span>
+        </div>
+        <div class="apt-small" style="color:var(--fg-3);" x-text="m.version_count + ' versions on disk'"></div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        {% if can_retrain %}
+        <button class="btn btn-secondary" x-on:click="openRollback(m)" :disabled="m.version_count < 2">
+          <i data-lucide="rotate-ccw"></i> Rollback
+        </button>
+        <button class="btn btn-secondary" x-on:click="openModal('evaluate', m.name)">
+          <i data-lucide="check-square"></i> Evaluate
+        </button>
+        <button class="btn btn-secondary" x-on:click="openModal('tune', m.name)">
+          <i data-lucide="sliders-horizontal"></i> Tune
+        </button>
+        <button class="btn btn-primary" x-on:click="openModal('retrain', m.name)">
+          <i data-lucide="play"></i> Retrain
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0;">
+      <div style="padding:16px 18px; border-right:1px solid var(--border-1);">
+        <div class="eyebrow" style="margin-bottom:8px;">Drift · rolling confidence</div>
+        <div style="height:200px; position:relative;">
+          <canvas :id="'chart-drift-' + m.name"></canvas>
+        </div>
+        <div class="apt-small" style="color:var(--fg-3); margin-top:6px;"
+             x-text="(driftBaselines[m.name] ? ('Baseline mean ' + (driftBaselines[m.name].mean_confidence||0).toFixed(3)) : 'No baseline set yet') + ' · ' + (driftCounts[m.name] || 0) + ' predictions in window'"></div>
+      </div>
+      <div style="padding:16px 18px;">
+        <div class="eyebrow" style="margin-bottom:8px;">Top features · gain</div>
+        <div style="height:200px; position:relative;">
+          <canvas :id="'chart-imp-' + m.name"></canvas>
+        </div>
+      </div>
+    </div>
+
+    {% if can_manage_detectors %}
+    <div style="padding:14px 18px; border-top:1px solid var(--border-1); display:flex; align-items:center; gap:14px;">
+      <span class="eyebrow">Threshold</span>
+      <input type="range" min="0" max="1" step="0.01" x-model.number="thresholds[m.name]"
+             x-on:change="saveThreshold(m.name)"
+             style="flex:1;">
+      <span class="mono tabnum" x-text="(thresholds[m.name]||0).toFixed(2)"></span>
+    </div>
+    {% endif %}
+
+    <details style="border-top:1px solid var(--border-1);">
+      <summary style="padding:12px 18px; cursor:pointer; display:flex; gap:8px; align-items:center; color:var(--fg-2);">
+        <i data-lucide="chevron-right"></i> Recent evaluations
+      </summary>
+      <div style="padding:0 18px 18px; max-height:340px; overflow:auto;">
+        <table class="tbl">
+          <thead><tr>
+            <th>Time</th><th>Status</th><th>Precision</th><th>Recall</th><th>ROC-AUC</th><th>FPR</th><th>NFR-02</th>
+          </tr></thead>
+          <tbody>
+            <template x-for="e in (evaluations[m.name] || [])" :key="e.job_id">
+              <tr>
+                <td class="mono apt-small" x-text="(new Date((e.started_at||0)*1000)).toISOString().slice(0,19)"></td>
+                <td><span :class="'status-' + (e.status === 'ok' ? 'active' : 'blocked')">●</span> <span x-text="e.status"></span></td>
+                <td class="mono tabnum" x-text="e.report ? (e.report.precision||0).toFixed(3) : '—'"></td>
+                <td class="mono tabnum" x-text="e.report ? (e.report.recall||0).toFixed(3) : '—'"></td>
+                <td class="mono tabnum" x-text="e.report ? (e.report.roc_auc||0).toFixed(3) : '—'"></td>
+                <td class="mono tabnum" x-text="e.report ? (e.report.fpr||0).toFixed(3) : '—'"></td>
+                <td>
+                  <template x-if="e.report && e.report.nfr_02_grade">
+                    <span>
+                      <template x-for="ent in Object.entries(e.report.nfr_02_grade)" :key="ent[0]">
+                        <span class="pill"
+                              :style="ent[1].passes ? 'background:var(--success-bg);color:var(--success);margin-right:4px;' : 'background:var(--critical-bg);color:var(--critical);margin-right:4px;'"
+                              x-text="(ent[1].passes ? '✓ ' : '✗ ') + ent[0]"></span>
+                      </template>
+                    </span>
+                  </template>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</template>
+
+{# Modal — inline (NOT teleported) so the Alpine scope is unambiguous. #}
+<div x-show="modal.open" x-cloak style="position:fixed; inset:0; z-index:55;">
+  <div class="scrim" x-on:click="modal.open = false" x-transition.opacity></div>
+  <div x-transition style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:56; pointer-events:none;">
+    <div class="modal" style="pointer-events:auto;">
+      <div style="padding:18px 20px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="apt-h3" x-text="modal.title"></h2>
+        <button class="btn btn-ghost btn-icon" type="button" x-on:click="modal.open = false"><i data-lucide="x"></i></button>
+      </div>
+      <div style="padding:18px 20px;">
+        <div class="form-grid" x-show="modal.kind !== 'rollback'">
+          <div class="field"><label class="field-label">Hours</label><input class="input" type="number" x-model.number="form.hours" min="1" max="720"></div>
+          <div class="field"><label class="field-label">Hosts</label><input class="input" type="number" x-model.number="form.hosts" min="1" max="50"></div>
+          <div class="field"><label class="field-label">Lateral attacks/day</label><input class="input" type="number" x-model.number="form.lateral_attacks" min="0"></div>
+          <div class="field"><label class="field-label">DNS attacks/day</label><input class="input" type="number" x-model.number="form.dns_attacks" min="0"></div>
+          <div class="field"><label class="field-label">Seed</label><input class="input" type="number" x-model.number="form.seed"></div>
+          <div class="field" x-show="modal.kind === 'retrain'"><label class="field-label">Boost rounds</label><input class="input" type="number" x-model.number="form.num_boost_round" min="10"></div>
+          <div class="field" x-show="modal.kind === 'evaluate'"><label class="field-label">Threshold</label><input class="input" type="number" step="0.01" x-model.number="form.threshold" min="0" max="1"></div>
+        </div>
+        <div x-show="modal.kind === 'rollback'">
+          <div class="field">
+            <label class="field-label">Version</label>
+            <select class="input" x-model="form.version">
+              <template x-for="v in (rollbackVersions || [])" :key="v.version">
+                <option :value="v.version" x-text="v.version + (v.metadata && v.metadata.feature_count ? ' · ' + v.metadata.feature_count + ' features' : '')"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="padding:14px 20px; border-top:1px solid var(--border-1); display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-secondary" type="button" x-on:click="modal.open = false">Cancel</button>
+        <button class="btn btn-primary" type="button" x-on:click="submitModal()"
+                x-text="({retrain:'Retrain', evaluate:'Evaluate', tune:'Tune', rollback:'Roll back'})[modal.kind] || 'Submit'"></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function modelsPage() {
+  return {
+    models: [],
+    driftBaselines: {},
+    driftCounts: {},
+    thresholds: {},
+    evaluations: {},
+    modal: { open: false, kind: '', title: '', model: '' },
+    form: { hours: 48, hosts: 10, lateral_attacks: 8, dns_attacks: 8, seed: 42, num_boost_round: 200, threshold: 0.5, version: '' },
+    rollbackVersions: [],
+
+    async load() {
+      const r = await fetch('/models', { credentials: 'same-origin' });
+      const d = await r.json();
+      this.models = d.models || [];
+      for (const m of this.models) {
+        this.fetchDrift(m.name);
+        this.fetchImportance(m.name);
+        this.fetchEvaluations(m.name);
+      }
+      // Detector thresholds
+      try {
+        const dr = await fetch('/models/detectors', { credentials: 'same-origin' });
+        if (dr.ok) {
+          const dd = await dr.json();
+          for (const det of dd.detectors || []) {
+            this.thresholds[det.name] = det.threshold || 0.5;
+          }
+        }
+      } catch (_) {}
+    },
+
+    async fetchDrift(name) {
+      try {
+        const r = await fetch('/models/' + name + '/drift/history', { credentials: 'same-origin' });
+        const d = await r.json();
+        this.driftBaselines[name] = d.baseline;
+        this.driftCounts[name] = d.current_count || 0;
+        await this.$nextTick();
+        const canvas = document.getElementById('chart-drift-' + name);
+        if (canvas && window.AptCharts) {
+          const pts = (d.points || []).map(p => ({ ts: '#' + p.idx, mean: p.mean, p95: p.p95 }));
+          if (pts.length === 0) pts.push({ ts: 'now', mean: 0, p95: 0 });
+          window.AptCharts.lineChart(canvas, pts, {
+            series: [{ key: 'mean', label: 'mean conf' }, { key: 'p95', label: 'p95' }],
+          });
+        }
+      } catch (_) {}
+    },
+
+    async fetchImportance(name) {
+      try {
+        const r = await fetch('/models/' + name + '/importance?importance_type=gain&top_k=8', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+        await this.$nextTick();
+        const canvas = document.getElementById('chart-imp-' + name);
+        if (canvas && window.AptCharts) {
+          window.AptCharts.horizontalBar(canvas,
+            (d.features || []).map(f => ({ label: f.feature, value: f.normalized_share })));
+        }
+      } catch (_) {}
+    },
+
+    async fetchEvaluations(name) {
+      try {
+        const r = await fetch('/models/' + name + '/evaluations', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+        this.evaluations[name] = d.evaluations || [];
+      } catch (_) {}
+    },
+
+    async snapshotDrift() {
+      const r = await fetch('/models/drift/baseline', { method: 'POST', credentials: 'same-origin' });
+      if (r.ok) {
+        Alpine.store('toast').push('Drift baselines snapped.', 'ok');
+        this.load();
+      } else {
+        Alpine.store('toast').push('Snapshot failed.', 'error');
+      }
+    },
+
+    async saveThreshold(name) {
+      const r = await fetch('/models/detectors/' + name + '/threshold', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold: this.thresholds[name] }),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push(name + ' threshold → ' + this.thresholds[name].toFixed(2), 'ok');
+      } else {
+        Alpine.store('toast').push('Threshold update failed.', 'error');
+      }
+    },
+
+    openModal(kind, model) {
+      this.modal = { open: true, kind, model, title: kind.charAt(0).toUpperCase() + kind.slice(1) + ' · ' + model };
+    },
+
+    async openRollback(m) {
+      const r = await fetch('/models/' + m.name + '/versions', { credentials: 'same-origin' });
+      const d = await r.json();
+      this.rollbackVersions = (d.versions || []).slice().reverse();
+      this.form.version = (this.rollbackVersions[0] || {}).version || '';
+      this.modal = { open: true, kind: 'rollback', model: m.name, title: 'Roll back · ' + m.name };
+    },
+
+    async submitModal() {
+      console.log('[modelsPage] submitModal', { kind: this.modal.kind, model: this.modal.model, form: this.form });
+      try {
+        const m = this.modal.model;
+        if (!m) { Alpine.store('toast').push('No model selected.', 'error'); return; }
+        let url, body;
+        if (this.modal.kind === 'retrain') {
+          url = '/models/' + m + '/retrain';
+          body = { hours: this.form.hours, hosts: this.form.hosts,
+                    lateral_attacks: this.form.lateral_attacks, dns_attacks: this.form.dns_attacks,
+                    seed: this.form.seed, num_boost_round: this.form.num_boost_round };
+        } else if (this.modal.kind === 'evaluate') {
+          url = '/models/' + m + '/evaluate';
+          body = { hours: this.form.hours, hosts: this.form.hosts,
+                    lateral_attacks: this.form.lateral_attacks, dns_attacks: this.form.dns_attacks,
+                    seed: this.form.seed, threshold: this.form.threshold };
+        } else if (this.modal.kind === 'tune') {
+          url = '/models/' + m + '/tune';
+          body = { hours: this.form.hours, hosts: this.form.hosts,
+                    lateral_attacks: this.form.lateral_attacks, dns_attacks: this.form.dns_attacks,
+                    seed: this.form.seed };
+        } else if (this.modal.kind === 'rollback') {
+          if (!this.form.version) { Alpine.store('toast').push('Pick a version first.', 'error'); return; }
+          url = '/models/' + m + '/rollback/' + this.form.version;
+          body = null;
+        } else {
+          Alpine.store('toast').push('Unknown action: ' + this.modal.kind, 'error');
+          return;
+        }
+        const opts = { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
+        if (body) opts.body = JSON.stringify(body);
+        const r = await fetch(url, opts);
+        console.log('[modelsPage] fetch', url, '→', r.status);
+        if (r.ok) {
+          Alpine.store('toast').push(this.modal.kind + ' kicked off.', 'ok');
+          this.modal.open = false;
+          setTimeout(() => this.load(), 800);
+        } else {
+          const t = await r.text();
+          Alpine.store('toast').push('Failed (' + r.status + '): ' + t.slice(0, 200), 'error');
+        }
+      } catch (err) {
+        console.error('[modelsPage] submitModal error', err);
+        Alpine.store('toast').push('JS error: ' + (err && err.message ? err.message : String(err)), 'error');
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

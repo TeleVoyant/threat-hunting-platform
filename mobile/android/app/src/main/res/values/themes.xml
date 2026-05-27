@@ -1,0 +1,22 @@
+<resources>
+    <!--
+      Branded splash screen via androidx.core:core-splashscreen.
+      Activity declares this as its initial theme; we swap to Theme.AptThp.Main
+      after installSplashScreen() in MainActivity.onCreate().
+    -->
+    <style name="Theme.AptThp" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="windowSplashScreenAnimationDuration">350</item>
+        <item name="postSplashScreenTheme">@style/Theme.AptThp.Main</item>
+    </style>
+
+    <!-- Main app theme — Compose draws everything; we just need a sane
+         windowBackground for the brief moment between splash dismissal and
+         Compose first frame. -->
+    <style name="Theme.AptThp.Main" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+        <item name="android:navigationBarColor">@color/splash_background</item>
+    </style>
+</resources>

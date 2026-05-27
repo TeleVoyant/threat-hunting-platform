@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp" android:height="160dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Outer ring -->
+    <path android:fillColor="#1FB6A6"
+        android:pathData="M54,18a36,36 0 1,0 36,36 36,36 0 0,0 -36,-36zm0,8a28,28 0 1,1 -28,28 28,28 0 0,1 28,-28z"/>
+    <!-- Inner crosshair -->
+    <path android:fillColor="#1FB6A6"
+        android:pathData="M50,42h8v24h-8z"/>
+    <path android:fillColor="#1FB6A6"
+        android:pathData="M42,50h24v8h-24z"/>
+    <!-- Center dot -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,52a2,2 0 1,0 2,2 2,2 0 0,0 -2,-2z"/>
+</vector>

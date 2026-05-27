@@ -1,0 +1,98 @@
+<header class="topbar" style="display:flex; align-items:center; gap:14px; padding:0 20px;">
+  <button class="btn btn-ghost btn-icon" title="Toggle sidebar"
+          x-on:click="$store.sidebar.toggle()">
+    <i data-lucide="panel-left"></i>
+  </button>
+
+  <div style="flex:1; max-width:480px; position:relative;">
+    <button x-on:click="$store.palette.open = true" style="all:unset; cursor:text; display:flex; align-items:center; gap:8px; width:100%; padding:7px 12px 7px 36px; border-radius:var(--r-2); border:1px solid var(--border-2); background:var(--bg-2); color:var(--fg-3); font:500 13px var(--font-sans);">
+      Search detections, agents, actions…
+      <span style="margin-left:auto; font:600 10px var(--font-mono); color:var(--fg-3); border:1px solid var(--border-1); padding:1px 6px; border-radius:4px;">⌘K</span>
+    </button>
+    <i data-lucide="search" style="position:absolute; left:12px; top:11px; width:14px; height:14px; color:var(--fg-3);"></i>
+  </div>
+
+  <div class="spacer"></div>
+
+  <span x-data="uptimePill" x-init="start()"
+        title="Time since the platform process started"
+        style="display:inline-flex; align-items:center; gap:6px; font:500 12px var(--font-sans); color:var(--fg-2); white-space:nowrap;">
+    <span class="heartbeat" style="width:7px; height:7px; border-radius:50%; background:var(--apt-teal); box-shadow:0 0 6px var(--apt-teal); flex:0 0 auto;"></span>
+    <span x-text="'Up ' + (label || '…')">Up …</span>
+  </span>
+
+  <a class="btn btn-ghost btn-icon" title="Pair phone (companion app)"
+     href="/dashboard/settings/companion">
+    <i data-lucide="smartphone"></i>
+  </a>
+
+  <button class="btn btn-ghost btn-icon" title="Toggle theme"
+          x-data x-init="$store.theme.init()"
+          x-on:click="$store.theme.cycle()">
+    <i x-bind:data-lucide="$store.theme.icon()"></i>
+  </button>
+
+  <div x-data="{ open: false }" style="position:relative;">
+    <button class="btn btn-ghost btn-icon" title="Notifications"
+            style="position:relative;" x-on:click="open = !open">
+      <i data-lucide="bell"></i>
+      <template x-if="$store.notifs && $store.notifs.unread > 0">
+        <span style="position:absolute; top:2px; right:2px; background:var(--critical); color:#fff;
+                     font:700 9px var(--font-sans); padding:1px 5px; border-radius:999px;
+                     box-shadow:0 0 6px var(--critical);"
+              x-text="$store.notifs.unread > 99 ? '99+' : $store.notifs.unread"></span>
+      </template>
+    </button>
+    <div x-show="open" x-on:click.away="open = false" x-transition
+         style="position:absolute; top:42px; right:0; width:340px; max-height:60vh; overflow:auto;
+                background:var(--bg-2); border:1px solid var(--border-2); border-radius:var(--r-3);
+                box-shadow:var(--shadow-3); z-index:120; padding:0;">
+      <div style="padding:10px 14px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border-1);">
+        <strong style="font:600 12px var(--font-sans);">Notifications</strong>
+        <a class="linkish apt-small" href="/dashboard/notifications">Open center →</a>
+      </div>
+      <template x-for="n in ($store.notifs ? $store.notifs.items : []).slice(0, 8)" :key="n.id">
+        <a :href="'/dashboard/alerts/' + n.alert_id"
+           x-on:click="$store.notifs.markRead(n.id)"
+           style="display:flex; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border-1); color:var(--fg-1);"
+           :style="n.read_at ? 'opacity:0.55' : ''">
+          <span class="pill"
+                :class="'sev-' + n.severity"
+                style="flex:0 0 auto;"
+                x-text="(n.severity||'').toUpperCase()"></span>
+          <div style="flex:1; min-width:0;">
+            <div style="font:600 12px var(--font-sans);" x-text="n.title"></div>
+            <div class="mono apt-small" style="color:var(--fg-3);"
+                 x-text="new Date(n.created_at*1000).toISOString().slice(11,19) + ' UTC'"></div>
+          </div>
+        </a>
+      </template>
+      <div x-show="($store.notifs ? $store.notifs.items.length : 0) === 0"
+           class="apt-small" style="padding:18px; text-align:center; color:var(--fg-3);">
+        No notifications yet.
+      </div>
+      <button class="btn btn-secondary" style="width:100%; border-radius:0;"
+              x-on:click="$store.notifs.markAll(); open = false"
+              x-show="$store.notifs && $store.notifs.unread > 0">
+        Mark all read
+      </button>
+    </div>
+  </div>
+
+  {% if user %}
+  <div style="display:flex; align-items:center; gap:8px;">
+    <div style="width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#1f4a75,#12B5B0); display:inline-flex; align-items:center; justify-content:center; font:700 11px var(--font-sans); color:var(--fg-1);">
+      {{ user.username[:2]|upper }}
+    </div>
+    <div style="display:flex; flex-direction:column;">
+      <span style="font:600 12px var(--font-sans); color:var(--fg-1);">{{ user.username }}</span>
+      <span class="mono" style="font:500 10px var(--font-mono); color:var(--fg-3);">{{ user.role.value if user.role else '' }}</span>
+    </div>
+    <form method="post" action="/auth/logout" style="display:inline;">
+      <button class="btn btn-ghost btn-icon" title="Logout" type="submit">
+        <i data-lucide="log-out"></i>
+      </button>
+    </form>
+  </div>
+  {% endif %}
+</header>

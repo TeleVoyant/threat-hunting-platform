@@ -2,17 +2,22 @@
 detectors:
   lateral_movement:
     enabled: true
-    model_path: "detection/models/lateral_movement_v1.json"
+    model_path: "detection/models/lateral_movement/latest"
     threshold: 0.5
-    description: "Credential-based lateral movement (Pass-the-Hash, etc.)"
-    mitre_tactics: ["TA0006", "TA0008"]
+    description: "Credential-based lateral movement & post-compromise auth abuse"
+    # Covers techniques: T1110 brute force, T1078 valid accounts,
+    # T1550.002 PtH, T1550.003 PtT, T1021 remote services,
+    # T1136 create account, T1098 account manipulation.
+    mitre_tactics: ["TA0003", "TA0005", "TA0006", "TA0008"]
 
   dns_exfiltration:
     enabled: true
-    model_path: "detection/models/dns_exfiltration_v1.json"
+    model_path: "detection/models/dns_exfiltration/latest"
     threshold: 0.5
-    description: "Covert data exfiltration via DNS tunneling"
-    mitre_tactics: ["TA0010"]
+    description: "Covert data exfiltration & C2 over DNS (tunneling, beaconing)"
+    # Covers techniques: T1048.003 exfil over DNS, T1071.004 DNS C2,
+    # T1568.001 fast-flux DNS.
+    mitre_tactics: ["TA0010", "TA0011"]
 
   # Future detectors — just add config, no code changes to core
   # ransomware:

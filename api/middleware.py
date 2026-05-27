@@ -17,20 +17,29 @@ async def get_current_user(
     api_key=Depends(api_key_header),
 ) -> User:
     """
-    Extract and validate user from JWT token or API key.
-    Every API endpoint depends on this.
+    Extract and validate user from JWT bearer, API key header, or dashboard
+    cookie. Every API endpoint depends on this. The cookie path lets the
+    server-rendered dashboard call JSON endpoints (charts, partials) using
+    the same session it was rendered with.
     """
     auth_manager: AuthManager = request.app.state.auth_manager
 
-    # Try JWT first
+    # Try JWT bearer first (API clients)
     if bearer and bearer.credentials:
         user = auth_manager.verify_jwt(bearer.credentials)
         if user:
             return user
 
-    # Fall back to API key
+    # API key header (machine clients)
     if api_key:
         user = auth_manager.authenticate_api_key(api_key)
+        if user:
+            return user
+
+    # Dashboard cookie (browser sessions)
+    cookie_token = request.cookies.get("apt_session")
+    if cookie_token:
+        user = auth_manager.verify_jwt(cookie_token)
         if user:
             return user
 

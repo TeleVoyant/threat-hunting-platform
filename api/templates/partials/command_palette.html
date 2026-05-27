@@ -1,0 +1,110 @@
+<template x-teleport="body" x-data="aptPalette()">
+  <div>
+    <div class="scrim" x-show="$store.palette.open" x-on:click="$store.palette.open = false"
+         x-transition.opacity></div>
+    <div x-show="$store.palette.open" x-transition
+         x-on:keydown.escape.window="$store.palette.open = false"
+         style="position:fixed; top:14vh; left:50%; transform:translateX(-50%); width:560px; max-width:92vw; z-index:80;">
+      <div class="card" style="padding:0; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:8px; padding:12px 14px; border-bottom:1px solid var(--border-1);">
+          <i data-lucide="search" style="color:var(--fg-3);"></i>
+          <input class="input" type="text" x-model="query" placeholder="Type a command… (try retrain, allowlist, rotate)"
+                 x-on:keydown.down.prevent="cursor = Math.min(cursor + 1, filtered().length - 1)"
+                 x-on:keydown.up.prevent="cursor = Math.max(cursor - 1, 0)"
+                 x-on:keydown.enter.prevent="run(filtered()[cursor])"
+                 x-init="$watch('$store.palette.open', (v) => v && setTimeout(() => $el.focus(), 50))"
+                 style="border:0; background:transparent; flex:1; font-size:15px;">
+          <span style="font:600 10px var(--font-mono); color:var(--fg-3); border:1px solid var(--border-1); padding:1px 6px; border-radius:4px;">esc</span>
+        </div>
+        <div style="max-height:60vh; overflow:auto;">
+          <template x-for="(a, i) in filtered()" :key="a.id">
+            <button x-on:click="run(a)" x-on:mouseenter="cursor = i"
+                    style="all:unset; cursor:pointer; display:flex; align-items:center; gap:12px; width:100%; padding:10px 16px;"
+                    :style="cursor === i ? 'background:var(--apt-teal-tint); color:var(--apt-teal-bright);' : 'color:var(--fg-1);'">
+              <i :data-lucide="a.icon"></i>
+              <div style="flex:1;">
+                <div style="font:600 13px var(--font-sans);" x-text="a.label"></div>
+                <div class="apt-small" style="color:var(--fg-3);" x-text="a.hint"></div>
+              </div>
+              <span class="mono apt-small" style="color:var(--fg-3);" x-text="a.section"></span>
+            </button>
+          </template>
+          <div x-show="filtered().length === 0" class="apt-small" style="padding:24px; text-align:center; color:var(--fg-3);">No commands match.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+function aptPalette() {
+  const actions = [
+    { id: 'home',      section: 'Pages', label: 'Go to Operations',    hint: 'Home dashboard',           icon: 'layout-dashboard', go: '/dashboard' },
+    { id: 'alerts',    section: 'Pages', label: 'Open Detections',     hint: 'Alert grid + filters',     icon: 'bell',             go: '/dashboard/alerts' },
+    { id: 'graph',     section: 'Pages', label: 'Open Lateral graph',  hint: 'Attack-graph viewer',      icon: 'network',          go: '/dashboard/graph' },
+    { id: 'models',    section: 'Pages', label: 'Open Models',         hint: 'Detectors · drift · tune', icon: 'bar-chart-3',      go: '/dashboard/models' },
+    { id: 'allowlist', section: 'Pages', label: 'Open DNS allowlist',  hint: 'Allowlist editor',         icon: 'list-checks',      go: '/dashboard/allowlist' },
+    { id: 'fleet',     section: 'Pages', label: 'Open Endpoints',      hint: 'Fleet table + commands',   icon: 'server',           go: '/dashboard/fleet' },
+    { id: 'enroll',    section: 'Pages', label: 'Enroll an endpoint',  hint: 'PowerShell one-liner',     icon: 'plus-circle',      go: '/dashboard/enroll' },
+    { id: 'fl',        section: 'Pages', label: 'Open Federated learning', hint: 'FL local + demo',     icon: 'share-2',          go: '/dashboard/fl' },
+    { id: 'audit',     section: 'Pages', label: 'Open Audit log',      hint: 'Hash-chained log',         icon: 'scroll-text',      go: '/dashboard/audit' },
+    { id: 'users',     section: 'Pages', label: 'Open Users',          hint: 'Add / rotate keys',        icon: 'users',            go: '/dashboard/users' },
+    { id: 'admin',     section: 'Pages', label: 'Open Settings',       hint: 'Secrets · hardening',      icon: 'settings',         go: '/dashboard/admin' },
+    { id: 'diag',      section: 'Pages', label: 'Open Diagnostics',    hint: 'Service health',           icon: 'activity',         go: '/dashboard/diagnostics' },
+    // Quick actions
+    { id: 'theme-cycle', section: 'Action', label: 'Cycle theme',          hint: 'auto → light → dark',
+       icon: 'palette',
+       fn: () => Alpine.store('theme').cycle() },
+    { id: 'logout',     section: 'Action', label: 'Sign out',             hint: 'Clear session cookie',
+       icon: 'log-out',
+       fn: async () => { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }); location.href = '/auth/login'; } },
+    { id: 'snap-drift', section: 'Action', label: 'Snapshot drift baseline', hint: 'All detectors',
+       icon: 'camera',
+       fn: async () => {
+         const r = await fetch('/models/drift/baseline', { method: 'POST', credentials: 'same-origin' });
+         Alpine.store('toast').push(r.ok ? 'Drift baseline snapped.' : 'Snapshot failed.', r.ok ? 'ok' : 'error');
+       } },
+    { id: 'verify-audit', section: 'Action', label: 'Verify audit integrity', hint: 'Hash-chain check',
+       icon: 'shield-check',
+       fn: async () => {
+         const r = await fetch('/audit/verify', { credentials: 'same-origin' });
+         const d = await r.json().catch(() => ({}));
+         Alpine.store('toast').push((d.integrity_ok ? '✓ ' : '✗ ') + (d.entries || 0) + ' entries', d.integrity_ok ? 'ok' : 'error');
+       } },
+    { id: 'run-hardening', section: 'Action', label: 'Run hardening audit',   hint: 'Docker compose check',
+       icon: 'shield',
+       fn: async () => {
+         Alpine.store('toast').push('Running hardening audit…', 'ok');
+         const r = await fetch('/admin/hardening', { credentials: 'same-origin' });
+         const d = await r.json().catch(() => ({}));
+         Alpine.store('toast').push(d.passed ? '✓ Hardening passed' : '✗ Hardening issues (exit ' + d.exit_code + ')', d.passed ? 'ok' : 'error');
+       } },
+    { id: 'refresh-ioc', section: 'Action', label: 'Refresh IoC cache',       hint: 'MISP / threat intel',
+       icon: 'refresh-cw',
+       fn: async () => {
+         const r = await fetch('/admin/threat-intel/refresh', { method: 'POST', credentials: 'same-origin' });
+         Alpine.store('toast').push(r.ok ? 'IoC refresh requested.' : 'Refresh failed.', r.ok ? 'ok' : 'error');
+       } },
+  ];
+
+  return {
+    query: '',
+    cursor: 0,
+    filtered() {
+      const q = (this.query || '').trim().toLowerCase();
+      const out = !q ? actions : actions.filter(a =>
+        a.label.toLowerCase().includes(q)
+        || (a.hint || '').toLowerCase().includes(q)
+        || (a.section || '').toLowerCase().includes(q));
+      if (this.cursor >= out.length) this.cursor = 0;
+      return out;
+    },
+    run(a) {
+      if (!a) return;
+      Alpine.store('palette').open = false;
+      if (a.go) location.href = a.go;
+      else if (a.fn) a.fn();
+    },
+  };
+}
+</script>

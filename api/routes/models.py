@@ -308,6 +308,349 @@ async def rollback_model(
     return {"status": "rolled_back", "name": name, "to_version": version}
 
 
+@router.post("/{name}/versions/{version}/promote")
+async def promote_version(
+    name: str,
+    version: str,
+    request: Request,
+    user: User = Depends(require_permission("retrain_models")),
+):
+    """Promote a staged version: flip its status to active, archive the
+    previously-active version, hot-reload detectors. Used after reviewing a
+    retrain produced by the auto-retrain scheduler."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    store = _store()
+    try:
+        manifest = store.promote(name, version)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+    try:
+        registry.hot_reload(name, str(store.base_dir / name / "latest"))
+    except (FileNotFoundError, SecurityError) as e:
+        raise HTTPException(500, f"Promoted but hot-reload failed: {e}")
+
+    _audit(request).log(
+        action="model.promote",
+        actor=user.username,
+        target=name,
+        details={"version": version},
+    )
+    return {"status": "promoted", "name": name, "version": version,
+            "manifest": manifest}
+
+
+# ── Drift history (for the dashboard chart) ───────────────────────────────
+
+@router.get("/{name}/drift/history")
+async def drift_history(
+    name: str,
+    request: Request,
+    user: User = Depends(require_permission("read_detections")),
+):
+    """
+    Return baseline stats + a chunked moving average of the rolling
+    confidence window for the detector. Good enough to drive a sparkline;
+    a real history log would need its own persistence story.
+    """
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+
+    sub = getattr(request.app.state, "detection_subscriber", None)
+    if sub is None:
+        return {"detector": name, "baseline": None, "points": []}
+
+    # Pull the drift monitor for this detector
+    monitor = (getattr(sub, "drift_monitors", {}) or {}).get(name)
+    if monitor is None:
+        return {"detector": name, "baseline": None, "points": []}
+
+    recents = list(monitor.recent_confidences)
+    n_chunks = 20
+    points = []
+    if recents:
+        chunk = max(1, len(recents) // n_chunks)
+        for i in range(0, len(recents), chunk):
+            window = recents[i:i + chunk]
+            if not window:
+                continue
+            window_sorted = sorted(window)
+            p50 = window_sorted[len(window_sorted) // 2]
+            p95 = window_sorted[min(len(window_sorted) - 1, int(len(window_sorted) * 0.95))]
+            mean = sum(window) / len(window)
+            points.append({
+                "idx": i, "mean": mean, "p50": p50, "p95": p95,
+                "size": len(window),
+            })
+    return {
+        "detector": name,
+        "baseline": monitor.baseline_stats,
+        "current_count": len(recents),
+        "points": points,
+    }
+
+
+# ── Detector thresholds (live-edit, persists to config/detectors.yml) ─────
+
+@router.get("/detectors")
+async def list_detectors(
+    request: Request,
+    user: User = Depends(require_permission("read_detections")),
+):
+    """List loaded detectors with current threshold."""
+    out = []
+    for name in registry.list_names():
+        det = registry.get(name)
+        out.append({
+            "name": name,
+            "threshold": getattr(det, "threshold", None),
+        })
+    return {"detectors": out}
+
+
+class ThresholdUpdate(BaseModel):
+    threshold: float = Field(..., ge=0.0, le=1.0)
+
+
+@router.put("/detectors/{name}/threshold")
+async def set_detector_threshold(
+    name: str,
+    body: ThresholdUpdate,
+    request: Request,
+    user: User = Depends(require_permission("manage_detectors")),
+):
+    """
+    Update a detector's classification threshold and persist to
+    `config/detectors.yml`. The change is applied to the in-memory detector
+    immediately so the running pipeline picks it up without restart.
+    """
+    if name not in registry.list_names():
+        raise HTTPException(404, f"Unknown detector: {name}")
+    import yaml
+    cfg_path = Path(os.environ.get("CONFIG_DIR", "config")) / "detectors.yml"
+    data: dict = {}
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text()) or {}
+    data.setdefault("detectors", {}).setdefault(name, {})["threshold"] = float(body.threshold)
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(data, default_flow_style=False))
+
+    det = registry.get(name)
+    if hasattr(det, "threshold"):
+        det.threshold = float(body.threshold)
+
+    _audit(request).log(
+        action="detector.threshold.update",
+        actor=user.username,
+        target=name,
+        details={"new_threshold": float(body.threshold)},
+    )
+    return {"name": name, "threshold": float(body.threshold), "applied": True}
+
+
+# ── Evaluation (subprocess) ────────────────────────────────────────────────
+
+_EVAL_DIR = Path(os.environ.get("DATA_DIR", "data")) / "evaluations"
+_TUNE_DIR = Path(os.environ.get("DATA_DIR", "data")) / "tunings"
+
+
+class EvaluateRequest(BaseModel):
+    hours: int = Field(48, ge=1, le=720)
+    hosts: int = Field(10, ge=1, le=50)
+    lateral_attacks: int = Field(8, ge=0, le=200)
+    dns_attacks:     int = Field(8, ge=0, le=200)
+    seed: int = Field(42, ge=0)
+    threshold: float = Field(0.5, ge=0.0, le=1.0)
+
+
+@router.post("/{name}/evaluate", status_code=202)
+async def evaluate_model(
+    name: str,
+    body: EvaluateRequest,
+    background: BackgroundTasks,
+    request: Request,
+    user: User = Depends(require_permission("retrain_models")),
+):
+    """Run NFR-02 evaluation against synthetic data in a background task."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    import uuid, time as _time
+    job_id = f"eval_{int(_time.time())}_{uuid.uuid4().hex[:6]}"
+    _EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    job_path = _EVAL_DIR / f"{name}__{job_id}.json"
+    job_path.write_text('{"status":"running","model":"%s","job_id":"%s"}' % (name, job_id))
+
+    _audit(request).log(
+        action="model.evaluate.requested",
+        actor=user.username, target=name,
+        details={"job_id": job_id, **body.model_dump()},
+    )
+    background.add_task(_run_evaluation, name, body, job_id, job_path, user.username, request.app)
+    return {"job_id": job_id, "model": name, "status": "running"}
+
+
+def _run_evaluation(name, body, job_id, job_path, actor, app):
+    """Background task — calls `training.evaluate_models` as a subprocess."""
+    import subprocess, json, sys, time as _time
+    out_json = _EVAL_DIR / f"{name}__{job_id}__result.json"
+    cmd = [
+        sys.executable, "-m", "training.evaluate_models",
+        "--model-name", name,
+        "--model-path", f"detection/models/{name}/latest",
+        "--synthetic",
+        "--hours", str(body.hours),
+        "--hosts", str(body.hosts),
+        "--lateral-attacks", str(body.lateral_attacks),
+        "--dns-attacks", str(body.dns_attacks),
+        "--seed", str(body.seed),
+        "--threshold", str(body.threshold),
+        "--output-json", str(out_json),
+    ]
+    env = dict(os.environ)
+    started = _time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    duration = _time.time() - started
+    summary = {
+        "job_id": job_id, "model": name,
+        "status": "ok" if proc.returncode == 0 else "failed",
+        "exit_code": proc.returncode,
+        "duration_sec": round(duration, 2),
+        "stderr_tail": (proc.stderr or "")[-2000:],
+        "started_at": started,
+        "params": body.model_dump(),
+    }
+    if out_json.exists():
+        try:
+            summary["report"] = json.loads(out_json.read_text())
+        except Exception as e:
+            summary["report_error"] = str(e)
+    job_path.write_text(json.dumps(summary, indent=2))
+
+    try:
+        app.state.audit_trail.log(
+            action="model.evaluate." + summary["status"],
+            actor=actor, target=name,
+            details={k: v for k, v in summary.items() if k != "report"},
+        )
+    except Exception:
+        pass
+
+
+@router.get("/{name}/evaluations")
+async def list_evaluations(
+    name: str,
+    request: Request,
+    user: User = Depends(require_permission("read_detections")),
+):
+    """List past evaluation jobs for a model, newest first."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    _EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    out = []
+    import json as _json
+    for p in sorted(_EVAL_DIR.glob(f"{name}__*.json"), reverse=True):
+        if "__result.json" in p.name:
+            continue
+        try:
+            out.append(_json.loads(p.read_text()))
+        except Exception:
+            continue
+    return {"name": name, "evaluations": out[:50]}
+
+
+# ── Tuning (subprocess) ────────────────────────────────────────────────────
+
+class TuneRequest(BaseModel):
+    hours: int = Field(48, ge=1, le=720)
+    hosts: int = Field(10, ge=1, le=50)
+    lateral_attacks: int = Field(8, ge=0, le=200)
+    dns_attacks:     int = Field(8, ge=0, le=200)
+    seed: int = Field(42, ge=0)
+    n_splits: int = Field(3, ge=2, le=10)
+
+
+@router.post("/{name}/tune", status_code=202)
+async def tune_model(
+    name: str,
+    body: TuneRequest,
+    background: BackgroundTasks,
+    request: Request,
+    user: User = Depends(require_permission("retrain_models")),
+):
+    """Run GridSearchCV hyperparameter tuning in a background task."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    import uuid, time as _time
+    job_id = f"tune_{int(_time.time())}_{uuid.uuid4().hex[:6]}"
+    _TUNE_DIR.mkdir(parents=True, exist_ok=True)
+    job_path = _TUNE_DIR / f"{name}__{job_id}.json"
+    job_path.write_text('{"status":"running","model":"%s","job_id":"%s"}' % (name, job_id))
+    _audit(request).log(
+        action="model.tune.requested",
+        actor=user.username, target=name,
+        details={"job_id": job_id, **body.model_dump()},
+    )
+    background.add_task(_run_tuning, name, body, job_id, job_path, user.username, request.app)
+    return {"job_id": job_id, "model": name, "status": "running"}
+
+
+def _run_tuning(name, body, job_id, job_path, actor, app):
+    import subprocess, json, sys, time as _time
+    out_json = _TUNE_DIR / f"{name}__{job_id}__result.json"
+    cmd = [
+        sys.executable, "-m", "training.tuning",
+        "--model-name", name,
+        "--synthetic",
+        "--hours", str(body.hours),
+        "--hosts", str(body.hosts),
+        "--lateral-attacks", str(body.lateral_attacks),
+        "--dns-attacks", str(body.dns_attacks),
+        "--seed", str(body.seed),
+        "--n-splits", str(body.n_splits),
+        "--output-json", str(out_json),
+    ]
+    started = _time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ))
+    duration = _time.time() - started
+    summary = {
+        "job_id": job_id, "model": name,
+        "status": "ok" if proc.returncode == 0 else "failed",
+        "exit_code": proc.returncode,
+        "duration_sec": round(duration, 2),
+        "stderr_tail": (proc.stderr or "")[-2000:],
+        "started_at": started,
+        "params": body.model_dump(),
+    }
+    if out_json.exists():
+        try:
+            summary["result"] = json.loads(out_json.read_text())
+        except Exception as e:
+            summary["result_error"] = str(e)
+    job_path.write_text(json.dumps(summary, indent=2))
+    try:
+        app.state.audit_trail.log(
+            action="model.tune." + summary["status"],
+            actor=actor, target=name,
+            details={k: v for k, v in summary.items() if k != "result"},
+        )
+    except Exception:
+        pass
+
+
+@router.get("/{name}/tunings/{job_id}")
+async def get_tuning(
+    name: str, job_id: str,
+    request: Request,
+    user: User = Depends(require_permission("read_detections")),
+):
+    p = _TUNE_DIR / f"{name}__{job_id}.json"
+    if not p.exists():
+        raise HTTPException(404, "Tuning job not found")
+    import json as _json
+    return _json.loads(p.read_text())
+
+
 # ── Drift baseline ─────────────────────────────────────────────────────────
 
 @router.post("/drift/baseline")

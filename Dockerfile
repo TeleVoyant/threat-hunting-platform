@@ -18,6 +18,13 @@ COPY alert_manager/ alert_manager/
 COPY visualization/ visualization/
 COPY observability/ observability/
 COPY api/ api/
+# training/ is required at runtime by the Models page:
+#   - in-process imports for retrain (training.synthetic, training.trainer, ...)
+#   - subprocess `python -m training.evaluate_models` and `python -m training.tuning`
+# .dockerignore excludes training/data/ so the FL CSV partitions don't bloat the image.
+COPY training/ training/
+# scripts/ is used by /admin/hardening (runs scripts/audit_compose_hardening.py).
+COPY scripts/ scripts/
 COPY run_server.py .
 
 # Config is mounted as volume, not baked into image

@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="diagPage()" x-init="load(); pollLogs()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Diagnostics</h1>
+    <div class="eyebrow" style="margin-top:4px;">Live service health · recent log tail</div>
+  </div>
+  <button class="btn btn-secondary" x-on:click="load()">
+    <i data-lucide="refresh-cw"></i> Refresh
+  </button>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
+    <h2 class="apt-h3">Services</h2>
+  </div>
+  <table class="tbl">
+    <thead><tr><th>Component</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+      <template x-for="s in services" :key="s.name">
+        <tr>
+          <td x-text="s.name"></td>
+          <td>
+            <span class="pill" :style="
+              s.status === 'ok'   ? 'background:var(--success-bg);color:var(--success);' :
+              s.status === 'warn' ? 'background:var(--warning-bg);color:var(--warning);' :
+              s.status === 'degraded' ? 'background:var(--warning-bg);color:var(--warning);' :
+                                     'background:var(--critical-bg);color:var(--critical);'"
+              x-text="(s.status||'').toUpperCase()"></span>
+          </td>
+          <td class="apt-small" style="color:var(--fg-2);" x-text="s.detail"></td>
+        </tr>
+      </template>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-bottom:14px;" x-data="notifDiag()" x-init="load()">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; align-items:center; justify-content:space-between;">
+    <h2 class="apt-h3">Notification channels</h2>
+    <button class="btn btn-secondary" x-on:click="load()">
+      <i data-lucide="refresh-cw"></i> Refresh
+    </button>
+  </div>
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0;">
+    <div style="padding:16px 18px; border-right:1px solid var(--border-1);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <strong>SMTP relay</strong>
+        <span class="pill" :style="!d.smtp.configured ? 'background:var(--bg-3);color:var(--fg-3);' :
+                                       d.smtp.reachable ? 'background:var(--success-bg);color:var(--success);' :
+                                                          'background:var(--critical-bg);color:var(--critical);'"
+              x-text="!d.smtp.configured ? 'NOT CONFIGURED' : (d.smtp.reachable ? 'REACHABLE' : 'UNREACHABLE')"></span>
+      </div>
+      <template x-if="d.smtp.configured">
+        <div>
+          <div class="apt-small" style="color:var(--fg-2);" x-text="d.smtp.host + ':' + d.smtp.port + (d.smtp.starttls ? ' · STARTTLS' : '')"></div>
+          <div class="apt-small" style="color:var(--fg-3);" x-text="'From: ' + d.smtp.from_addr"></div>
+          <div class="apt-small" style="color:var(--fg-3);" x-text="d.smtp.reach_detail"></div>
+          <template x-if="d.smtp.last_send">
+            <div class="apt-small mono" style="margin-top:6px; color:var(--fg-3);"
+                 x-text="'last send: ' + d.smtp.last_send.status + (d.smtp.last_send.error ? ' — ' + d.smtp.last_send.error : '')"></div>
+          </template>
+        </div>
+      </template>
+      <template x-if="!d.smtp.configured">
+        <div class="apt-small" style="color:var(--fg-3);">
+          Set <code>SMTP_HOST</code> + <code>SMTP_PORT</code> in <code>.env</code> and restart the API.
+        </div>
+      </template>
+      <button class="btn btn-secondary" style="margin-top:10px;" x-on:click="testEmail()" :disabled="!d.smtp.configured">
+        <i data-lucide="send"></i> Send test email to me
+      </button>
+    </div>
+
+    <div style="padding:16px 18px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <strong>Beem Africa SMS</strong>
+        <span class="pill" :style="!d.beem_sms.configured ? 'background:var(--bg-3);color:var(--fg-3);' :
+                                       d.beem_sms.balance && (d.beem_sms.balance.credit_balance != null) ?
+                                         'background:var(--success-bg);color:var(--success);' :
+                                         'background:var(--warning-bg);color:var(--warning);'"
+              x-text="!d.beem_sms.configured ? 'NOT CONFIGURED' :
+                       (d.beem_sms.balance && d.beem_sms.balance.credit_balance != null) ? 'OK' : 'DEGRADED'"></span>
+      </div>
+      <template x-if="d.beem_sms.configured">
+        <div>
+          <div class="apt-small" style="color:var(--fg-2);" x-text="'Sender: ' + d.beem_sms.sender_id"></div>
+          <template x-if="d.beem_sms.balance && d.beem_sms.balance.credit_balance != null">
+            <div class="apt-small mono" style="color:var(--fg-1); margin-top:4px;"
+                 x-text="'Balance: ' + d.beem_sms.balance.credit_balance + ' ' + (d.beem_sms.balance.currency || 'TZS')"></div>
+          </template>
+          <template x-if="d.beem_sms.balance && d.beem_sms.balance.credit_balance == null">
+            <div class="apt-small" style="color:var(--warning); margin-top:4px;"
+                 x-text="'balance lookup: ' + JSON.stringify(d.beem_sms.balance)"></div>
+          </template>
+          <template x-if="d.beem_sms.last_send">
+            <div class="apt-small mono" style="margin-top:6px; color:var(--fg-3);"
+                 x-text="'last send: ' + d.beem_sms.last_send.status +
+                          (d.beem_sms.last_send.request_id ? ' (req ' + d.beem_sms.last_send.request_id + ')' : '') +
+                          (d.beem_sms.last_send.code != null ? ' code=' + d.beem_sms.last_send.code : '') +
+                          (d.beem_sms.last_send.message ? ' — ' + d.beem_sms.last_send.message : '')"></div>
+          </template>
+          <template x-if="d.beem_sms.last_error">
+            <div class="apt-small" style="color:var(--critical); margin-top:4px;"
+                 x-text="'last error: ' + JSON.stringify(d.beem_sms.last_error)"></div>
+          </template>
+        </div>
+      </template>
+      <template x-if="!d.beem_sms.configured">
+        <div class="apt-small" style="color:var(--fg-3);">
+          Set <code>BEEM_API_KEY</code> + <code>BEEM_SECRET_KEY</code> + <code>BEEM_SENDER_ID</code> in <code>.env</code> and restart.
+        </div>
+      </template>
+      <button class="btn btn-secondary" style="margin-top:10px;" x-on:click="testSms()" :disabled="!d.beem_sms.configured">
+        <i data-lucide="message-square"></i> Send test SMS to me
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+    <h2 class="apt-h3">Recent log</h2>
+    <div class="apt-small" style="color:var(--fg-3);" x-text="logPath || ''"></div>
+  </div>
+  <pre class="mono apt-small" style="margin:0; padding:14px 18px; max-height:480px; overflow:auto; background:var(--bg-0); color:var(--fg-2); white-space:pre-wrap;">
+<template x-for="(line, idx) in logLines" :key="idx"><div x-text="line"></div></template>
+<div x-show="logLines.length === 0" x-text="logNote || 'No log lines.'"></div>
+</pre>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function notifDiag() {
+  return {
+    d: { smtp: { configured: false }, beem_sms: { configured: false } },
+    async load() {
+      try {
+        const r = await fetch('/diag/notifications', { credentials: 'same-origin' });
+        if (r.ok) this.d = await r.json();
+      } catch (_) {}
+    },
+    async testEmail() {
+      const r = await fetch('/diag/notifications/test/email',
+                            { method: 'POST', credentials: 'same-origin' });
+      const j = await r.json().catch(() => ({}));
+      Alpine.store('toast').push(j.message || (r.ok ? 'sent' : 'failed'),
+                                   j.ok ? 'ok' : 'error', 6000);
+      setTimeout(() => this.load(), 600);
+    },
+    async testSms() {
+      const r = await fetch('/diag/notifications/test/sms',
+                            { method: 'POST', credentials: 'same-origin' });
+      const j = await r.json().catch(() => ({}));
+      Alpine.store('toast').push(j.message || (r.ok ? 'sent' : 'failed'),
+                                   j.ok ? 'ok' : 'error', 6000);
+      setTimeout(() => this.load(), 600);
+    },
+  };
+}
+
+function diagPage() {
+  return {
+    services: [],
+    logPath: '',
+    logLines: [],
+    logNote: '',
+    async load() {
+      try {
+        const r = await fetch('/diag/services', { credentials: 'same-origin' });
+        if (r.ok) this.services = (await r.json()).services || [];
+      } catch (_) {}
+    },
+    async pollLogs() {
+      const r = await fetch('/diag/logs?lines=200', { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.logPath = d.path || '';
+        this.logLines = d.lines || [];
+        this.logNote = d.note || '';
+      }
+      setTimeout(() => this.pollLogs(), 15000);
+    },
+  };
+}
+</script>
+{% endblock %}

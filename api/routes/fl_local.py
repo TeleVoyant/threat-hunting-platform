@@ -23,7 +23,7 @@ import os
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from api.middleware import require_permission
@@ -278,3 +278,91 @@ async def list_own_contributions(
     """
     rows = _state(request).list_contributions(limit=limit)
     return {"contributions": rows}
+
+
+# ── In-process FL demo (for Chapter 7 of the dissertation) ─────────────────
+
+class FlDemoRequest(BaseModel):
+    num_rounds: int = Field(10, ge=2, le=50)
+    hours_per_org: int = Field(12, ge=1, le=72)
+    poison_round: int | None = Field(5, ge=2)
+    epsilon: float = Field(1.0, ge=0.1, le=10.0)
+
+
+@router.post("/demo/run", status_code=202)
+async def run_fl_demo(
+    body: FlDemoRequest,
+    background: BackgroundTasks,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """Kick off the in-process FL convergence demo."""
+    import os, uuid, time as _time
+    from pathlib import Path
+    job_id = f"fldemo_{int(_time.time())}_{uuid.uuid4().hex[:6]}"
+    demo_dir = Path(os.environ.get("DATA_DIR", "data")) / "fl_demo"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+    job_path = demo_dir / f"{job_id}.json"
+    job_path.write_text(f'{{"status":"running","job_id":"{job_id}"}}')
+    _audit(request).log(
+        action="fl.demo.requested", actor=user.username, target=job_id,
+        details=body.model_dump(),
+    )
+    background.add_task(_run_fl_demo, body, job_id, job_path, user.username, request.app)
+    return {"job_id": job_id, "status": "running"}
+
+
+def _run_fl_demo(body, job_id, job_path, actor, app):
+    import subprocess, json, sys, time as _time, os
+    out_dir = job_path.parent / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable, "-m", "federated.run_demo",
+        "--num-rounds", str(body.num_rounds),
+        "--hours-per-org", str(body.hours_per_org),
+        "--epsilon", str(body.epsilon),
+        "--output-dir", str(out_dir),
+    ]
+    if body.poison_round:
+        cmd += ["--poison-round", str(body.poison_round)]
+    started = _time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ))
+    duration = _time.time() - started
+    convergence = None
+    for p in sorted(out_dir.glob("convergence_*.json"), reverse=True):
+        try:
+            convergence = json.loads(p.read_text())
+            break
+        except Exception:
+            continue
+    summary = {
+        "job_id": job_id, "status": "ok" if proc.returncode == 0 else "failed",
+        "exit_code": proc.returncode, "duration_sec": round(duration, 2),
+        "stderr_tail": (proc.stderr or "")[-2000:],
+        "started_at": started, "params": body.model_dump(),
+        "output_dir": str(out_dir), "convergence": convergence,
+    }
+    job_path.write_text(json.dumps(summary, indent=2))
+    try:
+        app.state.audit_trail.log(
+            action="fl.demo." + summary["status"],
+            actor=actor, target=job_id,
+            details={k: v for k, v in summary.items() if k != "convergence"},
+        )
+    except Exception:
+        pass
+
+
+@router.get("/demo/{job_id}")
+async def fl_demo_status(
+    job_id: str,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    import os, json
+    from pathlib import Path
+    from fastapi import HTTPException
+    p = Path(os.environ.get("DATA_DIR", "data")) / "fl_demo" / f"{job_id}.json"
+    if not p.exists():
+        raise HTTPException(404, "Job not found")
+    return json.loads(p.read_text())

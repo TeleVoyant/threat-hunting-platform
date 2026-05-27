@@ -15,7 +15,7 @@ class LateralMovementDetector(BaseDetector):
     def name(self) -> str:
         return "lateral_movement"
 
-    def detection_type(self) -> str:
+    def detection_type(self) -> DetectionType:
         return DetectionType.LATERAL_MOVEMENT
 
     def required_features(self) -> list[str]:

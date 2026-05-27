@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Audit log — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="auditPage()" x-init="load(); verify()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Audit log</h1>
+    <div class="eyebrow" style="margin-top:4px;">Hash-chained · tamper-evident</div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <span class="pill" :style="integrity.ok ? 'background:var(--success-bg);color:var(--success);' : (integrity.checked ? 'background:var(--critical-bg);color:var(--critical);' : 'background:var(--bg-3);color:var(--fg-3);')"
+          x-text="integrity.checked ? (integrity.ok ? '✓ INTEGRITY OK · ' + integrity.entries + ' rows' : '✗ CHAIN BROKEN at row ' + integrity.entries) : '... verifying'"></span>
+    <button class="btn btn-secondary" x-on:click="verify()">
+      <i data-lucide="refresh-cw"></i> Re-verify
+    </button>
+    <button class="btn btn-secondary" x-on:click="exportCsv()">
+      <i data-lucide="download"></i> Export CSV
+    </button>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-bottom:14px;">
+  <div class="form-grid">
+    <div class="field"><label class="field-label">Action</label><input class="input" type="text" x-model="filters.action" placeholder="e.g. alert.acknowledge" @keydown.enter="load()"></div>
+    <div class="field"><label class="field-label">Actor</label><input class="input" type="text" x-model="filters.actor" placeholder="username" @keydown.enter="load()"></div>
+    <div class="field"><label class="field-label">Target contains</label><input class="input" type="text" x-model="filters.target" placeholder="alert / agent / model id" @keydown.enter="load()"></div>
+    <div class="field"><label class="field-label">Limit</label><input class="input" type="number" x-model.number="filters.limit" min="1" max="5000"></div>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:10px;">
+    <button class="btn btn-primary" x-on:click="load()">Apply</button>
+    <button class="btn btn-secondary" x-on:click="reset()">Reset</button>
+  </div>
+</div>
+
+<div class="card">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>Action</th>
+        <th>Actor</th>
+        <th>Target</th>
+        <th>Details</th>
+        <th>Chain hash</th>
+      </tr>
+    </thead>
+    <tbody>
+      <template x-for="r in rows" :key="r.id">
+        <tr>
+          <td class="mono apt-small" style="color:var(--fg-3);" x-text="(new Date((r.timestamp||0)*1000)).toISOString().slice(0,19)"></td>
+          <td class="mono apt-small" x-text="r.action"></td>
+          <td x-text="r.actor"></td>
+          <td class="mono apt-small" x-text="r.target"></td>
+          <td><pre class="mono apt-small" style="white-space:pre-wrap; max-width:480px; color:var(--fg-2); margin:0;" x-text="JSON.stringify(r.details, null, 2)"></pre></td>
+          <td class="mono apt-small" style="color:var(--fg-3);" x-text="(r.chain_hash||'').slice(0,12) + '…'"></td>
+        </tr>
+      </template>
+      <tr x-show="rows.length === 0"><td colspan="6" style="text-align:center; color:var(--fg-3); padding:32px;">No audit rows match.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function auditPage() {
+  return {
+    rows: [],
+    integrity: { checked: false, ok: false, entries: 0 },
+    filters: { action: '', actor: '', target: '', limit: 200 },
+
+    async load() {
+      const q = new URLSearchParams();
+      if (this.filters.action) q.set('action', this.filters.action);
+      if (this.filters.actor)  q.set('actor',  this.filters.actor);
+      if (this.filters.target) q.set('target', this.filters.target);
+      q.set('limit', this.filters.limit);
+      const r = await fetch('/audit?' + q.toString(), { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.rows = d.entries || [];
+      } else {
+        Alpine.store('toast').push('Query failed.', 'error');
+      }
+    },
+
+    async verify() {
+      this.integrity.checked = false;
+      const r = await fetch('/audit/verify', { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.integrity = { checked: true, ok: d.integrity_ok, entries: d.entries };
+      } else {
+        this.integrity = { checked: true, ok: false, entries: 0 };
+      }
+    },
+
+    reset() {
+      this.filters = { action: '', actor: '', target: '', limit: 200 };
+      this.load();
+    },
+
+    exportCsv() {
+      const q = new URLSearchParams();
+      if (this.filters.action) q.set('action', this.filters.action);
+      if (this.filters.actor)  q.set('actor',  this.filters.actor);
+      if (this.filters.target) q.set('target', this.filters.target);
+      window.location.href = '/audit/export.csv?' + q.toString();
+    },
+  };
+}
+</script>
+{% endblock %}

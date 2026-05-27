@@ -1,108 +1,298 @@
 {% extends "base.html" %}
-{% block title %}Fleet — APT Platform{% endblock %}
+{% from "partials/kpi_card.html" import kpi %}
+{% block title %}Endpoints — APT THP{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-4">
-  <h2 class="text-xl font-semibold text-slate-100">Fleet</h2>
-  <div class="text-sm text-slate-400">
-    {{ agents|length }} enrolled agent(s)
+{# Derive simple counts for the KPIs at render time #}
+{% set total = agents|length %}
+{% set with_pending = (agents|selectattr('pending_commands','greaterthan',0)|list)|length %}
+{% set lean      = (agents|selectattr('profile','equalto','Lean')|list)|length %}
+{% set balanced  = (agents|selectattr('profile','equalto','Balanced')|list)|length %}
+{% set full      = (agents|selectattr('profile','equalto','Full')|list)|length %}
+
+<div x-data='fleetPage()'>
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Endpoints</h1>
+    <div class="eyebrow" style="margin-top:4px;">{{ total }} enrolled · {{ with_pending }} with pending commands</div>
+  </div>
+  <a class="btn btn-primary" href="/dashboard/enroll">
+    <i data-lucide="plus"></i> Enroll endpoint
+  </a>
+</div>
+
+<div style="display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:20px;">
+  {{ kpi('Total endpoints', total) }}
+  {{ kpi('Balanced', balanced) }}
+  {{ kpi('Lean', lean) }}
+  {{ kpi('Full', full) }}
+</div>
+
+<div style="display:grid; grid-template-columns: 2fr 1fr; gap:14px; margin-bottom:20px;">
+  <div class="card card-pad">
+    <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+      <h2 class="apt-h3">Fleet status · 24h</h2>
+      <div class="eyebrow">active / stale / offline</div>
+    </div>
+    <div style="height:220px; position:relative;">
+      <canvas id="chart-fleet-history"></canvas>
+    </div>
+  </div>
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">Bulk actions</h2>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <button class="btn btn-secondary" x-on:click="bulkCmd('set_profile','Lean')"
+              :disabled="selected.length === 0">
+        <i data-lucide="layers"></i> Set selected → Lean
+      </button>
+      <button class="btn btn-secondary" x-on:click="bulkCmd('set_profile','Balanced')"
+              :disabled="selected.length === 0">
+        <i data-lucide="layers"></i> Set selected → Balanced
+      </button>
+      <button class="btn btn-secondary" x-on:click="bulkCmd('restart_services','all')"
+              :disabled="selected.length === 0">
+        <i data-lucide="refresh-cw"></i> Restart services (selected)
+      </button>
+      <div class="apt-small" style="color:var(--fg-3);" x-text="selected.length + ' selected'"></div>
+    </div>
   </div>
 </div>
 
-<div class="panel">
-  <table class="w-full">
+<div class="card">
+  <div style="padding:14px 18px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border-1);">
+    <h2 class="apt-h3">Endpoints</h2>
+    <div style="display:flex; gap:6px;">
+      <button class="chip" x-on:click="filterProfile = null" :class="filterProfile === null ? 'active' : ''">All</button>
+      <button class="chip" x-on:click="filterProfile = 'Lean'"     :class="filterProfile === 'Lean' ? 'active' : ''">Lean</button>
+      <button class="chip" x-on:click="filterProfile = 'Balanced'" :class="filterProfile === 'Balanced' ? 'active' : ''">Balanced</button>
+      <button class="chip" x-on:click="filterProfile = 'Full'"     :class="filterProfile === 'Full' ? 'active' : ''">Full</button>
+    </div>
+  </div>
+  <table class="tbl">
     <thead>
       <tr>
+        <th style="width:24px;"><input type="checkbox" x-on:change="toggleAll($event.target.checked)"></th>
         <th>Agent</th>
         <th>Profile</th>
         <th>Last status</th>
         <th>Last seen</th>
-        <th>Sequence</th>
+        <th>Seq</th>
         <th>Pending</th>
-        <th>Actions</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
       {% for a in agents %}
-      <tr>
-        <td class="font-mono">{{ a.agent_id }}</td>
+      <tr x-show="!filterProfile || filterProfile === {{ a.profile|tojson if a.profile else 'null' }}">
+        <td><input type="checkbox" value="{{ a.agent_id }}" x-model="selected"></td>
+        <td class="mono">{{ a.agent_id }}</td>
         <td>
-          <span class="pill bg-slate-700 text-slate-200">{{ a.profile or '—' }}</span>
+          <span class="pill" style="background:var(--bg-3); color:var(--fg-2);">{{ a.profile or '—' }}</span>
         </td>
         <td>
           {% if a.last_status %}
             <span class="status-{{ 'active' if a.last_status == 'ok' else 'open' }}">●</span> {{ a.last_status }}
           {% else %}
-            <span class="text-slate-500">never seen</span>
+            <span style="color:var(--fg-3);">never seen</span>
           {% endif %}
         </td>
-        <td class="text-xs text-slate-400">
-          {% if a.last_seen_at %}
-            {{ ((a.last_seen_at)|round)|int }}
-          {% else %}—{% endif %}
+        <td class="mono apt-small" style="color:var(--fg-3);">
+          {% if a.last_seen_at %}{{ ((a.last_seen_at)|round)|int }}{% else %}—{% endif %}
         </td>
-        <td class="text-slate-400">{{ a.current_sequence }}</td>
+        <td class="mono tabnum">{{ a.current_sequence }}</td>
         <td>
           {% if a.pending_commands > 0 %}
-          <span class="pill bg-amber-900 text-amber-200">{{ a.pending_commands }}</span>
+            <span class="pill" style="background:var(--warning-bg); color:var(--warning);">{{ a.pending_commands }}</span>
           {% else %}
-          <span class="text-slate-500">—</span>
+            <span style="color:var(--fg-3);">—</span>
           {% endif %}
         </td>
-        <td>
-          <details class="inline-block">
-            <summary class="btn btn-secondary cursor-pointer" style="display:inline-block;">Send command</summary>
-            <div class="mt-2 panel" style="background:#0f172a; padding:10px; min-width:280px;">
-              <form method="post" action="/dashboard/fleet/{{ a.agent_id }}/command" class="space-y-2">
-                <select name="command_type" required>
-                  <option value="set_profile">Set profile</option>
-                  <option value="toggle_telemetry">Toggle telemetry</option>
-                  <option value="restart_services">Restart services</option>
-                  <option value="get_status">Get status</option>
-                </select>
-
-                <select name="profile" class="text-xs">
-                  <option value="">— profile (set_profile only) —</option>
-                  <option value="Lean">Lean</option>
-                  <option value="Balanced">Balanced</option>
-                  <option value="Full">Full</option>
-                </select>
-
-                <select name="source" class="text-xs">
-                  <option value="">— source (toggle_telemetry only) —</option>
-                  <option value="sysmon">sysmon</option>
-                  <option value="dns_client">dns_client</option>
-                  <option value="firewall">firewall</option>
-                  <option value="wmi">wmi</option>
-                  <option value="defender">defender</option>
-                  <option value="tasksched">tasksched</option>
-                  <option value="powershell">powershell</option>
-                </select>
-
-                <label class="text-xs text-slate-400">
-                  <input type="checkbox" name="enabled"> enabled (toggle_telemetry only)
-                </label>
-
-                <select name="service" class="text-xs">
-                  <option value="">— service (restart_services only) —</option>
-                  <option value="wazuh">wazuh</option>
-                  <option value="sysmon">sysmon</option>
-                  <option value="all">all</option>
-                </select>
-
-                <button type="submit" class="w-full">Enqueue</button>
-              </form>
-            </div>
-          </details>
+        <td style="text-align:right;">
+          <button class="btn btn-secondary"
+                  x-on:click="openCmdModal('{{ a.agent_id }}')">
+            <i data-lucide="terminal"></i> Send command
+          </button>
+          <button class="btn btn-ghost btn-icon" title="Rotate secret"
+                  x-on:click="rotateSecret('{{ a.agent_id }}')">
+            <i data-lucide="key-round"></i>
+          </button>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text-slate-500 italic text-center py-6">
-        No agents enrolled. Run <code class="font-mono text-xs bg-slate-900 px-2 py-1 rounded">deploy_endpoint.ps1</code> on a Windows endpoint to enroll one.
+      <tr><td colspan="8" style="text-align:center; color:var(--fg-3); padding:32px;">
+        No endpoints enrolled. Go to <a class="linkish" href="/dashboard/enroll">Enroll endpoint</a> to add one.
       </td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
+{# Send-command modal #}
+<template x-teleport="body">
+  <div>
+    <div class="scrim" x-show="cmdModal.open" x-on:click="cmdModal.open = false" x-transition.opacity></div>
+    <div x-show="cmdModal.open" x-transition style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:55;">
+      <div class="modal">
+        <div style="padding:18px 20px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="apt-h3" x-text="'Send command · ' + cmdModal.agentId"></h2>
+          <button class="btn btn-ghost btn-icon" x-on:click="cmdModal.open = false">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div style="padding:18px 20px; display:flex; flex-direction:column; gap:12px;">
+          <div class="field">
+            <label class="field-label">Command</label>
+            <select class="input" x-model="cmdModal.type">
+              <option value="set_profile">Set profile</option>
+              <option value="toggle_telemetry">Toggle telemetry</option>
+              <option value="restart_services">Restart services</option>
+              <option value="get_status">Get status</option>
+            </select>
+          </div>
+          <div class="field" x-show="cmdModal.type === 'set_profile'">
+            <label class="field-label">Profile</label>
+            <select class="input" x-model="cmdModal.profile">
+              <option value="Lean">Lean</option>
+              <option value="Balanced">Balanced</option>
+              <option value="Full">Full</option>
+            </select>
+          </div>
+          <div x-show="cmdModal.type === 'toggle_telemetry'" class="form-grid">
+            <div class="field">
+              <label class="field-label">Source</label>
+              <select class="input" x-model="cmdModal.source">
+                <option value="sysmon">sysmon</option>
+                <option value="dns_client">dns_client</option>
+                <option value="firewall">firewall</option>
+                <option value="wmi">wmi</option>
+                <option value="defender">defender</option>
+                <option value="tasksched">tasksched</option>
+                <option value="powershell">powershell</option>
+              </select>
+            </div>
+            <div class="field" style="justify-content:flex-end;">
+              <label class="field-label">&nbsp;</label>
+              <label style="display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" x-model="cmdModal.enabled"> enabled
+              </label>
+            </div>
+          </div>
+          <div class="field" x-show="cmdModal.type === 'restart_services'">
+            <label class="field-label">Service</label>
+            <select class="input" x-model="cmdModal.service">
+              <option value="wazuh">wazuh</option>
+              <option value="sysmon">sysmon</option>
+              <option value="all">all</option>
+            </select>
+          </div>
+        </div>
+        <div style="padding:14px 20px; border-top:1px solid var(--border-1); display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn btn-secondary" x-on:click="cmdModal.open = false">Cancel</button>
+          <button class="btn btn-primary" x-on:click="sendCmd()">Enqueue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function fleetPage() {
+  return {
+    selected: [],
+    filterProfile: null,
+    cmdModal: { open: false, agentId: '', type: 'get_status',
+                 profile: 'Balanced', source: 'sysmon', enabled: true, service: 'wazuh' },
+    toggleAll(checked) {
+      this.selected = checked
+        ? Array.from(document.querySelectorAll('tbody input[type=checkbox]')).map(c => c.value)
+        : [];
+      document.querySelectorAll('tbody input[type=checkbox]').forEach(c => c.checked = checked);
+    },
+    openCmdModal(agentId) {
+      this.cmdModal.agentId = agentId;
+      this.cmdModal.open = true;
+    },
+    paramsForType() {
+      const t = this.cmdModal.type;
+      if (t === 'set_profile')      return { profile: this.cmdModal.profile };
+      if (t === 'toggle_telemetry') return { source: this.cmdModal.source, enabled: this.cmdModal.enabled };
+      if (t === 'restart_services') return { service: this.cmdModal.service };
+      return {};
+    },
+    async sendCmd() {
+      const body = { command_type: this.cmdModal.type, params: this.paramsForType() };
+      const r = await fetch(`/fleet/agents/${this.cmdModal.agentId}/commands`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Command enqueued.', 'ok');
+        this.cmdModal.open = false;
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Failed: ' + t, 'error');
+      }
+    },
+    async bulkCmd(type, value) {
+      if (this.selected.length === 0) return;
+      let count = 0;
+      for (const id of this.selected) {
+        const params = type === 'set_profile' ? { profile: value } : { service: value };
+        const r = await fetch(`/fleet/agents/${id}/commands`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command_type: type, params }),
+        });
+        if (r.ok) count++;
+      }
+      Alpine.store('toast').push(`Enqueued on ${count}/${this.selected.length} endpoints.`, 'ok');
+    },
+    async rotateSecret(agentId) {
+      if (!confirm(`Rotate HMAC secret for ${agentId}? The old secret becomes invalid immediately.`)) return;
+      const r = await fetch(`/fleet/agents/${agentId}/rotate-secret`, {
+        method: 'POST', credentials: 'same-origin',
+      });
+      if (r.ok) {
+        const j = await r.json();
+        await navigator.clipboard.writeText(j.agent_secret);
+        Alpine.store('toast').push('New secret copied to clipboard. Re-deploy agent.', 'ok', 6000);
+      } else {
+        Alpine.store('toast').push('Rotate failed.', 'error');
+      }
+    },
+  };
+}
+
+function aptInitFleetChart() {
+  if (!window.Chart || !window.AptCharts) return setTimeout(aptInitFleetChart, 60);
+  fetch('/fleet/agents/history?hours=24&bucket_minutes=60', { credentials: 'same-origin' })
+    .then(r => r.json())
+    .then(d => {
+      const pts = (d.buckets || []).map(b => ({
+        ts: b.ts.slice(11, 16),
+        active: b.active, stale: b.stale, offline: b.offline,
+      }));
+      const canvas = document.getElementById('chart-fleet-history');
+      if (canvas) {
+        window.AptCharts.lineChart(canvas, pts, {
+          fill: true,
+          series: [
+            { key: 'active',  label: 'Active',  color: window.AptCharts.token('--success') },
+            { key: 'stale',   label: 'Stale',   color: window.AptCharts.token('--warning') },
+            { key: 'offline', label: 'Offline', color: window.AptCharts.token('--fg-mute') },
+          ],
+        });
+      }
+    })
+    .catch(() => {});
+}
+document.addEventListener('DOMContentLoaded', aptInitFleetChart);
+</script>
 {% endblock %}

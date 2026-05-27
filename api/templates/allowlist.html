@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}DNS allowlist — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="allowlistPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">DNS allowlist</h1>
+    <div class="eyebrow" style="margin-top:4px;">Domains here are excluded from exfiltration graph edges</div>
+  </div>
+  <button class="btn btn-secondary" x-on:click="exportCsv()" :disabled="domains.length === 0">
+    <i data-lucide="download"></i> Export CSV
+  </button>
+</div>
+
+{% if can_edit %}
+<div class="card card-pad" style="margin-bottom:14px;">
+  <h2 class="apt-h3" style="margin-bottom:10px;">Add domain</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label class="field-label">Domain</label>
+      <input class="input" type="text" x-model="form.domain" placeholder="corp.example.com" @keydown.enter="add()">
+    </div>
+    <div class="field">
+      <label class="field-label">Note (optional)</label>
+      <input class="input" type="text" x-model="form.note" placeholder="why is this benign?" @keydown.enter="add()">
+    </div>
+  </div>
+  <button class="btn btn-primary" x-on:click="add()" :disabled="!form.domain" style="margin-top:10px;">
+    <i data-lucide="plus"></i> Add to allowlist
+  </button>
+</div>
+{% endif %}
+
+<div class="card">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center; gap:14px;">
+    <h2 class="apt-h3">Allowlisted domains</h2>
+    <div style="flex:1; max-width:280px;">
+      <input class="input" type="text" x-model="search" placeholder="Search…">
+    </div>
+    <div class="apt-small" style="color:var(--fg-3);" x-text="filtered().length + ' / ' + domains.length"></div>
+  </div>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Added by</th>
+        <th>Added at (UTC)</th>
+        <th>Note</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <template x-for="d in filtered()" :key="d.domain">
+        <tr>
+          <td class="mono" x-text="d.domain"></td>
+          <td x-text="d.added_by || '—'"></td>
+          <td class="mono apt-small" style="color:var(--fg-3);" x-text="d.added_at ? new Date(d.added_at * 1000).toISOString().slice(0,19) : '—'"></td>
+          <td class="apt-small" x-text="d.note || ''"></td>
+          <td style="text-align:right;">
+            {% if can_edit %}
+            <button class="btn btn-ghost btn-icon" title="Remove" x-on:click="remove(d.domain)">
+              <i data-lucide="trash-2"></i>
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+      </template>
+      <tr x-show="domains.length === 0">
+        <td colspan="5" style="text-align:center; color:var(--fg-3); padding:32px;">No allowlisted domains yet.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function allowlistPage() {
+  return {
+    domains: [],
+    search: '',
+    form: { domain: '', note: '' },
+    async load() {
+      const r = await fetch('/allowlist/dns', { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.domains = d.domains || [];
+      }
+    },
+    filtered() {
+      const q = this.search.trim().toLowerCase();
+      if (!q) return this.domains;
+      return this.domains.filter(d => (d.domain||'').includes(q) || (d.note||'').toLowerCase().includes(q));
+    },
+    async add() {
+      const r = await fetch('/allowlist/dns', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: this.form.domain, note: this.form.note || null }),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Added ' + this.form.domain, 'ok');
+        this.form = { domain: '', note: '' };
+        this.load();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Failed: ' + t, 'error');
+      }
+    },
+    async remove(domain) {
+      if (!confirm('Remove ' + domain + ' from allowlist?')) return;
+      const r = await fetch('/allowlist/dns/' + encodeURIComponent(domain), {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Removed ' + domain, 'ok');
+        this.load();
+      } else {
+        Alpine.store('toast').push('Remove failed.', 'error');
+      }
+    },
+    exportCsv() {
+      const rows = [['domain','added_by','added_at_utc','note']];
+      for (const d of this.domains) {
+        rows.push([d.domain, d.added_by || '', d.added_at ? new Date(d.added_at*1000).toISOString() : '', (d.note||'').replace(/"/g,'""')]);
+      }
+      const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'dns_allowlist.csv'; a.click();
+      URL.revokeObjectURL(url);
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -56,10 +56,25 @@ def _require_perm(request: Request, user: User, perm: str) -> None:
 async def home(request: Request, user: User = Depends(require_user_cookie)):
     store = request.app.state.alert_store
     stats = store.get_stats()
+    by_sev = stats.get("by_severity", {}) or {}
     recent = store.query_alerts(hours=24, limit=10)
+    kpis = {
+        "total":    stats.get("total_alerts", 0),
+        "open":     stats.get("open_alerts", 0),
+        "critical": by_sev.get("critical", 0),
+        "high":     by_sev.get("high", 0),
+    }
+    severity_counts = {
+        "critical": by_sev.get("critical", 0),
+        "high":     by_sev.get("high", 0),
+        "medium":   by_sev.get("medium", 0),
+        "low":      by_sev.get("low", 0),
+    }
     return _templates(request).TemplateResponse(
         request, "home.html",
-        {"user": user, "active": "home", "stats": stats, "recent": recent,
+        {"user": user, "active": "home",
+         "kpis": kpis, "severity_counts": severity_counts,
+         "recent": recent,
          "can_ack": _has_perm(request, user, "acknowledge_alerts")},
     )
 
@@ -74,6 +89,7 @@ async def alerts_grid(
     severity: Optional[str] = None,
     status:   Optional[str] = None,
     entity:   Optional[str] = None,
+    mitre:    Optional[str] = None,
     hours:    int = 24,
 ):
     _require_perm(request, user, "read_alerts")
@@ -82,12 +98,33 @@ async def alerts_grid(
         severity=severity or None, status=status or None,
         entity=entity or None, hours=hours, limit=200,
     )
+    if mitre:
+        alerts = [a for a in alerts if mitre.upper() in (a.get("mitre_techniques") or [])]
     return _templates(request).TemplateResponse(
         request, "alerts_grid.html",
         {"user": user, "active": "alerts", "alerts": alerts,
          "filters": {"severity": severity or "", "status": status or "",
-                     "entity": entity or "", "hours": hours},
+                     "entity": entity or "", "hours": hours, "mitre": mitre or ""},
          "stats": store.get_stats()},
+    )
+
+
+@router.get("/alerts/{alert_id}/panel", response_class=HTMLResponse)
+async def alert_panel(
+    alert_id: str, request: Request,
+    user: User = Depends(require_user_cookie),
+):
+    """HTMX partial — InvestigationPanel body for an alert."""
+    _require_perm(request, user, "read_alerts")
+    store = request.app.state.alert_store
+    alerts = store.query_alerts(hours=720, limit=500)
+    alert = next((a for a in alerts if a.get("alert_id") == alert_id), None)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    return _templates(request).TemplateResponse(
+        request, "partials/investigation_panel.html",
+        {"user": user, "alert": alert,
+         "can_ack": _has_perm(request, user, "acknowledge_alerts")},
     )
 
 
@@ -179,6 +216,170 @@ async def fleet_send_command(
                   "command_type": ct.value, "params": params, "via": "dashboard"},
     )
     return RedirectResponse(url="/dashboard/fleet", status_code=303)
+
+
+# ── Models page ─────────────────────────────────────────────────────────────
+
+
+@router.get("/models", response_class=HTMLResponse)
+async def models_page(request: Request,
+                      user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_detections")
+    return _templates(request).TemplateResponse(
+        request, "models.html",
+        {"user": user, "active": "models",
+         "can_retrain": _has_perm(request, user, "retrain_models"),
+         "can_manage_detectors": _has_perm(request, user, "manage_detectors")},
+    )
+
+
+@router.get("/retrain", response_class=HTMLResponse)
+async def retrain_page(request: Request,
+                       user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "retrain_models")
+    return _templates(request).TemplateResponse(
+        request, "retrain.html",
+        {"user": user, "active": "retrain"},
+    )
+
+
+# ── DNS allowlist page ──────────────────────────────────────────────────────
+
+
+@router.get("/allowlist", response_class=HTMLResponse)
+async def allowlist_page(request: Request,
+                          user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_detections")
+    return _templates(request).TemplateResponse(
+        request, "allowlist.html",
+        {"user": user, "active": "allowlist",
+         "can_edit": _has_perm(request, user, "manage_detectors")},
+    )
+
+
+# ── FL local page ───────────────────────────────────────────────────────────
+
+
+@router.get("/fl", response_class=HTMLResponse)
+async def fl_page(request: Request,
+                  user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_detections")
+    return _templates(request).TemplateResponse(
+        request, "fl_local.html",
+        {"user": user, "active": "fl",
+         "can_manage": _has_perm(request, user, "manage_fl_local")},
+    )
+
+
+# ── Audit page ──────────────────────────────────────────────────────────────
+
+
+@router.get("/audit", response_class=HTMLResponse)
+async def audit_page(request: Request,
+                     user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "view_audit_log")
+    return _templates(request).TemplateResponse(
+        request, "audit.html",
+        {"user": user, "active": "audit"},
+    )
+
+
+# ── Users page ──────────────────────────────────────────────────────────────
+
+
+@router.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request,
+                     user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "manage_users")
+    return _templates(request).TemplateResponse(
+        request, "users.html",
+        {"user": user, "active": "users"},
+    )
+
+
+@router.get("/devices", response_class=HTMLResponse)
+async def paired_devices_page(request: Request,
+                               user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "manage_users")
+    return _templates(request).TemplateResponse(
+        request, "devices.html",
+        {"user": user, "active": "devices"},
+    )
+
+
+# ── Admin page ──────────────────────────────────────────────────────────────
+
+
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request,
+                     user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "manage_users")
+    return _templates(request).TemplateResponse(
+        request, "admin.html",
+        {"user": user, "active": "admin"},
+    )
+
+
+# ── Diagnostics page ────────────────────────────────────────────────────────
+
+
+@router.get("/diagnostics", response_class=HTMLResponse)
+async def diagnostics_page(request: Request,
+                            user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_detections")
+    return _templates(request).TemplateResponse(
+        request, "diagnostics.html",
+        {"user": user, "active": "diagnostics"},
+    )
+
+
+# ── Notifications pages ─────────────────────────────────────────────────────
+
+
+@router.get("/notifications", response_class=HTMLResponse)
+async def notifications_page(request: Request,
+                              user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_alerts")
+    return _templates(request).TemplateResponse(
+        request, "notifications.html",
+        {"user": user, "active": "notifications"},
+    )
+
+
+@router.get("/settings/notifications", response_class=HTMLResponse)
+async def notifications_settings_page(request: Request,
+                                       user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_alerts")
+    return _templates(request).TemplateResponse(
+        request, "settings_notifications.html",
+        {"user": user, "active": "notifications"},
+    )
+
+
+@router.get("/settings/companion", response_class=HTMLResponse)
+async def companion_settings_page(request: Request,
+                                   user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "read_alerts")
+    return _templates(request).TemplateResponse(
+        request, "settings_companion.html",
+        {"user": user, "active": "companion"},
+    )
+
+
+# ── Endpoint enrollment helper ─────────────────────────────────────────────
+
+
+@router.get("/enroll", response_class=HTMLResponse)
+async def enroll_page(request: Request,
+                      user: User = Depends(require_user_cookie)):
+    _require_perm(request, user, "enroll_agents")
+    import os
+    return _templates(request).TemplateResponse(
+        request, "enroll.html",
+        {"user": user, "active": "enroll",
+         "bootstrap_token_set": bool(os.environ.get("FLEET_BOOTSTRAP_TOKEN")),
+         "default_server_ip": os.environ.get("PUBLIC_SERVER_IP", "")},
+    )
 
 
 # ── Attack graph ────────────────────────────────────────────────────────────

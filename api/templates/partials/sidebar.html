@@ -1,0 +1,87 @@
+<aside class="sidebar" style="display:flex; flex-direction:column;">
+  <div style="padding:14px 16px 18px; display:flex; align-items:center; gap:10px;">
+    <img src="/static/img/icon-dark.png" alt="" style="width:30px; height:30px; border-radius:7px; flex:0 0 30px;">
+    <div class="brand-stack" style="display:flex; flex-direction:column;">
+      <span style="font:700 13px var(--font-sans); color:var(--fg-1); letter-spacing:-0.01em;">APT THP</span>
+      <span class="eyebrow">Threat hunting</span>
+    </div>
+  </div>
+
+  <div class="eyebrow" style="padding:0 16px 6px;">Operations</div>
+  <div class="sidebar-section">
+    <a href="/dashboard" class="nav-item {% if active == 'home' %}active{% endif %}" title="Dashboard">
+      <i data-lucide="layout-dashboard"></i><span class="nav-label">Dashboard</span>
+    </a>
+    <a href="/dashboard/alerts" class="nav-item {% if active == 'alerts' %}active{% endif %}" title="Detections">
+      <i data-lucide="bell"></i><span class="nav-label">Detections</span>
+    </a>
+    <a href="/dashboard/graph" class="nav-item {% if active == 'graph' %}active{% endif %}" title="Lateral graph">
+      <i data-lucide="network"></i><span class="nav-label">Lateral graph</span>
+    </a>
+  </div>
+
+  <div class="eyebrow" style="padding:16px 16px 6px;">Detection</div>
+  <div class="sidebar-section">
+    <a href="/dashboard/models" class="nav-item {% if active == 'models' %}active{% endif %}" title="Models">
+      <i data-lucide="bar-chart-3"></i><span class="nav-label">Models</span>
+    </a>
+    <a href="/dashboard/retrain" class="nav-item {% if active == 'retrain' %}active{% endif %}" title="Auto-retrain">
+      <i data-lucide="refresh-cw"></i><span class="nav-label">Auto-retrain</span>
+    </a>
+    <a href="/dashboard/allowlist" class="nav-item {% if active == 'allowlist' %}active{% endif %}" title="DNS allowlist">
+      <i data-lucide="list-checks"></i><span class="nav-label">DNS allowlist</span>
+    </a>
+  </div>
+
+  <div class="eyebrow" style="padding:16px 16px 6px;">Fleet</div>
+  <div class="sidebar-section">
+    <a href="/dashboard/fleet" class="nav-item {% if active == 'fleet' %}active{% endif %}" title="Endpoints">
+      <i data-lucide="server"></i><span class="nav-label">Endpoints</span>
+    </a>
+    <a href="/dashboard/enroll" class="nav-item {% if active == 'enroll' %}active{% endif %}" title="Enroll endpoint">
+      <i data-lucide="plus-circle"></i><span class="nav-label">Enroll endpoint</span>
+    </a>
+  </div>
+
+  <div class="eyebrow" style="padding:16px 16px 6px;">Federation</div>
+  <div class="sidebar-section">
+    <a href="/dashboard/fl" class="nav-item {% if active == 'fl' %}active{% endif %}" title="FL local">
+      <i data-lucide="share-2"></i><span class="nav-label">FL local</span>
+    </a>
+  </div>
+
+  <div style="flex:1"></div>
+
+  <div class="eyebrow" style="padding:0 16px 6px;">Admin</div>
+  <div class="sidebar-section">
+    <a href="/dashboard/notifications" class="nav-item {% if active == 'notifications' %}active{% endif %}" title="Notifications">
+      <i data-lucide="bell-ring"></i><span class="nav-label">Notifications</span>
+    </a>
+    <a href="/dashboard/settings/companion" class="nav-item {% if active == 'companion' %}active{% endif %}" title="Pair phone (companion app)">
+      <i data-lucide="smartphone"></i><span class="nav-label">Pair phone</span>
+    </a>
+    <a href="/dashboard/audit" class="nav-item {% if active == 'audit' %}active{% endif %}" title="Audit log">
+      <i data-lucide="scroll-text"></i><span class="nav-label">Audit log</span>
+    </a>
+    <a href="/dashboard/users" class="nav-item {% if active == 'users' %}active{% endif %}" title="Users">
+      <i data-lucide="users"></i><span class="nav-label">Users</span>
+    </a>
+    <a href="/dashboard/devices" class="nav-item {% if active == 'devices' %}active{% endif %}" title="Paired phones">
+      <i data-lucide="smartphone-charging"></i><span class="nav-label">Paired phones</span>
+    </a>
+    <a href="/dashboard/admin" class="nav-item {% if active == 'admin' %}active{% endif %}" title="Settings">
+      <i data-lucide="settings"></i><span class="nav-label">Settings</span>
+    </a>
+    <a href="/dashboard/diagnostics" class="nav-item {% if active == 'diagnostics' %}active{% endif %}" title="Diagnostics">
+      <i data-lucide="activity"></i><span class="nav-label">Diagnostics</span>
+    </a>
+  </div>
+
+  <div class="detector-status">
+    <span class="heartbeat dot"></span>
+    <div style="flex:1; min-width:0;">
+      <div style="font:600 11px var(--font-sans); color:var(--fg-1);">Detectors online</div>
+      <div class="mono" style="font:500 11px var(--font-mono); color:var(--fg-3);">Live · v1.0</div>
+    </div>
+  </div>
+</aside>

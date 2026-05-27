@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Companion app — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="companionPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Companion app</h1>
+    <div class="eyebrow" style="margin-top:4px;">Android · sideload · same SSE stream as the dashboard</div>
+  </div>
+  <a class="btn btn-secondary" href="/dashboard/settings/notifications">
+    <i data-lucide="bell"></i> Notification settings
+  </a>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">1. Install on your phone</h2>
+    <p class="apt-small" style="color:var(--fg-2); margin-bottom:14px;">
+      Sideload the signed Android <code>.apk</code> onto your phone. Open Settings → Apps → Install unknown apps once if your phone hasn't allowed sideloads.
+    </p>
+    <template x-if="info.available">
+      <div>
+        <a class="btn btn-primary" href="/downloads/companion.apk">
+          <i data-lucide="download"></i> Download .apk
+        </a>
+        <div class="apt-small mono" style="color:var(--fg-3); margin-top:8px;"
+             x-text="'Size: ' + (info.size_bytes/1024/1024).toFixed(2) + ' MB · Built ' + new Date(info.built_at*1000).toISOString().slice(0,16)"></div>
+      </div>
+    </template>
+    <template x-if="!info.available">
+      <div>
+        <div class="apt-small" style="color:var(--warning); margin-bottom:6px;">
+          <i data-lucide="alert-triangle"></i> .apk not built yet.
+        </div>
+        <div class="apt-small mono" style="color:var(--fg-3);">
+          Run <code>./gradlew :app:assembleRelease</code> in <code>mobile/android/</code> and copy the artifact to:
+          <br><span x-text="info.path_hint"></span>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">2. Scan to enrol</h2>
+    <p class="apt-small" style="color:var(--fg-2); margin-bottom:14px;">
+      Open the app → tap <strong>Scan QR</strong> → point at this code. The token is single-use and expires in 10 minutes.
+    </p>
+    <div style="display:flex; align-items:center; justify-content:center; padding:12px;
+                background:#FFFFFF; border-radius:var(--r-3);">
+      <img :src="'/downloads/companion/enroll-qr.png?nonce=' + nonce"
+           alt="Companion enrolment QR code"
+           style="width:240px; height:240px; image-rendering: pixelated;">
+    </div>
+    <div class="apt-small mono" style="color:var(--fg-3); margin-top:8px; text-align:center;"
+         x-text="'Phone will connect to ' + (info.server_url || '…')"></div>
+    <template x-if="info.loopback_browser_host">
+      <div class="apt-small" style="color:var(--warning); margin-top:6px; text-align:center;">
+        <i data-lucide="alert-triangle"></i>
+        You're viewing the dashboard at localhost — the QR has been
+        rewritten to your LAN IP so the phone can actually reach it.
+      </div>
+    </template>
+    <button class="btn btn-secondary" style="margin-top:10px; width:100%;"
+            x-on:click="nonce = Date.now()">
+      <i data-lucide="refresh-cw"></i> Regenerate QR
+    </button>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-top:14px;">
+  <h2 class="apt-h3" style="margin-bottom:10px;">After enrolment</h2>
+  <ul style="padding-left:20px; margin:0; line-height:1.8;">
+    <li>The app shows a persistent <em>"APT THP — listening for detections"</em> notification while the listener service is running. Don't swipe it away.</li>
+    <li>Every detection that meets your minimum-severity threshold (configured in <a class="linkish" href="/dashboard/settings/notifications">Notification settings</a>) lands as a native phone notification.</li>
+    <li>Tap <strong>Acknowledge</strong> to ack the alert directly from the lock screen, or <strong>Open</strong> to read details in the app.</li>
+    <li>Enrolment <strong>rotates your API key</strong>. Your dashboard session keeps working (it uses a separate cookie), but if you had the dashboard API key copied elsewhere, that copy is now invalid.</li>
+  </ul>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function companionPage() {
+  return {
+    info: { available: false, path_hint: '' },
+    nonce: Date.now(),
+    async load() {
+      try {
+        const r = await fetch('/downloads/companion/info', { credentials: 'same-origin' });
+        if (r.ok) this.info = await r.json();
+      } catch (_) {}
+    },
+  };
+}
+</script>
+{% endblock %}

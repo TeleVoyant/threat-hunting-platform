@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Settings — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="adminPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Settings</h1>
+    <div class="eyebrow" style="margin-top:4px;">Secrets · hardening · threat intel · backup · Sysmon push</div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">Secret rotation</h2>
+    <p class="apt-small" style="color:var(--fg-2); margin-bottom:14px;">
+      Rotating these only generates new values — you must update <code>.env</code> and restart the API for them to take effect.
+    </p>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-secondary" x-on:click="rotateJwt()">
+        <i data-lucide="key-square"></i> Rotate JWT secret
+      </button>
+      <button class="btn btn-secondary" x-on:click="rotateBootstrap()">
+        <i data-lucide="link"></i> Rotate bootstrap token
+      </button>
+    </div>
+    <div x-show="newSecret" style="margin-top:14px;">
+      <div class="apt-small" style="color:var(--warning); margin-bottom:6px;">
+        <i data-lucide="alert-triangle"></i> <span x-text="newSecret.label"></span> — copy now, will not be shown again.
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <code style="flex:1; background:var(--bg-0); padding:8px 12px; border-radius:var(--r-2); border:1px solid var(--border-1); font-family:var(--font-mono); word-break:break-all;" x-text="newSecret.value"></code>
+        <button class="btn btn-primary" x-on:click="aptCopy(newSecret.value, 'Copied')">
+          <i data-lucide="copy"></i>
+        </button>
+      </div>
+      <div class="apt-small" style="color:var(--fg-3); margin-top:8px;" x-text="newSecret.instructions"></div>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">Hardening audit</h2>
+    <p class="apt-small" style="color:var(--fg-2); margin-bottom:14px;">
+      Runs <code>scripts/audit_compose_hardening.py</code> against the live <code>docker-compose.yml</code>.
+    </p>
+    <button class="btn btn-secondary" x-on:click="runHardening()">
+      <i data-lucide="shield-check"></i> Run hardening check
+    </button>
+    <div x-show="hardening" style="margin-top:14px;">
+      <span class="pill" :style="hardening.passed ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--critical-bg);color:var(--critical);'"
+            x-text="hardening.passed ? '✓ ALL CHECKS PASS' : '✗ ISSUES FOUND (exit ' + hardening.exit_code + ')'"></span>
+      <pre class="mono apt-small" style="background:var(--bg-0); padding:12px; border-radius:var(--r-2); margin-top:10px; border:1px solid var(--border-1); max-height:280px; overflow:auto;" x-text="hardening.stdout || hardening.stderr"></pre>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">Threat intel · MISP</h2>
+    <div class="field" style="margin-bottom:10px;">
+      <label style="display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" x-model="ti.enabled"> Enabled
+      </label>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label class="field-label">Mode</label>
+        <select class="input" x-model="ti.mode">
+          <option value="file">file</option>
+          <option value="live">live</option>
+        </select>
+      </div>
+      <div class="field" x-show="ti.mode === 'file'">
+        <label class="field-label">File path</label>
+        <input class="input" type="text" x-model="ti.file_path">
+      </div>
+      <div class="field" x-show="ti.mode === 'live'">
+        <label class="field-label">URL</label>
+        <input class="input" type="text" x-model="ti.url" placeholder="https://misp.example.com">
+      </div>
+      <div class="field" x-show="ti.mode === 'live'">
+        <label class="field-label">API key (write-only)</label>
+        <input class="input" type="password" x-model="ti.api_key" placeholder="leave blank to keep current">
+      </div>
+      <div class="field">
+        <label class="field-label">Cache TTL (sec)</label>
+        <input class="input" type="number" x-model.number="ti.cache_ttl" min="60" max="86400">
+      </div>
+      <div class="field">
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" x-model="ti.verify_ssl"> Verify SSL
+        </label>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn btn-primary" x-on:click="saveTi()">Save</button>
+      <button class="btn btn-secondary" x-on:click="refreshTi()">
+        <i data-lucide="refresh-cw"></i> Refresh IoC cache
+      </button>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:10px;">Backup</h2>
+    <p class="apt-small" style="color:var(--fg-2); margin-bottom:14px;">
+      Tarball of audit DB, alerts DB, fleet DB, anonymizer salt, drift state, and trained models.
+    </p>
+    <a class="btn btn-primary" href="/admin/backup.tar.gz" target="_blank">
+      <i data-lucide="download"></i> Download backup
+    </a>
+  </div>
+
+  <div class="card card-pad" style="grid-column: 1 / -1;">
+    <h2 class="apt-h3" style="margin-bottom:10px;">Push Sysmon config to fleet</h2>
+    <p class="apt-small" style="color:var(--fg-2); margin-bottom:10px;">
+      Paste the contents of a Sysmon config XML below and broadcast as an <code>update_sysmon</code> command to every enrolled endpoint.
+    </p>
+    <textarea class="input" rows="8" x-model="sysmonXml" placeholder="<Sysmon schemaversion=...>…</Sysmon>" style="font-family:var(--font-mono); font-size:11px;"></textarea>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn btn-primary" x-on:click="pushSysmon()" :disabled="!sysmonXml">
+        <i data-lucide="upload"></i> Broadcast to fleet
+      </button>
+      <span class="apt-small" style="color:var(--fg-3); align-self:center;" x-show="sysmonXml" x-text="(sysmonXml.length) + ' chars'"></span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function adminPage() {
+  return {
+    ti: { enabled: true, mode: 'file', file_path: '', url: '', api_key: '', verify_ssl: true, cache_ttl: 3600 },
+    hardening: null,
+    newSecret: null,
+    sysmonXml: '',
+
+    async load() {
+      try {
+        const r = await fetch('/admin/threat-intel', { credentials: 'same-origin' });
+        if (r.ok) this.ti = { ...this.ti, ...(await r.json()), api_key: '' };
+      } catch (_) {}
+    },
+
+    async rotateJwt() {
+      if (!confirm('Generate a new JWT secret? You must update .env + restart for it to take effect.')) return;
+      const r = await fetch('/admin/rotate-jwt', { method: 'POST', credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.newSecret = { label: 'New JWT secret', value: d.new_secret, instructions: d.instructions };
+      }
+    },
+    async rotateBootstrap() {
+      if (!confirm('Generate a new FLEET_BOOTSTRAP_TOKEN? Existing endpoints keep working; new enrollments need this token.')) return;
+      const r = await fetch('/admin/rotate-bootstrap', { method: 'POST', credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.newSecret = { label: 'New bootstrap token', value: d.new_token, instructions: d.instructions };
+      }
+    },
+    async runHardening() {
+      this.hardening = null;
+      const r = await fetch('/admin/hardening', { credentials: 'same-origin' });
+      if (r.ok) {
+        this.hardening = await r.json();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Hardening run failed: ' + t, 'error');
+      }
+    },
+    async saveTi() {
+      const body = { ...this.ti };
+      if (!body.api_key) delete body.api_key;
+      const r = await fetch('/admin/threat-intel', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) Alpine.store('toast').push('Threat-intel config updated.', 'ok');
+      else Alpine.store('toast').push('Update failed.', 'error');
+    },
+    async refreshTi() {
+      const r = await fetch('/admin/threat-intel/refresh', { method: 'POST', credentials: 'same-origin' });
+      if (r.ok) Alpine.store('toast').push('IoC cache refresh requested.', 'ok');
+    },
+    async pushSysmon() {
+      const b64 = btoa(unescape(encodeURIComponent(this.sysmonXml)));
+      const r = await fetch('/fleet/commands/broadcast', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command_type: 'update_sysmon',
+          params: { config_b64: b64 },
+          target_filter: null,
+        }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        Alpine.store('toast').push('Broadcast to ' + d.enqueued_count + ' endpoints.', 'ok');
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Broadcast failed: ' + t, 'error');
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

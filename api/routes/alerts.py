@@ -64,6 +64,87 @@ async def alert_stats(
     return _store(request).get_stats()
 
 
+# ── Time-series for charts ─────────────────────────────────────────────────
+
+@router.get("/timeseries")
+async def alert_timeseries(
+    request: Request,
+    hours: int = Query(24, ge=1, le=720),
+    bucket_minutes: int = Query(60, ge=5, le=1440),
+    user: User = Depends(require_permission("read_alerts")),
+):
+    """
+    Bucketed alert counts for charting.
+    Returns {buckets: [{ts, total, critical, high, medium, low}]}, oldest first.
+    Empty buckets are emitted so the chart has continuous x-axis.
+    """
+    import time
+    from datetime import datetime, timezone
+    store = _store(request)
+    bucket_s = bucket_minutes * 60
+    now = int(time.time())
+    start = now - hours * 3600
+    # Snap start to bucket boundary so labels align.
+    start = (start // bucket_s) * bucket_s
+    n_buckets = ((now - start) // bucket_s) + 1
+
+    rows = store.conn.execute(
+        "SELECT timestamp, overall_severity FROM alerts WHERE timestamp >= ?",
+        (start,),
+    ).fetchall()
+
+    counts = {i: {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0}
+              for i in range(n_buckets)}
+    for ts, sev in rows:
+        idx = int((ts - start) // bucket_s)
+        if 0 <= idx < n_buckets:
+            counts[idx]["total"] += 1
+            if sev in counts[idx]:
+                counts[idx][sev] += 1
+
+    buckets = []
+    for i in range(n_buckets):
+        ts_iso = datetime.fromtimestamp(start + i * bucket_s, tz=timezone.utc).isoformat()
+        buckets.append({"ts": ts_iso, **counts[i]})
+    return {"buckets": buckets, "bucket_minutes": bucket_minutes, "hours": hours}
+
+
+@router.get("/mitre")
+async def alert_mitre_breakdown(
+    request: Request,
+    hours: int = Query(24, ge=1, le=720),
+    user: User = Depends(require_permission("read_alerts")),
+):
+    """
+    Counts each MITRE ATT&CK technique seen in alerts within the window.
+    Returns {techniques: [{id, count}]} sorted descending.
+    """
+    import json as _json
+    import time
+    store = _store(request)
+    cutoff = time.time() - hours * 3600
+    rows = store.conn.execute(
+        "SELECT mitre_techniques FROM alerts WHERE timestamp >= ?",
+        (cutoff,),
+    ).fetchall()
+    tally: dict[str, int] = {}
+    for (raw,) in rows:
+        if not raw:
+            continue
+        try:
+            techs = _json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        for t in techs or []:
+            t = str(t)
+            tally[t] = tally.get(t, 0) + 1
+    ranked = sorted(tally.items(), key=lambda kv: kv[1], reverse=True)
+    return {
+        "hours": hours,
+        "techniques": [{"id": t, "count": c} for t, c in ranked],
+    }
+
+
 # ── Single-alert detail ────────────────────────────────────────────────────
 
 @router.get("/{alert_id}")
@@ -231,3 +312,63 @@ async def acknowledge_alert(
     )
     return {"alert_id": alert_id, "status": "acknowledged",
             "acknowledged_by": user.username}
+
+
+# ── Investigation notes ────────────────────────────────────────────────────
+
+
+from pydantic import BaseModel as _BMNote
+
+
+class _AlertNote(_BMNote):
+    text: str
+
+
+@router.post("/{alert_id}/notes")
+async def add_alert_note(
+    alert_id: str,
+    body: _AlertNote,
+    request: Request,
+    user: User = Depends(require_permission("add_notes")),
+):
+    """
+    Append an investigation note to an alert. Used by the dashboard and the
+    Android companion app. Notes are stored in the AuditTrail so they share the
+    same hash-chained tamper protection as every other operator action.
+    """
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Note text is empty")
+    if len(text) > 2000:
+        raise HTTPException(400, "Note is too long (max 2000 chars)")
+
+    store = _store(request)
+    matches = store.query_alerts(hours=720, limit=500)
+    if not any(a.get("alert_id") == alert_id for a in matches):
+        raise HTTPException(404, "Alert not found")
+
+    _audit(request).log(
+        action="alert.note", actor=user.username, target=alert_id,
+        details={"text": text, "len": len(text)},
+    )
+    import time as _time
+    return {"alert_id": alert_id, "by": user.username, "at": _time.time(), "len": len(text)}
+
+
+@router.get("/{alert_id}/notes")
+async def list_alert_notes(
+    alert_id: str,
+    request: Request,
+    user: User = Depends(require_permission("read_alerts")),
+):
+    """Read back all notes left on an alert from the audit trail."""
+    rows = _audit(request).query(action="alert.note", limit=500)
+    out = [
+        {
+            "actor": r["actor"], "at": r["timestamp"],
+            "text": (r["details"] or {}).get("text", ""),
+        }
+        for r in rows if r.get("target") == alert_id
+    ]
+    out.sort(key=lambda r: r["at"])
+    return {"alert_id": alert_id, "notes": out}

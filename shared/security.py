@@ -74,6 +74,15 @@ class User(BaseModel):
     username: str
     role: Role
     api_key_hash: str
+    # Separate credential for the companion mobile app, populated only on
+    # phone pairing. Kept distinct from `api_key_hash` so pairing never
+    # invalidates the dashboard login. Unpair clears it; pairing rotates it.
+    mobile_api_key_hash: Optional[str] = None
+    # Optional contact info — populated by admin via Users page, or by the
+    # operator themselves via Settings → Notifications. Used by the SMS
+    # (Beem Africa) and Email notification backends.
+    email: Optional[str] = None
+    phone: Optional[str] = None   # E.164 without leading +, e.g. "255712345678"
 
 
 class AuthManager:
@@ -88,10 +97,16 @@ class AuthManager:
         self.users = {u.username: u for u in users}
 
     def authenticate_api_key(self, api_key: str) -> Optional[User]:
-        """Validate API key, return user if valid."""
+        """Validate API key against either the dashboard key or the paired-
+        phone key. Both produce the same User context so the existing RBAC
+        applies identically — the only difference is which credential was
+        presented."""
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
         for user in self.users.values():
             if hmac.compare_digest(user.api_key_hash, key_hash):
+                return user
+            mobile = user.mobile_api_key_hash or ""
+            if mobile and hmac.compare_digest(mobile, key_hash):
                 return user
         return None
 

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Enroll endpoint — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="enrollPage()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Enroll endpoint</h1>
+    <div class="eyebrow" style="margin-top:4px;">Generate a PowerShell one-liner to deploy on a Windows laptop</div>
+  </div>
+</div>
+
+{% if not bootstrap_token_set %}
+<div class="card card-pad" style="border-left:3px solid var(--critical); margin-bottom:14px;">
+  <strong style="color:var(--critical);">FLEET_BOOTSTRAP_TOKEN is not set on the server.</strong>
+  Set it in <code>.env</code> and restart the API before enrolling endpoints.
+</div>
+{% endif %}
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+  <div class="card card-pad">
+    <h2 class="apt-h3" style="margin-bottom:14px;">1. Generate command</h2>
+    <div class="field" style="margin-bottom:14px;">
+      <label class="field-label">Server IP / hostname</label>
+      <input class="input" type="text" x-model="serverIp" placeholder="e.g. 192.168.1.100 or threats.example.com">
+      <span class="apt-small" style="color:var(--fg-3);">The address Windows endpoints will reach for Wazuh + Platform API.</span>
+    </div>
+    <div class="field" style="margin-bottom:18px;">
+      <label class="field-label">Profile</label>
+      <select class="input" x-model="profile">
+        <option value="Lean">Lean — low CPU / RAM, minimal Sysmon coverage</option>
+        <option value="Balanced" selected>Balanced — corporate-laptop default</option>
+        <option value="Full">Full — dedicated SOC endpoint</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" x-on:click="generate()" :disabled="!serverIp || loading">
+      <i data-lucide="sparkles"></i> Generate one-liner
+    </button>
+  </div>
+
+  <div class="card card-pad" x-show="powershell" x-cloak>
+    <h2 class="apt-h3" style="margin-bottom:14px;">2. Run on the Windows endpoint</h2>
+    <ol style="padding-left:20px; margin:0 0 14px 0; line-height:1.7;">
+      <li>Open <strong>PowerShell as Administrator</strong> on the laptop.</li>
+      <li><code>cd</code> to the folder containing <code>deploy_endpoint.ps1</code>.</li>
+      <li>Set the Wazuh registration password as an env var:<br>
+        <code class="apt-small">$env:WAZUH_REGISTRATION_PASSWORD = "your-password"</code></li>
+      <li>Paste the command below.</li>
+    </ol>
+    <div style="position:relative;">
+      <pre style="background:var(--bg-0); color:var(--apt-teal-bright); padding:14px 16px; border-radius:var(--r-3); overflow-x:auto; font:500 12px var(--font-mono); border:1px solid var(--border-1); white-space:pre-wrap;" x-text="powershell"></pre>
+      <button class="btn btn-secondary" style="position:absolute; top:8px; right:8px;"
+              x-on:click="aptCopy(powershell, 'PowerShell copied')">
+        <i data-lucide="copy"></i> Copy
+      </button>
+    </div>
+    <div class="apt-small" style="color:var(--fg-3); margin-top:10px;">
+      <span x-text="'Profile: ' + profile"></span> ·
+      <span x-text="'Server: ' + serverIp"></span>
+    </div>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-top:14px;">
+  <h2 class="apt-h3" style="margin-bottom:10px;">Bulk rollout (PowerShell Remoting)</h2>
+  <div class="apt-small" style="color:var(--fg-2); margin-bottom:10px;">
+    To push to many laptops at once, copy <code>scripts/</code> to each machine via PSRemoting and invoke
+    <code>deploy_endpoint.ps1</code> with the same parameters. See <code>platformusage.md §6.2</code> for the loop.
+  </div>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function enrollPage() {
+  return {
+    serverIp: '{{ default_server_ip|e }}',
+    profile: 'Balanced',
+    powershell: '',
+    loading: false,
+    async generate() {
+      this.loading = true;
+      try {
+        const r = await fetch('/fleet/enrollment-helper', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile: this.profile, server_ip: this.serverIp }),
+        });
+        if (r.ok) {
+          const j = await r.json();
+          this.powershell = j.powershell;
+          Alpine.store('toast').push('One-liner generated.', 'ok');
+        } else {
+          const t = await r.text();
+          Alpine.store('toast').push('Failed: ' + t, 'error');
+        }
+      } finally {
+        this.loading = false;
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

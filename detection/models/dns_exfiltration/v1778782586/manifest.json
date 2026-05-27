@@ -166,5 +166,6 @@
       "subsample": 0.7
     }
   },
-  "file_size_bytes": 13024
+  "file_size_bytes": 13024,
+  "status": "archived"
 }

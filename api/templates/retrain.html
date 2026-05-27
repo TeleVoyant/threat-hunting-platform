@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Auto-retrain — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="retrainPage()" x-init="load(); startPolling()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Auto-retrain scheduler</h1>
+    <div class="eyebrow" style="margin-top:4px;">
+      Continuously refreshes the lateral-movement + DNS-exfiltration detectors against current fleet telemetry. New versions are staged — you promote them after reviewing the eval metrics.
+    </div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-secondary" x-on:click="load()">
+      <i data-lucide="refresh-cw"></i> Refresh
+    </button>
+    <button class="btn btn-primary" x-on:click="runNow()" :disabled="!status.running || busy">
+      <i data-lucide="play"></i> Run cycle now
+    </button>
+  </div>
+</div>
+
+<!-- Live status -->
+<div class="card card-pad" style="margin-bottom:14px;">
+  <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:18px;">
+    <div>
+      <div class="eyebrow">Status</div>
+      <div class="apt-h2" x-text="status.running ? 'Running' : 'Stopped'"
+           :style="status.running ? 'color:var(--ok)' : 'color:var(--muted)'"></div>
+    </div>
+    <div>
+      <div class="eyebrow">Interval</div>
+      <div class="apt-h2" x-text="humanInterval(status.interval_seconds)"></div>
+    </div>
+    <div>
+      <div class="eyebrow">Last run</div>
+      <div class="apt-h2" x-text="status.last_run_iso ? new Date(status.last_run_iso).toLocaleString() : '—'"></div>
+    </div>
+    <div>
+      <div class="eyebrow">Last outcome</div>
+      <div class="apt-h2" x-text="status.last_status || '—'"
+           :style="outcomeColor(status.last_status)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Interval editor -->
+<div class="card card-pad" style="margin-bottom:14px;">
+  <h2 class="apt-h3" style="margin-bottom:10px;">Change cadence</h2>
+  <div class="eyebrow" style="margin-bottom:10px;">
+    Floor 1 min, ceiling 24 h. Takes effect immediately — the current sleep is interrupted on save.
+  </div>
+  <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <div class="field" style="max-width:160px;">
+      <label class="field-label">Value</label>
+      <input class="input" type="number" min="1" x-model.number="form.value">
+    </div>
+    <div class="field" style="max-width:160px;">
+      <label class="field-label">Unit</label>
+      <select class="input" x-model="form.unit">
+        <option value="60">minutes</option>
+        <option value="3600">hours</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" x-on:click="saveInterval()"
+            :disabled="!status.running || busy">
+      <i data-lucide="save"></i> Save interval
+    </button>
+    <div style="margin-left:auto; align-self:center; color:var(--muted); font-size:13px;">
+      Quick set:
+      <a href="#" x-on:click.prevent="quick(60)">1 min</a> ·
+      <a href="#" x-on:click.prevent="quick(900)">15 min</a> ·
+      <a href="#" x-on:click.prevent="quick(1800)">30 min</a> ·
+      <a href="#" x-on:click.prevent="quick(3600)">1 h</a> ·
+      <a href="#" x-on:click.prevent="quick(21600)">6 h</a> ·
+      <a href="#" x-on:click.prevent="quick(86400)">24 h</a>
+    </div>
+  </div>
+</div>
+
+<!-- Last cycle details -->
+<div class="card card-pad" style="margin-bottom:14px;" x-show="status.last_result">
+  <h2 class="apt-h3" style="margin-bottom:10px;">Last cycle</h2>
+  <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px;">
+    <div><div class="eyebrow">Run ID</div><div x-text="status.last_result?.run_id || '—'"></div></div>
+    <div><div class="eyebrow">Duration</div><div x-text="(status.last_result?.duration_s || '—') + ' s'"></div></div>
+    <div><div class="eyebrow">Samples</div><div x-text="status.last_result?.total_samples || '—'"></div></div>
+    <div><div class="eyebrow">Positives</div><div x-text="status.last_result?.positives || '—'"></div></div>
+  </div>
+  <template x-if="status.last_result?.versions">
+    <div style="margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+      <template x-for="(meta, name) in status.last_result.versions" :key="name">
+        <div class="card card-pad" style="background:var(--bg-2);">
+          <div class="eyebrow" x-text="name"></div>
+          <div class="apt-h3" x-text="meta.version || '—'"></div>
+          <div style="margin-top:6px; font-size:13px; color:var(--muted);">
+            AUC <span x-text="meta.auc?.toFixed(4) || '—'"></span> ·
+            logloss <span x-text="meta.logloss?.toFixed(4) || '—'"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>
+
+<!-- Staged versions queue -->
+<div class="card">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
+    <h2 class="apt-h3">Staged versions (awaiting promotion)</h2>
+  </div>
+  <template x-for="name in ['lateral_movement', 'dns_exfiltration']" :key="name">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
+      <div style="display:flex; align-items:baseline; justify-content:space-between;">
+        <div>
+          <strong x-text="name"></strong>
+          <span class="badge" style="margin-left:8px;"
+                x-text="'active: ' + (status.active?.[name]?.version || 'none')"></span>
+        </div>
+        <div class="eyebrow" x-text="(status.staged?.[name]?.length || 0) + ' staged'"></div>
+      </div>
+
+      <template x-if="(status.staged?.[name] || []).length === 0">
+        <div style="margin-top:8px; color:var(--muted); font-size:13px;">
+          No staged versions yet. New ones appear after each retrain cycle.
+        </div>
+      </template>
+
+      <template x-for="v in (status.staged?.[name] || [])" :key="v.version">
+        <div style="margin-top:10px; padding:10px 12px; background:var(--bg-2); border-radius:6px; display:flex; align-items:center; gap:14px;">
+          <div style="flex:1; min-width:0;">
+            <div><code x-text="v.version"></code>
+              <span class="badge" style="margin-left:8px;" x-text="v.status"></span>
+            </div>
+            <div style="margin-top:4px; font-size:12px; color:var(--muted);">
+              created <span x-text="new Date((v.created_at||0)*1000).toLocaleString()"></span> ·
+              AUC <span x-text="v.metadata?.eval_auc?.toFixed(4) || '—'"></span> ·
+              logloss <span x-text="v.metadata?.eval_logloss?.toFixed(4) || '—'"></span> ·
+              positives <span x-text="v.metadata?.n_pos_train || '—'"></span>
+            </div>
+          </div>
+          <button class="btn btn-primary"
+                  x-on:click="promote(name, v.version)"
+                  :disabled="busy">
+            <i data-lucide="check"></i> Promote
+          </button>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>
+
+</div>
+
+<script>
+function retrainPage() {
+  return {
+    status: { running: false, staged: {}, active: {} },
+    form: { value: 30, unit: 60 },
+    busy: false,
+    _poll: null,
+
+    humanInterval(s) {
+      if (!s) return '—';
+      if (s < 60) return s + 's';
+      if (s < 3600) return Math.round(s/60) + ' min';
+      if (s < 86400) return (s/3600).toFixed(1) + ' h';
+      return (s/86400).toFixed(1) + ' d';
+    },
+
+    outcomeColor(s) {
+      if (!s) return '';
+      if (s.startsWith('completed')) return 'color:var(--ok)';
+      if (s.startsWith('skipped'))   return 'color:var(--muted)';
+      if (s.startsWith('partial'))   return 'color:var(--warn)';
+      return 'color:var(--bad)';
+    },
+
+    async load() {
+      try {
+        const r = await fetch('/admin/retrain/status', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        this.status = await r.json();
+        if (this.status.interval_seconds) {
+          // Reflect current value into the editor on first load
+          if (!this._initialized) {
+            const sec = this.status.interval_seconds;
+            if (sec % 3600 === 0) { this.form.value = sec/3600; this.form.unit = 3600; }
+            else                  { this.form.value = Math.round(sec/60); this.form.unit = 60; }
+            this._initialized = true;
+          }
+        }
+      } catch (e) { console.error(e); }
+    },
+
+    startPolling() {
+      // Keep the page live without overloading the api.
+      this._poll = setInterval(() => this.load(), 15000);
+    },
+
+    quick(seconds) {
+      if (seconds % 3600 === 0) { this.form.value = seconds/3600; this.form.unit = 3600; }
+      else                      { this.form.value = Math.round(seconds/60); this.form.unit = 60; }
+      this.saveInterval();
+    },
+
+    async saveInterval() {
+      this.busy = true;
+      try {
+        const sec = this.form.value * this.form.unit;
+        const r = await fetch('/admin/retrain/interval', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ seconds: sec }),
+        });
+        if (!r.ok) throw new Error('save failed: ' + r.status);
+        await this.load();
+      } catch (e) { alert(e.message); }
+      finally    { this.busy = false; }
+    },
+
+    async runNow() {
+      this.busy = true;
+      try {
+        const r = await fetch('/admin/retrain/run-now', {
+          method: 'POST', credentials: 'same-origin',
+        });
+        if (!r.ok) throw new Error('trigger failed: ' + r.status);
+        // Give it a moment to start, then refresh.
+        setTimeout(() => this.load(), 1500);
+      } catch (e) { alert(e.message); }
+      finally    { this.busy = false; }
+    },
+
+    async promote(name, version) {
+      if (!confirm(`Promote ${name} ${version} to active?\n\nThe currently-active version will be archived (rollback still possible).`)) return;
+      this.busy = true;
+      try {
+        const r = await fetch(`/models/${name}/versions/${version}/promote`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        if (!r.ok) throw new Error('promote failed: ' + r.status);
+        await this.load();
+      } catch (e) { alert(e.message); }
+      finally    { this.busy = false; }
+    },
+  };
+}
+</script>
+
+{% endblock %}

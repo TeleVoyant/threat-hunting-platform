@@ -1,0 +1,83 @@
+{# Right slide-in panel for an alert. Loaded via HTMX into #panel-slot. #}
+{% from "partials/severity_badge.html" import sev_badge %}
+<div style="padding:18px 22px; display:flex; flex-direction:column; gap:14px; overflow:auto; height:100%;">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between;">
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        {{ sev_badge(alert.overall_severity) }}
+        <span class="eyebrow">{{ alert.timestamp[:19] }} UTC</span>
+      </div>
+      <h2 class="apt-h2">Detection · {{ alert.detections[0].detector_name if alert.detections else '—' }}</h2>
+      <div class="mono apt-small">{{ alert.alert_id }}</div>
+    </div>
+    <button class="btn btn-ghost btn-icon" title="Close" x-on:click="panel.open = false">
+      <i data-lucide="x"></i>
+    </button>
+  </div>
+
+  <div class="card card-pad">
+    <div class="eyebrow" style="margin-bottom:8px;">Detections</div>
+    {% for d in alert.detections %}
+    <div style="display:flex; flex-direction:column; gap:4px; padding:8px 0; border-bottom:1px solid var(--border-1);" class="last:border-0">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <strong>{{ d.detector_name }}</strong>
+        {{ sev_badge(d.severity) }}
+        <span class="mono tabnum apt-small">conf {{ "%.2f"|format(d.confidence) }}</span>
+      </div>
+      <div class="apt-small">{{ d.description }}</div>
+      <div class="apt-small" style="color:var(--fg-3);">
+        Source: <span class="mono">{{ d.source_entity }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card card-pad">
+    <div class="eyebrow" style="margin-bottom:8px;">MITRE ATT&CK</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+      {% for t in alert.mitre_techniques %}
+        <span class="pill" style="background:var(--bg-3); color:var(--fg-1);" class="mono">{{ t }}</span>
+      {% else %}
+        <span class="apt-small" style="color:var(--fg-3);">none</span>
+      {% endfor %}
+    </div>
+    {% if alert.mitre_tactics %}
+    <div class="eyebrow" style="margin-top:12px; margin-bottom:6px;">Tactics</div>
+    <ul style="margin:0; padding-left:18px;">
+      {% for t in alert.mitre_tactics %}<li class="apt-small">{{ t }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  {% if alert.recommended_actions %}
+  <div class="card card-pad">
+    <div class="eyebrow" style="margin-bottom:8px;">Recommended actions</div>
+    <ul style="margin:0; padding-left:18px;">
+      {% for a in alert.recommended_actions %}<li class="apt-small">{{ a }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="card" style="padding:0;">
+    <div style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-1);">
+      <div class="eyebrow">Why did this fire? (SHAP)</div>
+      <a class="linkish apt-small" href="/alerts/{{ alert.alert_id }}/explanation" target="_blank">Raw JSON</a>
+    </div>
+    <iframe src="/alerts/{{ alert.alert_id }}/explanation.html?theme={{ 'light' if request.cookies.get('theme') == 'light' else 'dark' }}"
+            style="width:100%; height:520px; border:0; background:transparent;"
+            title="SHAP explanation"></iframe>
+  </div>
+
+  <div style="display:flex; gap:8px; padding-top:6px;">
+    {% if can_ack and (alert.status or 'open') == 'open' %}
+    <button class="btn btn-primary" hx-post="/dashboard/alerts/{{ alert.alert_id }}/ack"
+            hx-target="#panel-slot" hx-swap="innerHTML" hx-trigger="click"
+            hx-headers='{"HX-Refresh":"true"}'>
+      <i data-lucide="check"></i> Acknowledge
+    </button>
+    {% endif %}
+    <a class="btn btn-secondary" href="/dashboard/alerts/{{ alert.alert_id }}" target="_blank">
+      <i data-lucide="external-link"></i> Open full page
+    </a>
+  </div>
+</div>

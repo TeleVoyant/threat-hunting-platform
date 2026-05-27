@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Notifications — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="notifCenter()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Notification Center</h1>
+    <div class="eyebrow" style="margin-top:4px;" x-text="(rows.length) + ' notifications · ' + ($store.notifs ? $store.notifs.unread : 0) + ' unread'"></div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <span class="pill" :style="$store.notifs && $store.notifs.connected ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--bg-3);color:var(--fg-3);'"
+          x-text="$store.notifs && $store.notifs.connected ? 'LIVE' : 'OFFLINE'"></span>
+    <button class="btn btn-secondary" x-on:click="$store.notifs.markAll(); load()" :disabled="!$store.notifs || $store.notifs.unread === 0">
+      <i data-lucide="check-check"></i> Mark all read
+    </button>
+    <a class="btn btn-secondary" href="/dashboard/settings/notifications">
+      <i data-lucide="settings"></i> Preferences
+    </a>
+  </div>
+</div>
+
+<div style="display:flex; gap:8px; margin-bottom:14px;">
+  <button class="chip" x-on:click="filter = 'all'"    :class="filter === 'all' ? 'active' : ''">All</button>
+  <button class="chip" x-on:click="filter = 'unread'" :class="filter === 'unread' ? 'active' : ''">Unread</button>
+  <button class="chip" x-on:click="sev = 'all'"       :class="sev === 'all' ? 'active' : ''">Any severity</button>
+  <button class="chip" x-on:click="sev = 'critical'"  :class="sev === 'critical' ? 'active' : ''">Critical</button>
+  <button class="chip" x-on:click="sev = 'high'"      :class="sev === 'high' ? 'active' : ''">High</button>
+</div>
+
+<div class="card">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Title</th>
+        <th>Alert</th>
+        <th>Created (UTC)</th>
+        <th>SSE</th>
+        <th>Email</th>
+        <th>SMS</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <template x-for="n in filtered()" :key="n.id">
+        <tr :class="n.severity === 'critical' ? 'crit' : ''" :style="n.read_at ? 'opacity:0.6' : ''">
+          <td>
+            <span class="pill" :class="'sev-' + n.severity" x-text="(n.severity||'').toUpperCase()"></span>
+          </td>
+          <td x-text="n.title"></td>
+          <td class="mono apt-small">
+            <a class="linkish" :href="'/dashboard/alerts/' + n.alert_id" x-text="(n.alert_id||'').slice(0,14) + '…'"></a>
+          </td>
+          <td class="mono apt-small" style="color:var(--fg-3);" x-text="new Date((n.created_at||0)*1000).toISOString().slice(0,19)"></td>
+          <td class="mono apt-small" x-text="n.sse_status || '—'"></td>
+          <td class="mono apt-small" x-text="n.email_status || '—'"></td>
+          <td class="mono apt-small" x-text="n.sms_status || '—'"></td>
+          <td style="text-align:right;">
+            <button class="btn btn-ghost btn-icon" title="Mark read" x-show="!n.read_at"
+                    x-on:click="markRead(n.id)">
+              <i data-lucide="check"></i>
+            </button>
+          </td>
+        </tr>
+      </template>
+      <tr x-show="rows.length === 0"><td colspan="8" style="text-align:center; color:var(--fg-3); padding:32px;">No notifications.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function notifCenter() {
+  return {
+    rows: [],
+    filter: 'all',     // all | unread
+    sev: 'all',        // all | critical | high | …
+    async load() {
+      const params = new URLSearchParams();
+      if (this.filter === 'unread') params.set('unread', '1');
+      params.set('limit', '200');
+      const r = await fetch('/notifications?' + params.toString(),
+                            { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.rows = d.notifications || [];
+      }
+    },
+    filtered() {
+      let out = this.rows;
+      if (this.sev !== 'all') out = out.filter(n => n.severity === this.sev);
+      return out;
+    },
+    async markRead(nid) {
+      await fetch('/notifications/' + nid + '/read',
+                   { method: 'POST', credentials: 'same-origin' });
+      if (window.Alpine) await Alpine.store('notifs').markRead(nid);
+      this.load();
+    },
+  };
+}
+</script>
+{% endblock %}

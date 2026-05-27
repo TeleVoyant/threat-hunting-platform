@@ -232,3 +232,131 @@ async def get_command(
     if not cmd:
         raise HTTPException(404, "Command not found")
     return cmd
+
+
+# ── Rotate per-agent HMAC secret ───────────────────────────────────────────
+
+@router.post("/agents/{agent_id}/rotate-secret")
+async def rotate_agent_secret(
+    agent_id: str,
+    request: Request,
+    user: User = Depends(require_permission("manage_fleet")),
+):
+    """
+    Rotate an agent's HMAC secret. Returns the new secret ONCE; the agent
+    must be re-deployed (or accept the new envelope) afterward.
+    """
+    store = _store(request)
+    if not any(a["agent_id"] == agent_id for a in store.list_agents()):
+        raise HTTPException(404, "Agent not found")
+    profile = next(
+        (a["profile"] for a in store.list_agents() if a["agent_id"] == agent_id),
+        "Balanced",
+    )
+    secret = store.enroll_agent(agent_id, profile)
+    _audit(request).log(
+        action="fleet.agent.rotate_secret",
+        actor=user.username,
+        target=agent_id,
+        details={"profile": profile},
+    )
+    return {
+        "agent_id":     agent_id,
+        "agent_secret": encode_secret(secret),
+        "profile":      profile,
+        "warning":      "Store this secret securely. Old secret is now invalid.",
+    }
+
+
+# ── Fleet status history (for the 24h timeline chart) ──────────────────────
+
+@router.get("/agents/history")
+async def agents_history(
+    request: Request,
+    hours: int = 24,
+    bucket_minutes: int = 60,
+    user: User = Depends(require_permission("manage_fleet")),
+):
+    """
+    Lightweight 24h fleet state timeline. We don't persist per-tick state
+    history yet, so this synthesises the curve from each agent's
+    `last_seen_at`: an agent is considered Active if seen within the bucket,
+    Stale if within the last 30m of the bucket but older than 5m, else
+    Offline. Good enough for trend rendering until we add a state log.
+    """
+    import time
+    from datetime import datetime, timezone
+
+    store = _store(request)
+    agents = store.list_agents()
+    bucket_s = bucket_minutes * 60
+    now = int(time.time())
+    start = ((now - hours * 3600) // bucket_s) * bucket_s
+    n_buckets = ((now - start) // bucket_s) + 1
+
+    buckets = []
+    for i in range(n_buckets):
+        bucket_end = start + (i + 1) * bucket_s
+        active = stale = offline = 0
+        for a in agents:
+            seen = a.get("last_seen_at") or 0
+            if seen >= bucket_end - 300:           # seen in last 5m
+                active += 1
+            elif seen >= bucket_end - 1800:        # last 30m
+                stale += 1
+            else:
+                offline += 1
+        ts_iso = datetime.fromtimestamp(start + i * bucket_s, tz=timezone.utc).isoformat()
+        buckets.append({"ts": ts_iso, "active": active,
+                        "stale": stale, "offline": offline})
+    return {"buckets": buckets, "hours": hours, "bucket_minutes": bucket_minutes}
+
+
+# ── Endpoint enrollment helper (used by the Enroll page) ───────────────────
+
+class EnrollmentHelperRequest(BaseModel):
+    profile: str = "Balanced"
+    server_ip: Optional[str] = None  # if omitted, server falls back to "AUTO"
+
+
+@router.post("/enrollment-helper")
+async def enrollment_helper(
+    body: EnrollmentHelperRequest,
+    request: Request,
+    user: User = Depends(require_permission("enroll_agents")),
+):
+    """
+    Returns a ready-to-paste PowerShell one-liner that the operator runs on
+    a Windows laptop. The one-liner embeds the FLEET_BOOTSTRAP_TOKEN so the
+    agent self-enrolls; the operator does not need to ship admin creds.
+    """
+    if body.profile not in {"Lean", "Balanced", "Full"}:
+        raise HTTPException(400, f"Invalid profile: {body.profile}")
+    server_ip = body.server_ip or os.environ.get("PUBLIC_SERVER_IP", "<SERVER_IP>")
+    token = os.environ.get("FLEET_BOOTSTRAP_TOKEN", "")
+    if not token:
+        raise HTTPException(
+            503,
+            "FLEET_BOOTSTRAP_TOKEN is not set on the server. "
+            "Set it in .env and restart before enrolling endpoints.",
+        )
+    powershell = (
+        "powershell -ExecutionPolicy Bypass -File .\\deploy_endpoint.ps1 "
+        f"-ServerIP {server_ip} "
+        f"-RegistrationPassword \"$env:WAZUH_REGISTRATION_PASSWORD\" "
+        f"-Profile {body.profile} "
+        f"-PlatformApiUrl https://{server_ip}:8000 "
+        f"-EnrollmentToken \"{token}\""
+    )
+    _audit(request).log(
+        action="fleet.enrollment_helper.generate",
+        actor=user.username,
+        target=f"profile:{body.profile}",
+        details={"server_ip": server_ip},
+    )
+    return {
+        "powershell": powershell,
+        "server_ip": server_ip,
+        "profile": body.profile,
+        "bootstrap_token_set": True,
+    }

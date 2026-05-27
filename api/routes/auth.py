@@ -120,6 +120,158 @@ async def login(
     return resp
 
 
+# ── Companion-app enrolment ────────────────────────────────────────────────
+#
+# Flow:
+#   1. Dashboard hits GET /auth/enroll-token while logged in → server mints a
+#      short-lived JWT bound to the user, returns the token string.
+#   2. Dashboard renders /downloads/companion/enroll-qr.png embedding the
+#      token + server URL.
+#   3. Mobile app scans QR → POSTs the token to /auth/exchange-enroll.
+#   4. Server verifies the JWT, marks its JTI consumed (single-use), rotates
+#      the user's api_key, and returns the fresh plaintext key to the app.
+#
+# Why rotate the api_key? The platform never stores the plaintext, so we can't
+# return the existing one. Rotation is intentional: it ensures the QR — which
+# could be photographed — is only useful to the first person who scans it, and
+# only for the brief window before the user opens the app.
+
+_CONSUMED_ENROLL_JTIS: set[str] = set()
+
+
+@router.get("/enroll-token")
+async def mint_enroll_token(request: Request):
+    """Mint a one-shot enrol JWT for the calling user (cookie auth)."""
+    user = current_user_from_cookie(request, request.cookies.get(COOKIE_NAME))
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    auth_manager = request.app.state.auth_manager
+    if not auth_manager.has_permission(user, "read_alerts"):
+        raise HTTPException(403, "Permission 'read_alerts' required")
+    import jwt as _jwt, secrets as _secrets, time as _time
+    cfg = (getattr(request.app.state, "notifications_config", {}) or {}).get("enroll", {}) or {}
+    ttl = int(cfg.get("jwt_ttl_seconds", 600))
+    jti = _secrets.token_urlsafe(12)
+    payload = {
+        "sub": user.username, "purpose": "companion_enroll",
+        "jti": jti,
+        "iat": int(_time.time()),
+        "exp": int(_time.time()) + ttl,
+    }
+    token = _jwt.encode(payload, auth_manager.jwt_secret, algorithm="HS256")
+    server_url = (getattr(request.app.state, "notifications_config", {}) or {}) \
+                    .get("dashboard_url", "https://localhost:8000")
+    return {"token": token, "server_url": server_url, "ttl_seconds": ttl}
+
+
+from pydantic import BaseModel as _BM
+
+
+def _mask_last_octet(ip: Optional[str]) -> Optional[str]:
+    """Masks the last IPv4 octet so the audit log doesn't carry full phone IPs."""
+    if not ip:
+        return ip
+    parts = ip.split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        return f"{parts[0]}.{parts[1]}.{parts[2]}.x"
+    return ip
+
+
+class _EnrollExchange(_BM):
+    token: str
+    # Optional device info — sent by the companion app so the dashboard's
+    # "Paired phones" page can show which device pairs to which analyst.
+    device_brand: Optional[str] = None
+    device_model: Optional[str] = None
+    device_name:  Optional[str] = None   # user-set "About phone → Device name"
+    device_id:    Optional[str] = None
+    lat:          Optional[float] = None
+    lon:          Optional[float] = None
+
+
+@router.post("/exchange-enroll")
+async def exchange_enroll(body: _EnrollExchange, request: Request):
+    """Mobile app trades the enrol JWT for a freshly-rotated api_key."""
+    import jwt as _jwt, hashlib as _hash, secrets as _secrets, yaml as _yaml
+    auth_manager = request.app.state.auth_manager
+    try:
+        payload = _jwt.decode(body.token, auth_manager.jwt_secret, algorithms=["HS256"])
+    except _jwt.ExpiredSignatureError:
+        raise HTTPException(401, "Enrol token expired")
+    except _jwt.InvalidTokenError as e:
+        raise HTTPException(401, f"Invalid enrol token: {e}")
+    if payload.get("purpose") != "companion_enroll":
+        raise HTTPException(400, "Token is not an enrol token")
+    jti = payload.get("jti")
+    if not jti or jti in _CONSUMED_ENROLL_JTIS:
+        raise HTTPException(409, "Enrol token already used")
+    username = payload.get("sub")
+    user = auth_manager.users.get(username)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    # Mint a phone-specific key and store it in `mobile_api_key_hash` —
+    # NEVER in `api_key_hash`. Rotating the dashboard credential during
+    # pairing previously locked the user out of the dashboard after logout
+    # (the new plaintext was only known to the phone). Two separate slots
+    # means dashboard login keeps working forever; unpair clears the mobile
+    # slot only.
+    from api.routes.admin import _read_security_yml, _write_security_yml, _reload_auth
+    new_key = _secrets.token_urlsafe(32)
+    new_hash = _hash.sha256(new_key.encode()).hexdigest()
+    data = _read_security_yml()
+    target = next((u for u in data.get("users", []) if u["username"] == username), None)
+    if not target:
+        raise HTTPException(404, "User missing from security.yml")
+    target["mobile_api_key_hash"] = new_hash
+    _write_security_yml(data)
+    _reload_auth(request)
+    _CONSUMED_ENROLL_JTIS.add(jti)
+
+    # Record the pairing so admins can see / unpair phones later.
+    paired_ip = request.client.host if request.client else None
+    devices = getattr(request.app.state, "paired_devices", None)
+    if devices is not None:
+        try:
+            devices.record_pairing(
+                username=username,
+                brand=body.device_brand,
+                model=body.device_model,
+                device_name=body.device_name,
+                device_id=body.device_id,
+                paired_ip=paired_ip,
+                jti=jti,
+                lat=body.lat, lon=body.lon,
+            )
+        except Exception:
+            # Pairing inventory is informational; don't fail the enrol if it
+            # can't be written.
+            pass
+
+    has_loc = body.lat is not None and body.lon is not None
+    request.app.state.audit_trail.log(
+        action="auth.companion_enroll", actor=username, target=username,
+        details={
+            "jti": jti,
+            "device": body.device_name
+                        or f"{body.device_brand or '?'} {body.device_model or '?'}",
+            "ip_masked": _mask_last_octet(paired_ip),
+            "geo_shared": has_loc,
+        },
+    )
+
+    # Mirror the QR's dynamic-IP resolution so the app stores a server_url
+    # the phone can actually reach — never a stale `localhost`.
+    from api.routes.downloads import _public_server_url
+    cfg = (getattr(request.app.state, "notifications_config", {}) or {})
+    server_url = _public_server_url(request, cfg)
+    return {
+        "username": username, "api_key": new_key,
+        "server_url": server_url,
+        "warning": "Stored once on the device; cannot be retrieved again from the server.",
+    }
+
+
 @router.post("/logout")
 async def logout(request: Request):
     user = current_user_from_cookie(request, request.cookies.get(COOKIE_NAME))

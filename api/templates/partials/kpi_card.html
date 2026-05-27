@@ -1,0 +1,13 @@
+{% macro kpi(label, value, tone='neutral', sub=None) %}
+<div class="kpi">
+  <div class="kpi-label">{{ label }}</div>
+  <div class="kpi-value" style="
+    {% if tone == 'critical' %}color: var(--sev-critical);
+    {% elif tone == 'high' %}color: var(--sev-high);
+    {% elif tone == 'warn' %}color: var(--warning);
+    {% endif %}">
+    {{ value }}
+  </div>
+  {% if sub %}<div class="apt-small" style="color:var(--fg-3);">{{ sub }}</div>{% endif %}
+</div>
+{% endmacro %}

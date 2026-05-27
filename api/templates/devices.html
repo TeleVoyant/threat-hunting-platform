@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Paired phones — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="devicesPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Paired phones</h1>
+    <div class="eyebrow" style="margin-top:4px;">
+      Companion-app inventory · admin only · unpair to rotate the user's api_key
+    </div>
+  </div>
+  <button class="btn btn-secondary" x-on:click="load()">
+    <i data-lucide="refresh-cw"></i> Refresh
+  </button>
+</div>
+
+<div class="card card-pad" style="margin-bottom:14px;">
+  <div style="display:flex; align-items:center; gap:14px;">
+    <label class="apt-small" style="display:inline-flex; align-items:center; gap:8px;">
+      <input type="checkbox" x-model="showInactive" x-on:change="load()">
+      Show unpaired (history)
+    </label>
+    <div class="apt-small mono" style="color:var(--fg-3); margin-left:auto;"
+         x-text="rows.length + ' device(s)'"></div>
+  </div>
+</div>
+
+<div class="card card-pad">
+  <template x-if="rows.length === 0">
+    <div class="apt-small" style="text-align:center; padding:24px; color:var(--fg-3);">
+      No paired phones yet. Have an operator open <a class="linkish" href="/dashboard/settings/companion">Settings → Pair phone</a> and scan the QR.
+    </div>
+  </template>
+  <template x-if="rows.length > 0">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Device</th>
+          <th>Location</th>
+          <th>Paired from</th>
+          <th>Paired at</th>
+          <th>Last seen</th>
+          <th>Status</th>
+          <th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="d in rows" :key="d.id">
+          <tr>
+            <td><strong x-text="d.username"></strong></td>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i data-lucide="smartphone" style="width:14px; height:14px; color:var(--fg-3);"></i>
+                <div>
+                  <div x-text="d.device_name || ((d.brand || '?') + ' ' + (d.model || '?'))"></div>
+                  <div class="apt-small" style="color:var(--fg-3);"
+                       x-text="d.device_name ? ((d.brand || '?') + ' ' + (d.model || '?')) : ''"></div>
+                  <div class="apt-small mono" style="color:var(--fg-3);"
+                       x-text="d.device_id ? d.device_id.slice(0,12) : ''"></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <template x-if="d.lat !== null && d.lon !== null && d.lat !== undefined">
+                <a class="linkish apt-small mono"
+                   target="_blank" rel="noopener"
+                   :href="'https://www.openstreetmap.org/?mlat=' + d.lat + '&mlon=' + d.lon + '#map=14/' + d.lat + '/' + d.lon"
+                   x-text="d.lat.toFixed(3) + ', ' + d.lon.toFixed(3)"></a>
+              </template>
+              <template x-if="d.lat === null || d.lat === undefined">
+                <span class="apt-small" style="color:var(--fg-3);">—</span>
+              </template>
+            </td>
+            <td class="mono apt-small" x-text="d.paired_ip || '—'"></td>
+            <td class="apt-small" x-text="fmtTime(d.paired_at)"></td>
+            <td class="apt-small" x-text="fmtRelative(d.last_seen_at)"></td>
+            <td>
+              <span class="pill"
+                    :class="d.active ? 'sev-low' : 'sev-medium'"
+                    x-text="d.active ? 'PAIRED' : 'UNPAIRED'"></span>
+            </td>
+            <td style="text-align:right;">
+              <button class="btn btn-secondary" x-show="d.active"
+                      x-on:click="confirmUnpair(d)">
+                <i data-lucide="link-2-off"></i> Unpair
+              </button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </template>
+</div>
+
+<!-- Unpair confirmation modal -->
+<div x-show="pending !== null"
+     x-on:click.self="pending = null"
+     style="position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1000;
+            display:flex; align-items:center; justify-content:center;">
+  <div class="card card-pad" style="max-width:440px; width:90%; background:var(--bg-2);">
+    <h2 class="apt-h3">Unpair this phone?</h2>
+    <p class="apt-small" style="color:var(--fg-2); line-height:1.5; margin-top:10px;">
+      Rotating <strong x-text="pending?.username"></strong>'s api_key will
+      immediately invalidate the phone
+      (<span x-text="(pending?.brand || '?') + ' ' + (pending?.model || '?')"></span>).
+      The operator can scan a fresh QR to re-enrol.
+    </p>
+    <p class="apt-small" style="color:var(--warning); margin-top:8px;">
+      <i data-lucide="alert-triangle"></i>
+      This affects every existing session using that api_key, including the
+      operator's dashboard if they happen to use the same key elsewhere.
+    </p>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn btn-secondary" x-on:click="pending = null" type="button">Cancel</button>
+      <button class="btn btn-danger" x-on:click="doUnpair()" type="button"
+              :disabled="busy" x-text="busy ? 'Unpairing…' : 'Unpair'"></button>
+    </div>
+  </div>
+</div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function devicesPage() {
+  return {
+    rows: [],
+    showInactive: false,
+    pending: null,
+    busy: false,
+    async load() {
+      const qs = this.showInactive ? '?include_inactive=true' : '';
+      try {
+        const r = await fetch('/admin/paired-devices' + qs, { credentials: 'same-origin' });
+        if (!r.ok) {
+          Alpine.store('toast').push('Failed to load devices: HTTP ' + r.status, 'error');
+          return;
+        }
+        const j = await r.json();
+        this.rows = j.devices || [];
+        if (window.lucide) lucide.createIcons();
+      } catch (e) {
+        Alpine.store('toast').push('Network error: ' + e.message, 'error');
+      }
+    },
+    confirmUnpair(d) { this.pending = d; },
+    async doUnpair() {
+      if (!this.pending) return;
+      this.busy = true;
+      try {
+        const r = await fetch('/admin/paired-devices/' + this.pending.id, {
+          method: 'DELETE', credentials: 'same-origin',
+        });
+        if (r.ok) {
+          Alpine.store('toast').push('Phone unpaired. ' + this.pending.username + "'s api_key rotated.", 'ok', 4000);
+          this.pending = null;
+          await this.load();
+        } else {
+          const text = await r.text();
+          Alpine.store('toast').push('Unpair failed (' + r.status + '): ' + text, 'error');
+        }
+      } catch (e) {
+        Alpine.store('toast').push('Network error: ' + e.message, 'error');
+      } finally {
+        this.busy = false;
+      }
+    },
+    fmtTime(epoch) {
+      if (!epoch) return '—';
+      return new Date(epoch * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    },
+    fmtRelative(epoch) {
+      if (!epoch) return '—';
+      const s = Math.floor(Date.now() / 1000 - epoch);
+      if (s < 60)       return 'just now';
+      if (s < 3600)     return Math.floor(s / 60) + 'm ago';
+      if (s < 86400)    return Math.floor(s / 3600) + 'h ago';
+      if (s < 604800)   return Math.floor(s / 86400) + 'd ago';
+      return new Date(epoch * 1000).toISOString().slice(0, 10);
+    },
+  };
+}
+</script>
+{% endblock %}

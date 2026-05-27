@@ -1,6 +1,7 @@
 # shared/interfaces.py
 from abc import ABC, abstractmethod
 import pandas as pd
+from shared.enums import DetectionType
 from shared.schemas import NormalizedEvent, FeatureVector, Detection
 
 
@@ -32,7 +33,7 @@ class BaseDetector(ABC):
         ...
 
     @abstractmethod
-    def detection_type(self) -> str: ...
+    def detection_type(self) -> DetectionType: ...
 
     @abstractmethod
     def required_features(self) -> list[str]:

@@ -3,6 +3,9 @@
 secrets/
 *.key
 
+# configs
+config/wazuh_indexer_ssl_certs/
+
 # Data
 data/
 training/data/

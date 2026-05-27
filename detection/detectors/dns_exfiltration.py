@@ -15,7 +15,7 @@ class DnsExfiltrationDetector(BaseDetector):
     def name(self) -> str:
         return "dns_exfiltration"
 
-    def detection_type(self) -> str:
+    def detection_type(self) -> DetectionType:
         return DetectionType.DNS_EXFILTRATION
 
     def required_features(self) -> list[str]:

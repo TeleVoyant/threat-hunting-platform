@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  APT THP network security policy.
+
+  Current posture: cleartext PERMITTED. The reference deployment runs the
+  platform over plain HTTP on a private LAN address. Flip
+  cleartextTrafficPermitted="false" and enable the <domain-config> + <pin-set>
+  block below as soon as HTTPS is in front of the API.
+
+  Production hardening checklist:
+    1. Stand up TLS on the platform (Caddy / nginx with Let's Encrypt or
+       self-signed). Confirm `curl -v https://<host>/healthz` works.
+    2. Compute the SPKI pin from the leaf cert:
+         openssl x509 -in server.pem -pubkey -noout |
+           openssl pkey -pubin -outform der |
+           openssl dgst -sha256 -binary | base64
+       And a second pin from a *backup* keypair you keep offline. Without two
+       pins a key rotation locks every phone out.
+    3. Replace REPLACE_WITH_*_SPKI_HASH= placeholders below.
+    4. Set <base-config cleartextTrafficPermitted="false">.
+    5. Bump versionCode + redistribute the apk.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+            <!--
+              For a self-signed platform cert, drop the leaf PEM at
+                  app/src/main/res/raw/server.crt
+              and uncomment the line below. The Gradle wrapper bundles it
+              into the apk and the app trusts ONLY that cert + system roots.
+            -->
+            <!-- <certificates src="@raw/server"/> -->
+        </trust-anchors>
+    </base-config>
+
+    <!--
+      Per-domain pinning. Uncomment + edit `domain` + both `pin` values once
+      TLS lands. The expiration date forces a re-pin before pins go stale.
+    -->
+    <!--
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">thp.example.tz</domain>
+        <pin-set expiration="2027-01-01">
+            <pin digest="SHA-256">REPLACE_WITH_PRIMARY_SPKI_HASH=</pin>
+            <pin digest="SHA-256">REPLACE_WITH_BACKUP_SPKI_HASH=</pin>
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="@raw/server"/>
+        </trust-anchors>
+    </domain-config>
+    -->
+
+    <!--
+      Debug builds may also trust certificates the user has installed (e.g.
+      Burp / mitmproxy CA). Auto-disabled in release.
+    -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user"/>
+            <certificates src="system"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

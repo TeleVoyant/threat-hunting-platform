@@ -1,0 +1,286 @@
+/* ============================================================
+   APT THP — runtime overrides + theme rebind
+   Loaded after styles.css. Defines light-mode token swap and
+   any small tweaks needed for the Jinja/HTMX/Alpine variant
+   of the kit.
+   ============================================================ */
+
+/* ── Light mode rebind ─────────────────────────────────────── */
+:root[data-theme="light"] {
+  --bg-0:               var(--light-bg-0);
+  --bg-1:               var(--light-bg-1);
+  --bg-2:               #FFFFFF;
+  --bg-3:               #EEF3F8;
+  --bg-4:               #E2EAF3;
+  --border-1:           var(--light-border);
+  --border-2:           var(--light-border-strong);
+  --fg-1:               var(--fg-on-light);
+  --fg-2:               #3F506B;
+  --fg-3:               #6E7E96;
+  --fg-mute:            #A2AFC4;
+  --shadow-1:           var(--shadow-light-1);
+  --shadow-2:           var(--shadow-light-2);
+  --shadow-3:           0 12px 32px rgba(7,33,71,0.14);
+}
+
+/* Auto = dark unless OS prefers light */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+    --bg-0:             var(--light-bg-0);
+    --bg-1:             var(--light-bg-1);
+    --bg-2:             #FFFFFF;
+    --bg-3:             #EEF3F8;
+    --bg-4:             #E2EAF3;
+    --border-1:         var(--light-border);
+    --border-2:         var(--light-border-strong);
+    --fg-1:             var(--fg-on-light);
+    --fg-2:             #3F506B;
+    --fg-3:             #6E7E96;
+    --fg-mute:          #A2AFC4;
+    --shadow-1:         var(--shadow-light-1);
+    --shadow-2:         var(--shadow-light-2);
+    --shadow-3:         0 12px 32px rgba(7,33,71,0.14);
+  }
+}
+
+/* ── Light-mode component tweaks ───────────────────────────── */
+:root[data-theme="light"] .btn-ghost:hover,
+:root[data-theme="auto"] @media (prefers-color-scheme: light) {
+  /* nothing extra — handled by token cascade */
+}
+:root[data-theme="light"] .scrim {
+  background: rgba(7,33,71,0.45);
+}
+
+/* ── Layout extensions ─────────────────────────────────────── */
+.app { font-feature-settings: "ss01","cv11"; }
+
+/* Sidebar collapse — driven by <html data-sidebar="collapsed|expanded"> so the
+   first paint matches the user's stored preference; no flash of expanded
+   content. The toggle in app.js writes both localStorage AND this attribute. */
+:root[data-sidebar="collapsed"] .app {
+  grid-template-columns: var(--sidebar-w-collapsed) 1fr;
+}
+:root[data-sidebar="collapsed"] .sidebar .nav-label,
+:root[data-sidebar="collapsed"] .sidebar .eyebrow,
+:root[data-sidebar="collapsed"] .sidebar .detector-status,
+:root[data-sidebar="collapsed"] .sidebar .brand-stack {
+  display: none !important;
+}
+:root[data-sidebar="collapsed"] .sidebar .nav-item {
+  justify-content: center;
+  padding: 7px 0;
+  border-left: 0;
+}
+:root[data-sidebar="collapsed"] .sidebar .nav-item.active {
+  padding-left: 0;
+  background: var(--apt-teal-tint);
+}
+.sidebar { transition: width var(--dur-base) var(--ease-out); }
+.app { transition: grid-template-columns var(--dur-base) var(--ease-out); }
+
+.sidebar-section {
+  padding: 0 8px;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.nav-item {
+  all: unset;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--r-2);
+  border-left: 2px solid transparent;
+  color: var(--fg-2);
+  font: 500 13px var(--font-sans);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.nav-item:hover { background: rgba(127,127,127,0.06); color: var(--fg-1); }
+.nav-item.active {
+  background: var(--apt-teal-tint);
+  border-left-color: var(--apt-teal);
+  color: var(--apt-teal-bright);
+  padding-left: 8px;
+  font-weight: 600;
+}
+.nav-item .lucide { flex: 0 0 16px; }
+.nav-item .nav-label { flex: 1; }
+.nav-item .nav-count {
+  font: 500 11px var(--font-mono);
+  color: var(--fg-3);
+}
+.nav-item .nav-badge {
+  background: var(--critical); color: #fff;
+  font: 700 10px var(--font-sans);
+  padding: 1px 6px; border-radius: 999px;
+}
+
+.detector-status {
+  margin: 0 12px 14px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-3);
+  display: flex; align-items: center; gap: 8px;
+}
+.detector-status .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--apt-teal);
+  box-shadow: 0 0 8px var(--apt-teal);
+}
+
+/* ── KPI card ──────────────────────────────────────────────── */
+.kpi {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 18px 20px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-3);
+  box-shadow: var(--shadow-1);
+}
+.kpi-label {
+  font: 600 10px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.kpi-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric);
+  line-height: var(--lh-metric);
+  letter-spacing: var(--tk-metric);
+  font-weight: 600;
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+}
+.kpi-delta { font: 600 12px var(--font-sans); }
+.kpi-delta.up   { color: var(--success); }
+.kpi-delta.down { color: var(--fg-3); }
+
+/* ── Severity pills (uppercase per brand) ──────────────────── */
+.sev-low      { background: rgba(46,204,113,0.16);  color: var(--sev-low); }
+.sev-medium   { background: rgba(243,156,18,0.18);  color: var(--sev-medium); }
+.sev-high     { background: rgba(255,123,58,0.18);  color: var(--sev-high); }
+.sev-critical { background: rgba(231,76,60,0.18);   color: var(--sev-critical); }
+
+.status-open         { color: var(--warning); }
+.status-acknowledged { color: var(--fg-3); }
+.status-active       { color: var(--success); }
+.status-blocked      { color: var(--critical); }
+.status-revoked      { color: var(--fg-mute); }
+
+/* ── Table ─────────────────────────────────────────────────── */
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
+.tbl thead th {
+  text-align: left;
+  font: 600 10px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-1);
+  background: transparent;
+}
+.tbl tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-1);
+  color: var(--fg-1);
+}
+.tbl tbody tr:hover td { background: var(--bg-3); }
+.tbl tbody tr.selected td { background: var(--bg-4); }
+.tbl tbody tr.selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--apt-teal);
+}
+.tbl tbody tr.crit td:first-child {
+  box-shadow: inset 3px 0 0 var(--critical);
+}
+.tbl tbody tr.crit td .pill.sev-critical {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+/* ── Toasts ────────────────────────────────────────────────── */
+.toast-region {
+  position: fixed;
+  top: calc(var(--topbar-h) + 12px);
+  right: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 100;
+}
+.toast {
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--apt-teal);
+  border-radius: var(--r-3);
+  padding: 10px 14px;
+  font: 500 13px var(--font-sans);
+  color: var(--fg-1);
+  box-shadow: var(--shadow-2);
+  max-width: 380px;
+  animation: slide-in var(--dur-base) var(--ease-out);
+}
+.toast.toast-error { border-left-color: var(--critical); }
+.toast.toast-warn  { border-left-color: var(--warning); }
+.toast.toast-ok    { border-left-color: var(--success); }
+
+/* ── Forms misc ─────────────────────────────────────────────── */
+label.field-label {
+  font: 600 11px var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Forms layout: stack inputs in modals ──────────────────── */
+.form-grid { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+
+/* ── Chips for filters ──────────────────────────────────────── */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: transparent;
+  color: var(--fg-2);
+  font: 500 12px var(--font-sans);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+.chip:hover { background: var(--bg-3); color: var(--fg-1); }
+.chip.active {
+  background: var(--apt-teal-tint);
+  border-color: var(--apt-teal);
+  color: var(--apt-teal-bright);
+}
+
+/* ── Transitional shim for unrewritten Tailwind pages ──────── */
+.panel {
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-3);
+  padding: 16px;
+}
+table th {
+  background: transparent;
+  color: var(--fg-3);
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-1);
+}
+table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-1);
+}
+table tr:hover td { background: var(--bg-3); }
+
+/* Tailwind utility back-fills not provided by CDN reliably */
+.font-mono { font-family: var(--font-mono); }
+
+/* ── Misc tweaks ───────────────────────────────────────────── */
+.mono { font-family: var(--font-mono); }
+.tabnum { font-variant-numeric: tabular-nums; }
+a.linkish { color: var(--apt-teal-bright); }
+a.linkish:hover { text-decoration: underline; }
+hr.divider { border: 0; border-top: 1px solid var(--border-1); margin: 18px 0; }

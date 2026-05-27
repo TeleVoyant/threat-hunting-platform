@@ -1,0 +1,5 @@
+{% macro sev_badge(sev) %}
+<span class="pill sev-{{ sev }}">
+  <span class="pill-dot" style="background: currentColor;"></span>{{ sev|upper }}
+</span>
+{% endmacro %}

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Users — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="usersPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Users</h1>
+    <div class="eyebrow" style="margin-top:4px;">Add operators · rotate API keys · backed by config/security.yml</div>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-bottom:14px;">
+  <h2 class="apt-h3" style="margin-bottom:10px;">Add user</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label class="field-label">Username</label>
+      <input class="input" type="text" x-model="form.username" placeholder="e.g. soc_analyst_2">
+    </div>
+    <div class="field">
+      <label class="field-label">Role</label>
+      <select class="input" x-model="form.role">
+        <option value="viewer">Viewer</option>
+        <option value="analyst">Analyst</option>
+        <option value="operator">Operator</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label">Email (optional)</label>
+      <input class="input" type="email" x-model="form.email" placeholder="user@org.tz">
+    </div>
+    <div class="field">
+      <label class="field-label">Phone (optional)</label>
+      <input class="input" type="tel" x-model="form.phone" placeholder="255712345678">
+      <div class="apt-small" style="color:var(--fg-3); margin-top:4px;">TZ format: 255 + 9 digits</div>
+    </div>
+  </div>
+  <button class="btn btn-primary" x-on:click="addUser()" :disabled="!form.username" style="margin-top:10px;">
+    <i data-lucide="user-plus"></i> Add user
+  </button>
+</div>
+
+<div class="card">
+  <table class="tbl">
+    <thead><tr><th>Username</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+    <tbody>
+      <template x-for="u in users" :key="u.username">
+        <tr>
+          <td class="mono" x-text="u.username"></td>
+          <td>
+            <span class="pill" style="background:var(--bg-3); color:var(--fg-2);" x-text="(u.role||'').toUpperCase()"></span>
+          </td>
+          <td class="mono apt-small">
+            <span x-show="!edit[u.username]" x-text="u.email || '—'"></span>
+            <input class="input" x-show="edit[u.username]" type="email"
+                   x-model="editBuf[u.username].email" style="font-size:11px; padding:4px 8px;">
+          </td>
+          <td class="mono apt-small">
+            <span x-show="!edit[u.username]" x-text="u.phone || '—'"></span>
+            <input class="input" x-show="edit[u.username]" type="tel"
+                   x-model="editBuf[u.username].phone" style="font-size:11px; padding:4px 8px;">
+          </td>
+          <td style="text-align:right;">
+            <button class="btn btn-ghost btn-icon" title="Edit contact" x-show="!edit[u.username]"
+                    x-on:click="startEdit(u)">
+              <i data-lucide="pencil"></i>
+            </button>
+            <button class="btn btn-primary" x-show="edit[u.username]" x-on:click="saveEdit(u.username)">Save</button>
+            <button class="btn btn-secondary" x-show="edit[u.username]" x-on:click="cancelEdit(u.username)">Cancel</button>
+            <button class="btn btn-secondary" x-on:click="regen(u.username)" x-show="!edit[u.username]">
+              <i data-lucide="key-round"></i> Rotate API key
+            </button>
+            <button class="btn btn-ghost btn-icon" title="Remove" x-on:click="remove(u.username)" x-show="!edit[u.username]">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </td>
+        </tr>
+      </template>
+      <tr x-show="users.length === 0"><td colspan="5" style="text-align:center; color:var(--fg-3); padding:32px;">No users.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{# One-shot API-key reveal modal #}
+<template x-teleport="body">
+  <div>
+    <div class="scrim" x-show="reveal.open" x-on:click="reveal.open = false" x-transition.opacity></div>
+    <div x-show="reveal.open" x-transition style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:55;">
+      <div class="modal">
+        <div style="padding:18px 20px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="apt-h3">API key for <span x-text="reveal.username" class="mono"></span></h2>
+          <button class="btn btn-ghost btn-icon" x-on:click="reveal.open = false"><i data-lucide="x"></i></button>
+        </div>
+        <div style="padding:18px 20px;">
+          <div class="apt-small" style="color:var(--warning); margin-bottom:10px;">
+            <i data-lucide="alert-triangle"></i>
+            Copy this key now — it will not be shown again.
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <code style="flex:1; background:var(--bg-0); padding:10px 12px; border-radius:var(--r-2); border:1px solid var(--border-1); font-family:var(--font-mono); word-break:break-all;" x-text="reveal.key"></code>
+            <button class="btn btn-primary" x-on:click="aptCopy(reveal.key, 'API key copied')">
+              <i data-lucide="copy"></i> Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function usersPage() {
+  return {
+    users: [],
+    form: { username: '', role: 'analyst', email: '', phone: '' },
+    edit: {},
+    editBuf: {},
+    reveal: { open: false, username: '', key: '' },
+    async load() {
+      const r = await fetch('/admin/users', { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.users = d.users || [];
+      }
+    },
+    async addUser() {
+      const body = { username: this.form.username, role: this.form.role };
+      if (this.form.email) body.email = this.form.email;
+      if (this.form.phone) body.phone = this.form.phone;
+      const r = await fetch('/admin/users', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        this.reveal = { open: true, username: d.username, key: d.api_key };
+        this.form = { username: '', role: 'analyst', email: '', phone: '' };
+        this.load();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Add failed: ' + t, 'error');
+      }
+    },
+
+    startEdit(u) {
+      this.editBuf[u.username] = { email: u.email || '', phone: u.phone || '' };
+      this.edit[u.username] = true;
+    },
+    cancelEdit(name) { this.edit[name] = false; },
+    async saveEdit(name) {
+      const r = await fetch('/admin/users/' + encodeURIComponent(name) + '/contact', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.editBuf[name]),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Contact info saved.', 'ok');
+        this.edit[name] = false;
+        this.load();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Save failed: ' + t, 'error');
+      }
+    },
+    async regen(name) {
+      if (!confirm('Rotate API key for ' + name + '? Old key becomes invalid immediately.')) return;
+      const r = await fetch('/admin/users/' + encodeURIComponent(name) + '/regen',
+                            { method: 'POST', credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.reveal = { open: true, username: name, key: d.api_key };
+      } else {
+        Alpine.store('toast').push('Rotate failed.', 'error');
+      }
+    },
+    async remove(name) {
+      if (!confirm('Remove ' + name + '?')) return;
+      const r = await fetch('/admin/users/' + encodeURIComponent(name),
+                            { method: 'DELETE', credentials: 'same-origin' });
+      if (r.ok) {
+        Alpine.store('toast').push('Removed ' + name, 'ok');
+        this.load();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Remove failed: ' + t, 'error');
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Federated learning — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="flPage()" x-init="load()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Federated learning</h1>
+    <div class="eyebrow" style="margin-top:4px;">Org-side onboarding · contributions · in-process demo</div>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-bottom:18px;">
+  <h2 class="apt-h3" style="margin-bottom:12px;">Status</h2>
+  <div style="display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:14px;">
+    <div>
+      <div class="eyebrow">Keypair</div>
+      <div style="font:600 14px var(--font-sans); margin-top:4px;" x-text="status.configured || status.public_key ? 'Initialised' : 'Not initialised'"></div>
+    </div>
+    <div>
+      <div class="eyebrow">Coordinator</div>
+      <div class="mono" style="margin-top:4px; word-break:break-all;" x-text="status.coordinator_url || '—'"></div>
+    </div>
+    <div>
+      <div class="eyebrow">Org ID</div>
+      <div class="mono" style="margin-top:4px;" x-text="status.org_id || '—'"></div>
+    </div>
+    <div>
+      <div class="eyebrow">Opted in</div>
+      <div style="margin-top:4px;">
+        <span class="pill" :style="status.opted_in ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--bg-3);color:var(--fg-3);'"
+              x-text="status.opted_in ? 'YES' : 'NO'"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if can_manage %}
+<div class="card card-pad" style="margin-bottom:18px;">
+  <h2 class="apt-h3" style="margin-bottom:12px;">Onboarding</h2>
+  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px;">
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px;">Step 1 · keypair</div>
+      <button class="btn btn-primary" x-on:click="initKeypair()" :disabled="status.public_key">
+        <i data-lucide="key"></i> Generate keypair
+      </button>
+      <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">Private key stays on this server. Public key goes to the FL coordinator.</div>
+      <div x-show="status.public_key" style="margin-top:10px;">
+        <button class="btn btn-secondary" x-on:click="copyPub()">
+          <i data-lucide="copy"></i> Copy public key
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px;">Step 2 · paste enrollment package</div>
+      <textarea class="input" rows="6" x-model="enrollJson" placeholder='{"coordinator_url":"https://fl.example.com:8889","org_id":"udom","api_key":"…","client_cert_pem":"…","ca_cert_pem":"…","coordinator_pub_pem":"…"}' style="font-family:var(--font-mono); font-size:11px;"></textarea>
+      <button class="btn btn-primary" x-on:click="configure()" :disabled="!enrollJson" style="margin-top:8px;">
+        <i data-lucide="check"></i> Configure
+      </button>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px;">Step 3 · opt in</div>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" x-model="optedIn" x-on:change="setOptIn($event.target.checked)" :disabled="!status.configured">
+        <span>Opt into next FL round</span>
+      </label>
+      <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">Toggle anytime; takes effect at the next round start.</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:18px;">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
+    <h2 class="apt-h3">Contributions</h2>
+  </div>
+  <table class="tbl">
+    <thead><tr><th>Round</th><th>Submitted at (UTC)</th><th>Samples</th><th>Status</th></tr></thead>
+    <tbody>
+      <template x-for="c in contributions" :key="c.round_id">
+        <tr>
+          <td class="mono" x-text="c.round_id"></td>
+          <td class="mono apt-small" style="color:var(--fg-3);" x-text="c.submitted_at ? new Date(c.submitted_at*1000).toISOString().slice(0,19) : '—'"></td>
+          <td class="mono tabnum" x-text="c.trained_on_samples"></td>
+          <td><span :class="'status-' + (c.status === 'accepted' ? 'active' : 'open')">●</span> <span x-text="c.status"></span></td>
+        </tr>
+      </template>
+      <tr x-show="contributions.length === 0"><td colspan="4" style="text-align:center; color:var(--fg-3); padding:32px;">No contributions yet.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% if can_manage %}
+<div class="card card-pad">
+  <h2 class="apt-h3" style="margin-bottom:12px;">In-process FL demo</h2>
+  <div class="apt-small" style="color:var(--fg-2); margin-bottom:12px;">Simulates 3 orgs (UDoM + hospital + bank), poisons one client, and shows the trust manager dropping its score. Output: convergence chart + per-round metrics.</div>
+  <div class="form-grid">
+    <div class="field"><label class="field-label">Rounds</label><input class="input" type="number" x-model.number="demo.num_rounds" min="2" max="50"></div>
+    <div class="field"><label class="field-label">Hours / org</label><input class="input" type="number" x-model.number="demo.hours_per_org" min="1" max="72"></div>
+    <div class="field"><label class="field-label">Poison round</label><input class="input" type="number" x-model.number="demo.poison_round" min="2"></div>
+    <div class="field"><label class="field-label">DP epsilon</label><input class="input" type="number" step="0.1" x-model.number="demo.epsilon"></div>
+  </div>
+  <button class="btn btn-primary" x-on:click="runDemo()" :disabled="demoRunning" style="margin-top:10px;">
+    <i data-lucide="play"></i> Run demo
+  </button>
+  <div x-show="demoStatus" style="margin-top:14px;">
+    <div class="eyebrow">Status</div>
+    <pre class="mono apt-small" style="background:var(--bg-0); padding:12px; border-radius:var(--r-2); border:1px solid var(--border-1); overflow:auto; max-height:200px;" x-text="JSON.stringify(demoStatus, null, 2)"></pre>
+  </div>
+  <div x-show="convergencePoints.length > 0" style="margin-top:14px; height:240px; position:relative;">
+    <canvas id="chart-convergence"></canvas>
+  </div>
+</div>
+{% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function flPage() {
+  return {
+    status: {},
+    contributions: [],
+    publicKey: '',
+    enrollJson: '',
+    optedIn: false,
+    demo: { num_rounds: 10, hours_per_org: 12, poison_round: 5, epsilon: 1.0 },
+    demoRunning: false,
+    demoStatus: null,
+    convergencePoints: [],
+
+    async load() {
+      const r = await fetch('/fl/local/status', { credentials: 'same-origin' });
+      if (r.ok) {
+        this.status = await r.json();
+        this.optedIn = !!this.status.opted_in;
+      }
+      try {
+        const pk = await fetch('/fl/local/keypair/public', { credentials: 'same-origin' });
+        if (pk.ok) {
+          const d = await pk.json();
+          this.publicKey = d.public_key_pem || '';
+          this.status.public_key = !!this.publicKey;
+        }
+      } catch (_) {}
+      try {
+        const cr = await fetch('/fl/local/contributions', { credentials: 'same-origin' });
+        if (cr.ok) {
+          const d = await cr.json();
+          this.contributions = d.contributions || [];
+        }
+      } catch (_) {}
+    },
+
+    async initKeypair() {
+      const r = await fetch('/fl/local/keypair/init', { method: 'POST', credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json();
+        this.publicKey = d.public_key_pem;
+        Alpine.store('toast').push('Keypair generated.', 'ok');
+        this.load();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Failed: ' + t, 'error');
+      }
+    },
+
+    copyPub() { aptCopy(this.publicKey, 'Public key copied'); },
+
+    async configure() {
+      let body;
+      try { body = JSON.parse(this.enrollJson); }
+      catch (e) { Alpine.store('toast').push('Invalid JSON: ' + e.message, 'error'); return; }
+      const r = await fetch('/fl/local/configure', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Configured.', 'ok');
+        this.enrollJson = '';
+        this.load();
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Failed: ' + t, 'error');
+      }
+    },
+
+    async setOptIn(checked) {
+      const r = await fetch('/fl/local/opt-in', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opted_in: !!checked }),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Opt-in updated.', 'ok');
+      } else {
+        Alpine.store('toast').push('Opt-in failed.', 'error');
+      }
+    },
+
+    async runDemo() {
+      this.demoRunning = true;
+      this.convergencePoints = [];
+      const r = await fetch('/fl/local/demo/run', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.demo),
+      });
+      if (!r.ok) {
+        Alpine.store('toast').push('Demo could not start.', 'error');
+        this.demoRunning = false;
+        return;
+      }
+      const j = await r.json();
+      this.demoStatus = j;
+      Alpine.store('toast').push('Demo started — this can take a minute.', 'ok');
+      // Poll
+      const poll = async () => {
+        const pr = await fetch('/fl/local/demo/' + j.job_id, { credentials: 'same-origin' });
+        if (pr.ok) {
+          this.demoStatus = await pr.json();
+          if (this.demoStatus.status !== 'running') {
+            this.demoRunning = false;
+            if (this.demoStatus.convergence) {
+              this.renderConvergence(this.demoStatus.convergence);
+            }
+            return;
+          }
+        }
+        setTimeout(poll, 2500);
+      };
+      setTimeout(poll, 2500);
+    },
+
+    async renderConvergence(c) {
+      // Expected shape: { rounds: [{round, global_auc, ...}], ... }
+      const pts = (c.rounds || []).map(r => ({ ts: '#' + r.round, auc: r.global_auc || 0 }));
+      this.convergencePoints = pts;
+      await this.$nextTick();
+      const canvas = document.getElementById('chart-convergence');
+      if (canvas && window.AptCharts) {
+        window.AptCharts.lineChart(canvas, pts, {
+          fill: true, series: [{ key: 'auc', label: 'Global AUC' }],
+        });
+      }
+    },
+  };
+}
+</script>
+{% endblock %}
