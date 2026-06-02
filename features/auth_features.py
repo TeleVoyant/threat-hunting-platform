@@ -12,10 +12,25 @@ Computes signals for the MITRE ATT&CK techniques:
   T1098     Account manipulation   — privilege changes, group additions
 """
 
+import re
 from collections import Counter
+from typing import Optional
 
 from shared.interfaces import BaseFeatureExtractor
 from shared.schemas import NormalizedEvent
+
+# Process basenames associated with credential abuse / lateral movement
+# tooling. Matched case-insensitively against `process_name` on process or
+# process_access events that share the auth window.
+_PSEXEC_PROCS  = frozenset({"psexec.exe", "psexec64.exe", "paexec.exe"})
+_WMIC_PROCS    = frozenset({"wmic.exe", "wmiprvse.exe"})
+_WINRM_PROCS   = frozenset({"winrshost.exe", "wsmprovhost.exe"})
+_SCHTASK_PROCS = frozenset({"schtasks.exe", "at.exe"})
+_PWSH_PROCS    = frozenset({"powershell.exe", "pwsh.exe"})
+_LSASS_NAME    = "lsass.exe"
+
+# PowerShell `-EncodedCommand` flag — short or long form (case-insensitive).
+_PWSH_ENC_RE = re.compile(r"(?:\s|^)-(?:e|en|enc|enco|encod|encode|encodedcommand)(?:\s|=)", re.IGNORECASE)
 
 # ── Windows Security event IDs ──────────────────────────────────────────────
 _AUTH_SUCCESS    = 4624
@@ -44,18 +59,47 @@ _LOGON_REMOTE_INTERACTIVE = 10  # RDP
 
 class AuthFeatureExtractor(BaseFeatureExtractor):
 
+    # Fixed denominator for rate features so they're scale-invariant across
+    # poll cadences (c). Matches event_window_minutes from platform config —
+    # if the platform changes the window, also change this. Five-minute
+    # default tracks both the trainer (window_minutes=5) and the running
+    # detection loop.
+    WINDOW_SECONDS = 5 * 60
+
     def name(self) -> str:
         return "auth"
 
     def required_event_types(self) -> list[str]:
-        return ["authentication", "account_management"]
+        # Process / process_access events are joined into the auth window to
+        # surface lateral-movement tooling signals (psexec, wmic, lsass dump
+        # attempts, encoded PowerShell). See (k).
+        return [
+            "authentication", "account_management",
+            "process", "process_access",
+        ]
 
     def extract(self, events: list[NormalizedEvent]) -> dict[str, float]:
+        # Same canonical-order discipline as the DNS extractor: build the
+        # empty schema first, overlay computed values. Guarantees the dict
+        # key order is identical across every window so the trainer's
+        # schema-drift check (extract_training_matrix) never trips.
+        result = self._empty()
         if not events:
-            return self._empty()
+            return result
 
-        n = len(events)
-        eid_counts = Counter(e.windows_event_id for e in events)
+        # Split by event_type so the auth-only counters don't get polluted by
+        # process events that ride the same window.
+        auth_events = [
+            e for e in events
+            if e.event_type in ("authentication", "account_management")
+        ]
+        proc_events = [
+            e for e in events
+            if e.event_type in ("process", "process_access")
+        ]
+
+        n = len(auth_events)
+        eid_counts = Counter(e.windows_event_id for e in auth_events)
 
         # ── Volume ───────────────────────────────────────────────────────────
         success_count = eid_counts.get(_AUTH_SUCCESS, 0)
@@ -64,21 +108,21 @@ class AuthFeatureExtractor(BaseFeatureExtractor):
 
         # ── Logon type analysis (only meaningful on 4624) ────────────────────
         ltype_counts = Counter(
-            e.logon_type for e in events
+            e.logon_type for e in auth_events
             if e.windows_event_id == _AUTH_SUCCESS and e.logon_type is not None
         )
         net_logons = ltype_counts.get(_LOGON_NETWORK, 0)
 
         # ── Brute-force / password-spray signal: failures per user ───────────
         per_user_failures = Counter(
-            e.user for e in events
+            e.user for e in auth_events
             if e.windows_event_id == _AUTH_FAILURE and e.user
         )
         max_fail_per_user = max(per_user_failures.values()) if per_user_failures else 0
 
         # Same source IP attacking many distinct user accounts (password spray)
         per_source_failed_users = {}
-        for e in events:
+        for e in auth_events:
             if e.windows_event_id == _AUTH_FAILURE and e.source_ip and e.user:
                 per_source_failed_users.setdefault(e.source_ip, set()).add(e.user)
         max_users_per_source = max(
@@ -87,38 +131,109 @@ class AuthFeatureExtractor(BaseFeatureExtractor):
 
         # ── Privilege escalation ─────────────────────────────────────────────
         priv_users = {
-            e.user for e in events
+            e.user for e in auth_events
             if e.windows_event_id == _SPECIAL_LOGON and e.user
         }
 
         # ── Spread across hosts/users/sources ────────────────────────────────
         # hostname = the agent that captured the event = the TARGET host being
         # authenticated to. Cross-agent aggregation gives lateral movement spread.
-        unique_target_hosts = {e.hostname for e in events if e.hostname}
-        unique_users        = {e.user for e in events if e.user}
+        unique_target_hosts = {e.hostname for e in auth_events if e.hostname}
+        unique_users        = {e.user for e in auth_events if e.user}
         unique_source_ips   = {
-            e.source_ip for e in events
+            e.source_ip for e in auth_events
             if e.source_ip and e.source_ip not in ("0.0.0.0", "-", "::1", "127.0.0.1")
         }
 
-        # Lateral velocity: distinct target hosts touched per minute
-        if len(events) >= 2:
-            sorted_ts = sorted(e.timestamp for e in events)
-            window_secs = max((sorted_ts[-1] - sorted_ts[0]).total_seconds(), 1.0)
-            lateral_velocity = (len(unique_target_hosts) / window_secs) * 60.0
-        else:
-            lateral_velocity = 0.0
+        # Lateral velocity: distinct target hosts touched per minute, computed
+        # against the FIXED analytic window (not the empirical event span).
+        # The old span-based denominator clipped to 1s, so any short burst
+        # produced inflated 60×hosts velocity — model couldn't generalise.
+        lateral_velocity = (len(unique_target_hosts) / self.WINDOW_SECONDS) * 60.0
 
         # ── Per-user lateral spread (one user touching many hosts) ───────────
         per_user_hosts = {}
-        for e in events:
+        for e in auth_events:
             if e.windows_event_id == _AUTH_SUCCESS and e.user and e.hostname:
                 per_user_hosts.setdefault(e.user, set()).add(e.hostname)
         max_hosts_per_user = max(
             (len(s) for s in per_user_hosts.values()), default=0
         )
 
-        return {
+        # ── Success-after-failure burst (o) — credential stuffing / PtH ─────
+        # Per source_ip, did we see a 4625 followed by a 4624 within window?
+        # 1 = yes (highest-signal lateral pattern), 0 = no. Also captures the
+        # latency: time_to_first_success in seconds (smaller = more automated).
+        success_after_fail = 0
+        time_to_first_success = 0.0
+        by_source: dict[str, list] = {}
+        for e in sorted(auth_events, key=lambda x: x.timestamp):
+            if not e.source_ip:
+                continue
+            if e.windows_event_id in (_AUTH_FAILURE, _AUTH_SUCCESS):
+                by_source.setdefault(e.source_ip, []).append(e)
+        for src, evts in by_source.items():
+            first_fail_ts = None
+            for ev in evts:
+                if ev.windows_event_id == _AUTH_FAILURE and first_fail_ts is None:
+                    first_fail_ts = ev.timestamp
+                elif ev.windows_event_id == _AUTH_SUCCESS and first_fail_ts is not None:
+                    success_after_fail = 1
+                    time_to_first_success = max(
+                        (ev.timestamp - first_fail_ts).total_seconds(), 0.0
+                    )
+                    break
+            if success_after_fail:
+                break
+
+        # ── Time-of-day signals (l-lite). Model learns its own baseline ────
+        # of when an entity normally authenticates. Off-hours auth is
+        # disproportionately interactive — interactive_offhours is more
+        # actionable than raw hour of day.
+        offhours_total = 0
+        offhours_interactive = 0
+        for e in auth_events:
+            if e.windows_event_id != _AUTH_SUCCESS:
+                continue
+            hour = e.timestamp.hour  # UTC; analyst trains in same TZ
+            if hour < 6 or hour >= 22:  # 22:00–06:00 considered off-hours
+                offhours_total += 1
+                if e.logon_type in (_LOGON_INTERACTIVE, _LOGON_REMOTE_INTERACTIVE):
+                    offhours_interactive += 1
+
+        # ── Process-context join (k) — lateral movement tooling ─────────────
+        proc_basenames = [
+            self._proc_basename(e.process_name) for e in proc_events if e.process_name
+        ]
+        psexec_count   = sum(1 for p in proc_basenames if p in _PSEXEC_PROCS)
+        wmic_count     = sum(1 for p in proc_basenames if p in _WMIC_PROCS)
+        winrm_count    = sum(1 for p in proc_basenames if p in _WINRM_PROCS)
+        schtasks_count = sum(1 for p in proc_basenames if p in _SCHTASK_PROCS)
+
+        # Encoded PowerShell — a single instance is suspicious; we cap at 5
+        # so the feature stays in a sane range for the model.
+        pwsh_encoded_count = 0
+        for e in proc_events:
+            if not e.command_line:
+                continue
+            base = self._proc_basename(e.process_name)
+            if base in _PWSH_PROCS and _PWSH_ENC_RE.search(e.command_line):
+                pwsh_encoded_count += 1
+        pwsh_encoded_count = min(pwsh_encoded_count, 5)
+
+        # LSASS access — process_access events targeting lsass.exe are the
+        # signature of credential dumping (Mimikatz, lsassy, ProcDump).
+        lsass_access_count = 0
+        for e in proc_events:
+            if e.event_type != "process_access":
+                continue
+            # The target of process_access is typically captured in raw[].
+            target = (e.raw or {}).get("data", {}).get("win", {}) \
+                .get("eventdata", {}).get("targetImage", "") if isinstance(e.raw, dict) else ""
+            if self._proc_basename(target) == _LSASS_NAME:
+                lsass_access_count += 1
+
+        result.update({
             # Volume
             "total_auth_events":              float(n),
             "successful_logon_count":         float(success_count),
@@ -162,7 +277,24 @@ class AuthFeatureExtractor(BaseFeatureExtractor):
             "account_disabled_count":         float(eid_counts.get(_ACCT_DISABLE, 0)),
             "account_deleted_count":          float(eid_counts.get(_ACCT_DELETE, 0)),
             "account_changed_count":          float(eid_counts.get(_ACCT_CHANGE, 0)),
-        }
+
+            # Success-after-failure (o)
+            "success_after_failures":         float(success_after_fail),
+            "time_to_first_success_secs":     float(time_to_first_success),
+
+            # Time-of-day (l-lite)
+            "offhours_logon_count":           float(offhours_total),
+            "offhours_interactive_count":     float(offhours_interactive),
+
+            # Process-context (k) — lateral movement tooling
+            "psexec_invocations":             float(psexec_count),
+            "wmic_invocations":               float(wmic_count),
+            "winrm_invocations":              float(winrm_count),
+            "schtasks_invocations":           float(schtasks_count),
+            "powershell_encoded_count":       float(pwsh_encoded_count),
+            "lsass_access_count":             float(lsass_access_count),
+        })
+        return result
 
     def _empty(self) -> dict[str, float]:
         return {k: 0.0 for k in [
@@ -187,4 +319,17 @@ class AuthFeatureExtractor(BaseFeatureExtractor):
             "account_created_count", "account_enabled_count",
             "password_reset_count", "account_disabled_count",
             "account_deleted_count", "account_changed_count",
+            # Success-after-failure (o)
+            "success_after_failures", "time_to_first_success_secs",
+            # Time-of-day (l-lite)
+            "offhours_logon_count", "offhours_interactive_count",
+            # Process-context (k)
+            "psexec_invocations", "wmic_invocations", "winrm_invocations",
+            "schtasks_invocations", "powershell_encoded_count", "lsass_access_count",
         ]}
+
+    @staticmethod
+    def _proc_basename(path: Optional[str]) -> str:
+        if not path:
+            return ""
+        return path.replace("\\", "/").rsplit("/", 1)[-1].lower()

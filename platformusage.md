@@ -549,6 +549,197 @@ On the target laptop:
 type C:\ProgramData\APTPlatform\handler.log -Tail 20
 ```
 
+### 8.7 Handler script — OTA updates (`update_handler` / `rollback_handler`)
+
+The `agent_command_handler.ps1` script on each endpoint is the platform's
+single biggest piece of operator-controlled code. Pushing a new version no
+longer requires re-running the install one-liner on every laptop — the
+platform now manages handler versions centrally.
+
+**Lifecycle:**
+
+```
+operator uploads new .ps1 ──► STAGED      ──promote──► LIVE     ──supersede──► ARCHIVED
+                              (no agents)              (agents auto-pull)       (still pushable)
+```
+
+There is always exactly one `LIVE` version at a time. Agents auto-pull it on
+every 60-s poll: a tiny `GET /agents/{id}/handler/manifest` returns the
+current label + SHA-256; if it differs from the endpoint's registry value
+the agent fetches `GET /agents/{id}/handler/content?version=<v>`, SHA-256
+verifies, parses as PowerShell, and atomically replaces the live file. The
+previous version is kept as `.bak` for one-step rollback.
+
+**Manage from the dashboard:**
+
+`/dashboard/handler` — upload + stage + promote + delete + push-to-all.
+Per-version status, release notes, agent-count-on-each, and a single-click
+**Promote to live** that flips the new version live AND archives the
+previous one in the same transaction.
+
+**Per-agent visibility on `/dashboard/fleet`:**
+
+- New **Handler** column on the Endpoints table.
+- Green `LATEST` pill when the agent's installed version matches the live one.
+- Amber pill with the literal version label when it doesn't — click the
+  pill (or the per-row Send-command modal's "Push latest handler" CTA) to
+  push the live version to just that agent.
+- Grey `—` when the agent hasn't reported a version yet (old build pre-OTA,
+  or fresh install before the first heartbeat).
+
+**Operator REST examples:**
+
+```bash
+# Upload a new version (multipart form).
+curl -X POST http://localhost:8000/admin/handler/upload \
+     -H "X-API-Key: $YOUR_ADMIN_KEY" \
+     -F "file=@scripts/agent_command_handler.ps1" \
+     -F "version_label=v2026.05.30-1428" \
+     -F "notes=Add ISOLATE deadman extension"
+# → { id, version_label, sha256, size_bytes, status: 'staged' }
+
+# Promote the staged version to LIVE.
+curl -X POST http://localhost:8000/admin/handler/3/promote \
+     -H "X-API-Key: $YOUR_ADMIN_KEY"
+# → { status: 'live', id: 3, version_label: ... }
+
+# Push the live version to a specific endpoint (operator-driven).
+curl -X POST http://localhost:8000/admin/handler/push \
+     -H "X-API-Key: $YOUR_ADMIN_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"version_label":"v2026.05.30-1428","agent_ids":["LAPTOP-007"]}'
+
+# Push to ALL enrolled agents.
+curl -X POST http://localhost:8000/admin/handler/push \
+     -H "X-API-Key: $YOUR_ADMIN_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"version_label":"v2026.05.30-1428","target_all":true}'
+
+# Roll the fleet back to whatever each agent's .bak is.
+curl -X POST http://localhost:8000/admin/handler/rollback \
+     -H "X-API-Key: $YOUR_ADMIN_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"target_all":true,"reason":"v...-1428 broke isolation self-heal"}'
+```
+
+**Integrity guarantees:**
+
+| Layer | What it does | What it stops |
+|---|---|---|
+| HMAC on command envelope | Existing per-agent secret signs the UPDATE_HANDLER command | Tamper / replay on the command channel |
+| SHA-256 in manifest | Agent compares hash of fetched content vs manifest | Bytes corrupted in transit (very rare given HTTPS) |
+| `X-Handler-SHA256` response header | Second redundancy on the SHA — agent verifies it agrees with the manifest | Server bug pairing wrong content with right manifest |
+| PowerShell `[scriptblock]::Create` syntax check | Refuses to replace live file with unparseable script | Operator uploads a typo / corrupted file |
+| Atomic `.new` → `.bak` ← live rename | Crash mid-apply leaves either the old version or the new version, never a partial | Power loss / OOM during apply |
+| Hot-swap safety | PowerShell loads handler into memory at task launch, file handle then released → safe to replace mid-iteration | Self-deletion / "file in use" |
+
+**Trade-off worth flagging:** the signing scheme is HMAC-only — a breached
+api server can push arbitrary PowerShell to every endpoint. This is the
+standard EDR threat model; the api's existing hardening (read-only rootfs,
+dropped caps, JWT/api-key isolation) is the mitigation. For production
+deployments that need provenance separate from the api's compromise
+posture, generate an offline Ed25519 keypair, bake the public key into
+`deploy_endpoint.ps1`, sign uploads server-side, and have the agent verify
+the Ed25519 signature in addition to the SHA-256. Not done in this FYP
+scope; documented as a future upgrade.
+
+**Rollback runbook:**
+
+If a freshly-pushed version misbehaves:
+
+1. From `/dashboard/handler`, identify the bad LIVE version (it's the only
+   row with the green LIVE pill).
+2. Click the version's row → **Promote** the previous archived version
+   back to live. New auto-pulls will fetch the older code on next poll.
+3. For agents that already applied the bad version, also issue a fleet-
+   wide rollback so they swap back to their `.bak` immediately rather than
+   waiting for the next auto-pull cycle:
+   ```bash
+   curl -X POST http://localhost:8000/admin/handler/rollback \
+        -H "X-API-Key: $YOUR_ADMIN_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"target_all":true,"reason":"<bad-version> rolled back"}'
+   ```
+4. Audit log shows `handler.rollback.requested` + per-agent
+   `handler.rollback.applied` entries.
+
+The `.bak` is one-deep only. If an agent has applied two bad versions in
+a row, its `.bak` is the second-most-recent (also bad). In that case
+re-push a known-good archived version from the server — the server retains
+every uploaded version forever.
+
+---
+
+### 8.8 Host isolation (`isolate` / `unisolate`)
+
+Three reversible levels. All persist across reboots, all auto-reverse via a
+deadman scheduled task at the operator-set TTL (default 4 h, hard cap 24 h).
+
+| Level | Outbound | LAN | Adapters | User toast |
+|---|---|---|---|---|
+| `light`    | Block SMB/RDP/WinRM/Kerberos + non-corp DNS; rest unchanged | open | unchanged | none |
+| `standard` | Block public internet, keep RFC1918 LAN                    | open | unchanged | yes |
+| `full`     | Block everything except platform lifeline                  | blocked | virtual/VPN disabled | yes |
+
+The lifeline allow-rules (api + Wazuh + DHCP) are written before any block
+rule and use `OverrideBlockRules` so they survive every level. Pre-flight
+refuses to isolate a host that already can't reach the platform — protects
+against self-foot-gun. Post-apply verification re-tests the lifeline AND
+confirms a public destination is unreachable (Standard / Full only).
+
+```bash
+# Isolate a host at Standard for 2 hours.
+curl -X POST http://localhost:8000/fleet/agents/LAPTOP-007/commands \
+     -H "X-API-Key: $YOUR_ADMIN_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"command_type":"isolate",
+          "params":{"level":"standard","ttl_minutes":120,
+                    "reason":"Suspected credential theft"}}'
+
+# Lift containment.
+curl -X POST http://localhost:8000/fleet/agents/LAPTOP-007/commands \
+     -H "X-API-Key: $YOUR_ADMIN_KEY" \
+     -d '{"command_type":"unisolate","params":{"reason":"False positive"}}'
+```
+
+**Status reporting.** While isolated, the agent's heartbeat reports
+`last_status = "isolated:standard"` (or `light` / `full`). The Fleet table
+shows a red `ISOLATED · STANDARD` pill (amber for Light) so the SOC sees
+who's contained at a glance. After unisolate the status reverts to `ok`.
+
+**Reversibility — three independent paths:**
+1. **Remote `unisolate`** — operator (dashboard, mobile, or curl). Standard path.
+2. **Deadman task** — `APTPlatformIsolationDeadman` runs `agent_command_handler.ps1 -PanicUnisolate` at the TTL. Fires even if the platform is unreachable.
+3. **Panic-local** — admin physically at the host runs:
+   ```powershell
+   PowerShell.exe -ExecutionPolicy Bypass `
+     -File "C:\ProgramData\APTPlatform\agent_command_handler.ps1" `
+     -PanicUnisolate -Reason "lab test"
+   ```
+   No network needed. Next normal poll back-reports
+   `last_status = "panic-unisolated:standard:lab-test"` so the audit trail
+   captures the off-network event.
+
+**Self-heal.** While isolated, every poll iteration (every 60 s) verifies
+the firewall rules are still present. If AV or GPO removed them, the agent
+re-applies the level within one poll interval. The `IsolationReason` is
+suffixed with `(self-healed)` so the operator sees the event in the result.
+
+**Local forensic record.** Every isolate/unisolate/panic event appends to
+`C:\ProgramData\APTPlatform\isolation.log` on the endpoint — preserved even
+when the platform is unreachable.
+
+**Configurable adapter filter.** The Full level disables adapters matching
+a default regex covering TAP/TUN/Hyper-V/VMware/VirtualBox/Cisco AnyConnect/
+GlobalProtect/FortiClient/OpenVPN/WireGuard/vEthernet. Override per-fleet:
+
+```powershell
+# Add an extra VPN client to the filter; default values stay matched.
+$pat = '(?i)(TAP|TUN|WireGuard|OpenVPN|MyCorpVPN|Hyper-V)'
+New-ItemProperty -Path "HKLM:\SOFTWARE\APTPlatform" `
+  -Name "IsolationAdapterFilter" -Value $pat -PropertyType String -Force
+```
+
 ---
 
 ## 9. DNS allowlist management

@@ -8,6 +8,7 @@ Wazuh API connector with:
 """
 
 import asyncio
+import os
 import time
 from enum import Enum
 from typing import Optional
@@ -50,11 +51,16 @@ class WazuhConnector(HealthCheckable):
         self._cb_reset_time = circuit_breaker_reset_seconds
         self._last_failure_time = 0.0
 
+        # TLS verification (cc): pin a CA when WAZUH_CA_PATH is set, otherwise
+        # accept the self-signed cert the Docker stack ships with.
+        ca_path = os.environ.get("WAZUH_CA_PATH", "").strip()
+        verify: object = ca_path if ca_path else False
+
         # Connection pool
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,
-            verify=False,  # Wazuh self-signed cert in Docker
+            verify=verify,
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
         self._token: Optional[str] = None
@@ -64,6 +70,13 @@ class WazuhConnector(HealthCheckable):
         self._total_requests = 0
         self._total_failures = 0
         self._last_latency = 0.0
+
+        # Auth-failure cooldown (bb): when /security/user/authenticate keeps
+        # returning 401/403, hammering it every poll just locks the account
+        # out. Cool down separately and longer than the HTTP-failure breaker.
+        self._auth_failures = 0
+        self._auth_cooldown_until: float = 0.0
+        self._auth_cooldown_seconds = 300  # 5 min after 3 consecutive auth fails
 
     async def fetch_recent_events(self, window_minutes: int = 5) -> list[dict]:
         """Fetch events from Wazuh API with retry and circuit breaker."""
@@ -122,13 +135,35 @@ class WazuhConnector(HealthCheckable):
         """Get or refresh Wazuh API auth token."""
         if self._token and time.time() < self._token_expiry:
             return
+        if time.time() < self._auth_cooldown_until:
+            raise httpx.HTTPError(
+                f"Wazuh auth cooldown until {self._auth_cooldown_until:.0f}"
+            )
         response = await self._client.post(
             "/security/user/authenticate",
             auth=(self.username, self.password),
         )
+        # 401/403 = credentials rotated or revoked. Treat as auth failure and
+        # cool down so we don't hammer the account into lockout.
+        if response.status_code in (401, 403):
+            self._auth_failures += 1
+            if self._auth_failures >= 3:
+                self._auth_cooldown_until = time.time() + self._auth_cooldown_seconds
+                logger.critical(
+                    "Wazuh auth failed repeatedly — cooling down",
+                    failures=self._auth_failures,
+                    cooldown_seconds=self._auth_cooldown_seconds,
+                )
+            raise httpx.HTTPError(
+                f"Wazuh auth rejected: HTTP {response.status_code}"
+            )
         response.raise_for_status()
         self._token = response.json()["data"]["token"]
         self._token_expiry = time.time() + 840  # 14 minutes (tokens last 15min)
+        # Successful auth resets the auth-failure counter without affecting
+        # the request-level circuit breaker.
+        self._auth_failures = 0
+        self._auth_cooldown_until = 0.0
 
     def _on_success(self):
         self._failure_count = 0

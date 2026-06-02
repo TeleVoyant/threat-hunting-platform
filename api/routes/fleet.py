@@ -70,6 +70,7 @@ async def enroll_agent(
     body: EnrollRequest,
     request: Request,
     x_bootstrap_token: Optional[str] = Header(default=None),
+    x_enrollment_token: Optional[str] = Header(default=None),
     bearer  = Depends(security_bearer),
     api_key = Depends(api_key_header),
 ):
@@ -77,16 +78,29 @@ async def enroll_agent(
     Register a new agent and return its HMAC secret. The secret is shown
     ONCE — the caller must store it securely on the agent.
 
-    Two auth paths:
-      1. X-Bootstrap-Token header matching env var FLEET_BOOTSTRAP_TOKEN, OR
-      2. Admin JWT/API-key with `enroll_agents` permission.
-
-    The bootstrap path lets deploy_endpoint.ps1 self-enroll on the laptop
-    without distributing admin credentials to every endpoint.
+    Three auth paths (checked in order):
+      1. X-Enrollment-Token: single-use installer token from POST /install/tokens.
+         Atomically consumed on success; cannot be replayed. This is the path
+         the URL-served bootstrap one-liner uses.
+      2. X-Bootstrap-Token: long-lived env var FLEET_BOOTSTRAP_TOKEN — kept
+         for back-compat / scripted enrolment.
+      3. Admin JWT/API-key with `enroll_agents` permission.
     """
     auth_manager = request.app.state.auth_manager
+    token_store = getattr(request.app.state, "enrollment_tokens", None)
 
-    if _bootstrap_token_ok(x_bootstrap_token):
+    if x_enrollment_token and token_store is not None:
+        client_ip = request.client.host if request.client else None
+        ok, reason = token_store.consume(
+            x_enrollment_token, body.agent_id, client_ip=client_ip)
+        if not ok:
+            status = {"not_found": 403, "expired": 410, "used": 409,
+                      "exhausted": 409, "revoked": 410}.get(reason, 403)
+            raise HTTPException(status,
+                f"Enrollment token {reason.replace('_', ' ')}.")
+        actor = "installer"
+        auth_via = f"enrollment_token:{x_enrollment_token[:8]}…"
+    elif _bootstrap_token_ok(x_bootstrap_token):
         actor = "bootstrap"
         auth_via = "bootstrap_token"
     else:
@@ -97,7 +111,7 @@ async def enroll_agent(
         if not user and api_key:
             user = auth_manager.authenticate_api_key(api_key)
         if not user:
-            raise HTTPException(401, "Provide a valid X-Bootstrap-Token or admin credentials")
+            raise HTTPException(401, "Provide an X-Enrollment-Token, X-Bootstrap-Token, or admin credentials.")
         if not auth_manager.has_permission(user, "enroll_agents"):
             raise HTTPException(403, "Permission 'enroll_agents' required")
         actor = user.username
@@ -131,11 +145,101 @@ async def list_agents(
     request: Request,
     user: User = Depends(require_permission("manage_fleet")),
 ):
-    """List every enrolled agent with last-seen status and pending command count."""
-    return {"agents": _store(request).list_agents()}
+    """List every enrolled agent with last-seen status and pending command count.
+
+    Response also carries `live_handler_version` so the dashboard + mobile
+    fleet views can colour each agent's handler pill (LATEST vs out-of-date)
+    without a second round-trip to /admin/handler/versions.
+    """
+    handler_store = getattr(request.app.state, "handler_store", None)
+    live = handler_store.get_live() if handler_store else None
+    return {
+        "agents":               _store(request).list_agents(),
+        "live_handler_version": live["version_label"] if live else None,
+    }
 
 
 # ── Single-agent commands ──────────────────────────────────────────────────
+
+_VALID_ISOLATION_LEVELS = {"light", "standard", "full"}
+_ISOLATION_TTL_MIN = 5
+_ISOLATION_TTL_MAX = 1440
+
+
+def _validate_command_params(command_type: "CommandType", params: dict, request: Request) -> dict:
+    """Server-side params sanity-check for high-blast-radius commands.
+
+    Validates ISOLATE / UNISOLATE / UPDATE_HANDLER / ROLLBACK_HANDLER at
+    the API boundary so the operator (or mobile app) gets immediate
+    feedback on a malformed param rather than waiting 60s for the agent's
+    'rejected' result. Returns the cleaned-up params dict (clamped /
+    canonicalised) or raises HTTPException(400).
+
+    Other command types pass through unchanged — the agent's per-handler
+    validation catches anything else.
+    """
+    if command_type.value == "isolate":
+        level = (params.get("level") or "").lower().strip()
+        if level not in _VALID_ISOLATION_LEVELS:
+            raise HTTPException(
+                400,
+                f"isolate: 'level' must be one of {sorted(_VALID_ISOLATION_LEVELS)}, got {level!r}",
+            )
+        ttl = params.get("ttl_minutes", 240)
+        try:
+            ttl = int(ttl)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "isolate: 'ttl_minutes' must be an integer")
+        ttl = max(_ISOLATION_TTL_MIN, min(_ISOLATION_TTL_MAX, ttl))
+        reason = str(params.get("reason") or "").strip()
+        if len(reason) > 500:
+            raise HTTPException(400, "isolate: 'reason' is too long (max 500 chars)")
+        cleaned = {"level": level, "ttl_minutes": ttl, "reason": reason}
+        if "toast" in params:
+            cleaned["toast"] = bool(params.get("toast"))
+        return cleaned
+
+    if command_type.value == "unisolate":
+        reason = str(params.get("reason") or "").strip()
+        if len(reason) > 500:
+            raise HTTPException(400, "unisolate: 'reason' is too long (max 500 chars)")
+        return {"reason": reason}
+
+    if command_type.value == "update_handler":
+        version = str(params.get("version") or "").strip()
+        if not version:
+            raise HTTPException(400, "update_handler: 'version' is required")
+        if len(version) > 200:
+            raise HTTPException(400, "update_handler: 'version' too long (max 200 chars)")
+        # Refuse to push a label the server doesn't have — otherwise the
+        # agent's manifest fetch returns 404 60s from now and the operator
+        # learns about it then. Fail fast here instead.
+        handler_store = getattr(request.app.state, "handler_store", None)
+        if handler_store is None:
+            raise HTTPException(503, "Handler-version store unavailable")
+        if handler_store.get_by_label(version) is None:
+            raise HTTPException(
+                404,
+                f"update_handler: version '{version}' not found in handler_versions store",
+            )
+        cleaned = {"version": version}
+        if "force" in params:
+            cleaned["force"] = bool(params.get("force"))
+        return cleaned
+
+    if command_type.value == "rollback_handler":
+        reason = str(params.get("reason") or "").strip()
+        if len(reason) > 500:
+            raise HTTPException(400, "rollback_handler: 'reason' too long (max 500 chars)")
+        return {"reason": reason} if reason else {}
+
+    return params
+
+
+# Backwards-compat alias for the old name. Older callers (if any) still
+# work; new code should call _validate_command_params directly.
+_validate_isolation_params = _validate_command_params
+
 
 @router.post("/agents/{agent_id}/commands", status_code=202)
 async def send_command(
@@ -145,11 +249,16 @@ async def send_command(
     user: User = Depends(require_permission("manage_fleet")),
 ):
     """Enqueue a command for one agent."""
+    # Per-type sanity check on params before they leave the API. Isolation
+    # + handler-OTA commands have specific structure; everything else
+    # passes through.
+    params = _validate_command_params(body.command_type, body.params or {}, request)
+
     try:
         cmd = _store(request).enqueue_command(
             agent_id=agent_id,
             command_type=body.command_type,
-            params=body.params,
+            params=params,
             issued_by=user.username,
             ttl_sec=body.ttl_sec,
         )
@@ -167,6 +276,53 @@ async def send_command(
             "sequence":     cmd.sequence,
         },
     )
+
+    # Richer per-action audit row for isolation so a SOC searching by
+    # `action = "fleet.isolate.requested"` finds them without parsing the
+    # generic command_type column.
+    if cmd.command_type.value == "isolate":
+        _audit(request).log(
+            action="fleet.isolate.requested",
+            actor=user.username, target=agent_id,
+            details={
+                "command_id":  cmd.command_id,
+                "level":       params.get("level"),
+                "ttl_minutes": params.get("ttl_minutes"),
+                "reason":      params.get("reason"),
+            },
+        )
+    elif cmd.command_type.value == "unisolate":
+        _audit(request).log(
+            action="fleet.unisolate.requested",
+            actor=user.username, target=agent_id,
+            details={"command_id": cmd.command_id, "reason": params.get("reason")},
+        )
+    elif cmd.command_type.value == "update_handler":
+        # Same audit shape as the /admin/handler/push bulk path so a search
+        # by `action = "handler.push.requested"` finds both per-agent and
+        # bulk pushes uniformly. The push that came in via /fleet/agents/
+        # {id}/commands (e.g. from the mobile app's "Push latest handler"
+        # button) is now traceable from this single audit action.
+        _audit(request).log(
+            action="handler.push.requested",
+            actor=user.username, target=agent_id,
+            details={
+                "command_id":    cmd.command_id,
+                "version_label": params.get("version"),
+                "via":           "fleet_agents_commands",
+            },
+        )
+    elif cmd.command_type.value == "rollback_handler":
+        _audit(request).log(
+            action="handler.rollback.requested",
+            actor=user.username, target=agent_id,
+            details={
+                "command_id": cmd.command_id,
+                "reason":     params.get("reason"),
+                "via":        "fleet_agents_commands",
+            },
+        )
+
     return {
         "command_id": cmd.command_id,
         "sequence":   cmd.sequence,

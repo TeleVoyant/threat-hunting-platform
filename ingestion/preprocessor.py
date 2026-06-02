@@ -94,6 +94,18 @@ class EventPreprocessor:
     def __init__(self, dead_letter: Optional[DeadLetterQueue] = None):
         self.dead_letter = dead_letter or DeadLetterQueue()
         self._stats = {"processed": 0, "rejected": 0, "sanitized": 0}
+        # Instance copy so /diag/preprocessor/backfill can widen this without
+        # changing the class default for other callers.
+        self.max_event_age_hours = self.MAX_EVENT_AGE_HOURS
+
+    def set_backfill_window(self, hours: int) -> None:
+        """Temporarily widen the max-age cutoff (hh). Used after an outage so
+        a batch of older Wazuh archives can be re-ingested without being
+        dead-lettered. Call again with the default to restore normal behaviour."""
+        if hours < 1 or hours > 24 * 30:
+            raise ValueError("backfill window must be 1h .. 30d")
+        self.max_event_age_hours = hours
+        logger.warning("Preprocessor backfill window set", hours=hours)
 
     # ─────────────────────────────────────────────────────────────────────────
     # PUBLIC API
@@ -305,7 +317,7 @@ class EventPreprocessor:
             now = datetime.now(timezone.utc)
             if parsed_ts.tzinfo is None:
                 parsed_ts = parsed_ts.replace(tzinfo=timezone.utc)
-            if parsed_ts < now - timedelta(hours=self.MAX_EVENT_AGE_HOURS):
+            if parsed_ts < now - timedelta(hours=self.max_event_age_hours):
                 raise ValueError(f"Event too old: {parsed_ts}")
             if parsed_ts > now + timedelta(seconds=self.MAX_FUTURE_DRIFT_SECS):
                 raise ValueError(f"Event timestamp in future: {parsed_ts}")
@@ -376,7 +388,16 @@ class EventPreprocessor:
         if isinstance(ts, (int, float)):
             return datetime.fromtimestamp(ts, tz=timezone.utc)
         if isinstance(ts, str):
-            ts = ts.rstrip("Z")
+            # ISO8601 first — handles "+00:00" offsets, fractional seconds,
+            # and the lone "Z" Wazuh sometimes emits (ii).
+            s = ts.strip()
+            iso = s[:-1] + "+00:00" if s.endswith("Z") else s
+            try:
+                return datetime.fromisoformat(iso)
+            except ValueError:
+                pass
+            # Legacy strptime fallbacks (older Wazuh decoders, custom rules).
+            stripped = s.rstrip("Z")
             for fmt in (
                 "%Y-%m-%dT%H:%M:%S.%f",
                 "%Y-%m-%dT%H:%M:%S",
@@ -384,7 +405,7 @@ class EventPreprocessor:
                 "%Y-%m-%d %H:%M:%S",
             ):
                 try:
-                    return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+                    return datetime.strptime(stripped, fmt).replace(tzinfo=timezone.utc)
                 except ValueError:
                     continue
         return None

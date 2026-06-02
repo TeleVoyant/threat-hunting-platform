@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Deploys Sysmon + Wazuh Agent on a corporate Windows endpoint.
@@ -16,11 +16,14 @@
       Lean     - minimum overhead (~0.3% CPU, ~12MB RAM above baseline).
                  Collects: process creation, lateral-movement network ports,
                  LSASS access, Run-key registry, DNS queries.
-      Balanced - default. Good coverage with manageable overhead
+      Balanced - good coverage with manageable overhead
                  (~1-3% CPU, ~40MB RAM above baseline).
                  Adds: image loads, remote threads, file creates, WMI events,
                  named pipes, account management, Defender/Firewall logs.
-      Full     - maximum telemetry. Use on servers or dedicated SOC endpoints.
+      Full     - DEFAULT. Maximum telemetry; matches the feature schema the
+                 platform's detectors are trained on. Required for the
+                 credential-lateral-movement and DNS-exfil detectors to
+                 perform at their published accuracy.
                  Adds: scheduled FIM on sensitive paths, shorter poll interval.
 
 .PARAMETER ServerIP
@@ -36,7 +39,18 @@
     Wazuh agent group for policy assignment. Default: "default".
 
 .PARAMETER Profile
-    Resource/coverage profile. Values: Lean | Balanced | Full. Default: Balanced.
+    Resource/coverage profile. Values: Lean | Balanced | Full. Default: Full
+    (matches the detectors' trained feature schema).
+
+.PARAMETER WazuhMsiUrl
+    URL the script fetches the Wazuh agent MSI from. Defaults to the platform
+    API server's cached copy (./install/wazuh-agent.msi) when PlatformApiUrl is
+    provided, otherwise to packages.wazuh.com. Override to point at a local
+    network mirror.
+
+.PARAMETER SysmonZipUrl
+    URL the script fetches Sysmon.zip from. Defaults to the platform API
+    server's cached copy, otherwise to download.sysinternals.com.
 
 .PARAMETER WazuhVersion
     Wazuh Agent version to install. Default: 4.7.0.
@@ -62,7 +76,7 @@ param(
     [string]$AgentGroup = "default",
 
     [ValidateSet("Lean", "Balanced", "Full")]
-    [string]$Profile = "Balanced",
+    [string]$Profile = "Full",
 
     [string]$WazuhVersion = "4.7.0",
 
@@ -70,11 +84,35 @@ param(
     # Both must be supplied to enable; otherwise the laptop runs in
     # collection-only mode (no fleet remote control).
     [string]$PlatformApiUrl,        # e.g. https://api.example.com:8000
-    [string]$EnrollmentToken,       # matches FLEET_BOOTSTRAP_TOKEN env var on the API server
+    [string]$EnrollmentToken,       # X-Enrollment-Token (or legacy bootstrap token)
     [int]$PollIntervalSeconds = 60,
+
+    # Override download URLs -- defaults fall back to the platform server's
+    # cached copy when PlatformApiUrl is set, else upstream public URLs.
+    [string]$WazuhMsiUrl  = "",
+    [string]$SysmonZipUrl = "",
 
     [switch]$Verify
 )
+
+# Default Wazuh/Sysmon download URLs to the platform server's cache when one
+# is available. Keeps endpoint installs strictly on-network (Tanzania data
+# residency) and removes the dependency on packages.wazuh.com /
+# live.sysinternals.com being reachable.
+if (-not $WazuhMsiUrl) {
+    if ($PlatformApiUrl) {
+        $WazuhMsiUrl = "$($PlatformApiUrl.TrimEnd('/'))/install/wazuh-agent.msi"
+    } else {
+        $WazuhMsiUrl = "https://packages.wazuh.com/4.x/windows/wazuh-agent-$WazuhVersion-1.msi"
+    }
+}
+if (-not $SysmonZipUrl) {
+    if ($PlatformApiUrl) {
+        $SysmonZipUrl = "$($PlatformApiUrl.TrimEnd('/'))/install/sysmon.zip"
+    } else {
+        $SysmonZipUrl = "https://download.sysinternals.com/files/Sysmon.zip"
+    }
+}
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path $MyInvocation.MyCommand.Path
@@ -154,7 +192,7 @@ if ($Verify) {
 # SETUP
 # -------------------------------------------------------------
 
-$TotalSteps = if ($PlatformApiUrl -and $EnrollmentToken) { 6 } else { 5 }
+$TotalSteps = if ($PlatformApiUrl -and $EnrollmentToken) { 7 } else { 5 }
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
 Write-Host @"
@@ -188,14 +226,22 @@ if (-not (Test-Path $SysmonConfigPath)) {
 }
 
 if (-not (Test-Path $SysmonExe)) {
-    Write-Info "Downloading Sysmon..."
-    try {
-        Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" `
-                          -OutFile $SysmonZip -UseBasicParsing
+    # Standalone-mode shortcut: if Sysmon.zip is bundled alongside this
+    # script (the bundle.zip layout), use it directly -- no network round trip.
+    $LocalSysmonZip = Join-Path $ScriptDir "Sysmon.zip"
+    if (Test-Path $LocalSysmonZip) {
+        Write-Info "Using bundled Sysmon.zip from $LocalSysmonZip"
+        Copy-Item -Path $LocalSysmonZip -Destination $SysmonZip -Force
         Expand-Archive -Path $SysmonZip -DestinationPath $SysmonDir -Force
-    } catch {
-        Write-Fail "Failed to download Sysmon: $_"
-        exit 1
+    } else {
+        Write-Info "Downloading Sysmon from $SysmonZipUrl"
+        try {
+            Invoke-WebRequest -Uri $SysmonZipUrl -OutFile $SysmonZip -UseBasicParsing
+            Expand-Archive -Path $SysmonZip -DestinationPath $SysmonDir -Force
+        } catch {
+            Write-Fail "Failed to download Sysmon: $_"
+            exit 1
+        }
     }
 }
 
@@ -353,15 +399,21 @@ Write-Step 3 $TotalSteps "Installing Wazuh Agent $WazuhVersion"
 $WazuhSvc = Get-Service -Name "WazuhSvc" -ErrorAction SilentlyContinue
 if (-not $WazuhSvc) {
     $WazuhMsi = "$TempDir\wazuh-agent-$WazuhVersion-1.msi"
-    $WazuhUrl = "https://packages.wazuh.com/4.x/windows/wazuh-agent-$WazuhVersion-1.msi"
 
     if (-not (Test-Path $WazuhMsi)) {
-        Write-Info "Downloading Wazuh Agent $WazuhVersion..."
-        try {
-            Invoke-WebRequest -Uri $WazuhUrl -OutFile $WazuhMsi -UseBasicParsing
-        } catch {
-            Write-Fail "Failed to download Wazuh Agent: $_"
-            exit 1
+        # Standalone-mode shortcut: bundled MSI next to this script wins.
+        $LocalMsi = Join-Path $ScriptDir "wazuh-agent-$WazuhVersion-1.msi"
+        if (Test-Path $LocalMsi) {
+            Write-Info "Using bundled Wazuh MSI from $LocalMsi"
+            Copy-Item -Path $LocalMsi -Destination $WazuhMsi -Force
+        } else {
+            Write-Info "Downloading Wazuh Agent $WazuhVersion from $WazuhMsiUrl"
+            try {
+                Invoke-WebRequest -Uri $WazuhMsiUrl -OutFile $WazuhMsi -UseBasicParsing
+            } catch {
+                Write-Fail "Failed to download Wazuh Agent: $_"
+                exit 1
+            }
         }
     }
 
@@ -781,13 +833,150 @@ if ($wazuhSvc2) {
 
 
 # -------------------------------------------------------------
-# STEP 6: Fleet remote-control bootstrap (optional)
+# STEP 6: Force Windows time sync BEFORE enrollment
+# (only runs when we're going to enroll, since auth depends on it)
+#
+# +==========================================================================+
+# |  CLOCK-SKEW SAFETY  --  DO NOT REMOVE / SHORTEN / "SIMPLIFY"              |
+# +==========================================================================+
+# |  The platform's agent auth is HMAC over (agent_id, unix_ts). The server  |
+# |  rejects requests where |server_now - ts| > MAX_AUTH_AGE_SEC (5 min,     |
+# |  shared/commands.py). A Windows endpoint whose clock is off by more      |
+# |  than 5 min -- VERY common right after a fresh install (random            |
+# |  hardware-clock state, no NTP yet, wrong default time zone) -- bricks     |
+# |  EVERY agent request including the OTA self-update path. The agent       |
+# |  cannot self-heal from a server-bricked auth without going through       |
+# |  manual on-host recovery.                                                |
+# |                                                                          |
+# |  THIS HAS BITTEN US TWICE:                                               |
+# |    1. Earlier Get-Date -UFormat %s bug (PS 5.1 returned local-time-as-   |
+# |       UTC; fixed in handler's Get-AuthHeader).                           |
+# |    2. 2026-05-31 fresh-install incident on DESKTOP-BQKEGGO: endpoint     |
+# |       came up with clock 3h behind actual UTC, every poll 401'd.         |
+# |                                                                          |
+# |  The fix lives in three coordinated places, all required:                |
+# |    A. This step (deploy_endpoint.ps1) -- forces NTP sync at install       |
+# |    B. agent_command_handler.ps1 -- _TimeSyncIfStale (hourly) AND          |
+# |       reactive resync on any 401 (handles drift / suspend / BIOS)        |
+# |    C. shared/commands.py near MAX_AUTH_AGE_SEC -- pointer comment         |
+# |                                                                          |
+# |  DO NOT:                                                                 |
+# |    x widen MAX_AUTH_AGE_SEC (weakens replay protection)                  |
+# |    x remove this deploy-time /resync (fresh installs would come up       |
+# |      with arbitrary hardware-clock offsets)                              |
+# |    x remove the MaxPos/NegPhaseCorrection writes -- Windows refuses       |
+# |      to STEP a >15min skew without them, leaving the endpoint hours      |
+# |      off and quietly stuck                                               |
+# |    x remove the platform-server IP from the peer list -- it's the LAN     |
+# |      fallback for endpoints that can't reach public NTP                  |
+# |                                                                          |
+# |  IF you must touch this block, run the verification at the bottom and    |
+# |  confirm |endpoint_utc - server_utc| stays <60s through:                 |
+# |    1. fresh install on a Windows VM with clock manually set 3h off       |
+# |    2. fresh install with no internet (LAN-only)                          |
+# |    3. agent restart 24h after install (drift case)                       |
+# +==========================================================================+
+# -------------------------------------------------------------
+if ($PlatformApiUrl -and $EnrollmentToken) {
+    Write-Step 6 $TotalSteps "Forcing Windows time sync (HMAC auth depends on this)"
+
+    try {
+        # 1. Make sure w32time service exists, is set to auto-start, and is running.
+        $w32svc = Get-Service -Name w32time -ErrorAction SilentlyContinue
+        if ($w32svc) {
+            Set-Service -Name w32time -StartupType Automatic -ErrorAction SilentlyContinue
+            if ($w32svc.Status -ne 'Running') {
+                Start-Service -Name w32time -ErrorAction SilentlyContinue
+            }
+            Write-OK "Windows Time service ready"
+        } else {
+            Write-Info "Windows Time service (w32time) not present - skipping"
+        }
+
+        # 2. Relax MaxPos/NegPhaseCorrection so w32tm /resync is allowed to STEP
+        #    a large delta (default cap is ~15 min; fresh installs are often hours
+        #    off). 0xFFFFFFFF = "any positive value, no cap".
+        $cfgPath = "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Config"
+        if (Test-Path $cfgPath) {
+            Set-ItemProperty -Path $cfgPath -Name "MaxPosPhaseCorrection" `
+                -Value 0xFFFFFFFF -Type DWord -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $cfgPath -Name "MaxNegPhaseCorrection" `
+                -Value 0xFFFFFFFF -Type DWord -ErrorAction SilentlyContinue
+            Write-OK "Relaxed phase-correction caps (large jumps allowed)"
+        }
+
+        # 3. Configure peer list. Internet sources first, the platform-server IP
+        #    as the LAN fallback for endpoints that can't reach the public NTP
+        #    pool (common on locked-down networks).
+        $peerList = "time.windows.com,0x9 pool.ntp.org,0x9 $ServerIP,0x9"
+        & w32tm /config /manualpeerlist:"$peerList" /syncfromflags:manual `
+                /reliable:no /update 2>&1 | Out-Null
+        Restart-Service -Name w32time -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+
+        # 4. Force a sync. /rediscover re-resolves the peer list (avoids
+        #    using a cached failed-peer state). NOTE: w32tm /resync does NOT
+        #    accept a /force flag -- the "force a large jump past the default
+        #    15-min cap" comes from MaxPos/NegPhaseCorrection registry writes
+        #    above, NOT from a CLI flag. Valid: /computer /nowait /rediscover
+        #    /soft.
+        $resyncOut = & w32tm /resync /rediscover 2>&1
+        $resyncMsg = ($resyncOut -join '; ').Trim()
+        if ($resyncMsg -match "successfully") {
+            Write-OK "Time sync: $resyncMsg"
+        } elseif ($resyncMsg -match "(?i)(error|fail)") {
+            Write-Info "Time sync attempt: $resyncMsg (handler will retry on next poll)"
+        } else {
+            Write-Info "Time sync: $resyncMsg"
+        }
+
+        # 5. Verify: compare endpoint UTC to the platform server's HTTP Date
+        #    header. If the delta still exceeds the HMAC window, warn loudly --
+        #    enrollment itself will succeed (admin-token path), but the agent's
+        #    first poll will 401 until the clock catches up.
+        $deltaSec = $null
+        try {
+            $hr = Invoke-WebRequest -Uri "$($PlatformApiUrl.TrimEnd('/'))/install/agent_command_handler.ps1" `
+                                    -Method Head -TimeoutSec 10 -UseBasicParsing
+            $svrDate = $hr.Headers["Date"]
+            if ($svrDate) {
+                $svrUtc   = [DateTime]::Parse($svrDate).ToUniversalTime()
+                $deltaSec = [Math]::Abs(([DateTime]::UtcNow - $svrUtc).TotalSeconds)
+                if ($deltaSec -gt 300) {
+                    Write-Fail ("Clock still off by {0:N0}s vs server (>{1}s HMAC window). " -f $deltaSec, 300)
+                    Write-Fail "Agent auth WILL 401 until clock self-heals. Manually set time then retry, or wait one poll for reactive resync."
+                } elseif ($deltaSec -gt 60) {
+                    Write-Info ("Clock delta vs server: {0:N0}s (within 5-min HMAC window but noisy)" -f $deltaSec)
+                } else {
+                    Write-OK ("Clock in sync with server (delta = {0:N0}s)" -f $deltaSec)
+                }
+            }
+        } catch {
+            Write-Info "Could not measure clock delta against server: $_"
+        }
+
+        # 6. Record the successful sync timestamp so the handler's periodic
+        #    _TimeSyncIfStale won't redundantly re-sync on the first poll.
+        if (-not (Test-Path "HKLM:\SOFTWARE\APTPlatform")) {
+            New-Item -Path "HKLM:\SOFTWARE\APTPlatform" -Force | Out-Null
+        }
+        if ($null -ne $deltaSec -and $deltaSec -le 300) {
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\APTPlatform" -Name "LastTimeSyncOkAt" `
+                -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Info "Time sync step encountered an error: $_ (handler will retry on next poll)"
+    }
+}
+
+# -------------------------------------------------------------
+# STEP 7: Fleet remote-control bootstrap (optional)
 # Enroll with AI Platform, store DPAPI-encrypted secret in registry,
 # install command-handler scheduled task. Skipped if either of
 # -PlatformApiUrl / -EnrollmentToken is missing.
 # -------------------------------------------------------------
 if ($PlatformApiUrl -and $EnrollmentToken) {
-    Write-Step 6 $TotalSteps "Enrolling with AI Platform for remote control"
+    Write-Step 7 $TotalSteps "Enrolling with AI Platform for remote control"
 
     $RegBase   = "HKLM:\SOFTWARE\APTPlatform"
     $InstallDir = "$env:ProgramData\APTPlatform"
@@ -799,10 +988,18 @@ if ($PlatformApiUrl -and $EnrollmentToken) {
     $body = @{ agent_id = $env:COMPUTERNAME; profile = $Profile } | ConvertTo-Json -Compress
     Write-Info "Enrolling at $enrollUrl"
     try {
+        # URL-served install flow uses short-lived enrollment tokens via
+        # X-Enrollment-Token. Tokens can be single- or multi-use (set on
+        # the server when minted) and are dedup'd by agent_id, so re-runs
+        # of this one-liner on the same machine do not consume an extra
+        # slot -- they just rotate the agent's HMAC secret. Legacy
+        # long-lived FLEET_BOOTSTRAP_TOKEN callers can keep using the
+        # bootstrap-header path by editing the script -- the server
+        # accepts both headers.
         $resp = Invoke-RestMethod -Method Post -Uri $enrollUrl `
             -Headers @{
-                "Content-Type"      = "application/json"
-                "X-Bootstrap-Token" = $EnrollmentToken
+                "Content-Type"       = "application/json"
+                "X-Enrollment-Token" = $EnrollmentToken
             } `
             -Body $body -TimeoutSec 30 -UseBasicParsing
     } catch {

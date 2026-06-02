@@ -60,8 +60,31 @@ async def alert_stats(
     request: Request,
     user: User = Depends(require_permission("read_alerts")),
 ):
-    """Counts by severity + total/open. Cheap call — safe to poll every 30s."""
-    return _store(request).get_stats()
+    """
+    Counts by severity + total/open. Cheap call — safe to poll every 30s.
+
+    Returns both the legacy structured shape (`by_severity: {...}`) consumed
+    by the dashboard and a flat shape (`critical`, `high`, …) consumed by
+    the mobile KPI strip. `active_hunts` is a derived headline metric:
+    open alerts at severity in {critical, high}.
+    """
+    raw = _store(request).get_stats()
+    sev = raw.get("by_severity") or {}
+    crit = int(sev.get("critical", 0))
+    high = int(sev.get("high", 0))
+    return {
+        # Existing fields — keep for dashboard back-compat.
+        "total_alerts": raw.get("total_alerts", 0),
+        "open_alerts":  raw.get("open_alerts", 0),
+        "by_severity":  sev,
+        # Flat mobile-friendly fields.
+        "active_hunts": crit + high,
+        "open":         raw.get("open_alerts", 0),
+        "critical":     crit,
+        "high":         high,
+        "medium":       int(sev.get("medium", 0)),
+        "low":          int(sev.get("low", 0)),
+    }
 
 
 # ── Time-series for charts ─────────────────────────────────────────────────

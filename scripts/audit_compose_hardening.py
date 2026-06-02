@@ -127,6 +127,42 @@ def audit(compose_path: str) -> int:
     return 0
 
 
+def _resolve_compose_path() -> str:
+    """
+    Locate docker-compose.yml. Search order:
+      1. Explicit argv[1] if given.
+      2. COMPOSE_FILE env var (Docker's own convention).
+      3. CWD/docker-compose.yml (works for host CLI invocation).
+      4. Walk up from this script's directory until a docker-compose.yml shows
+         up (works when the script is run from inside a container that has
+         the file mounted but with a different CWD).
+    Returns the path string, or raises FileNotFoundError with a helpful message.
+    """
+    import os
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    env = os.environ.get("COMPOSE_FILE")
+    if env and Path(env).exists():
+        return env
+    cwd_candidate = Path.cwd() / "docker-compose.yml"
+    if cwd_candidate.exists():
+        return str(cwd_candidate)
+    here = Path(__file__).resolve().parent
+    for parent in [here, *here.parents]:
+        candidate = parent / "docker-compose.yml"
+        if candidate.exists():
+            return str(candidate)
+    raise FileNotFoundError(
+        "docker-compose.yml not found. Searched: argv, $COMPOSE_FILE, "
+        f"CWD ({Path.cwd()}), and ancestors of {here}. "
+        "Mount the compose file into the container or set $COMPOSE_FILE."
+    )
+
+
 if __name__ == "__main__":
-    compose = sys.argv[1] if len(sys.argv) > 1 else "docker-compose.yml"
+    try:
+        compose = _resolve_compose_path()
+    except FileNotFoundError as e:
+        print(f"\033[31m✗  {e}\033[0m", file=sys.stderr)
+        sys.exit(2)
     sys.exit(audit(compose))

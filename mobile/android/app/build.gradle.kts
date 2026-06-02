@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -99,4 +100,24 @@ dependencies {
     // Declaring it directly forces inclusion of the common AAR.
     implementation("com.google.mlkit:common:18.11.0")
     implementation("com.google.mlkit:vision-common:17.3.0")
+
+    // QR rendering — used in the operator-mode enrollment-token helper to
+    // show the install URL as a scannable code. Pure-JVM, no Play Services.
+    implementation("com.google.zxing:core:3.5.3")
+
+    // Compose Navigation — type-safe routes for the bottom-tab shell.
+    // 2.7.7 is the last release built against Kotlin 1.9 + Compose 1.6, which
+    // matches this project's compose-compiler (1.5.14). 2.8.x targets
+    // Kotlin 2.x and silently fails to resolve under our pinned versions.
+    implementation("androidx.navigation:navigation-compose:2.8.3")
+
+    // Lifecycle + ViewModel — feature ViewModels. 2.8.x targets Compose 1.7;
+    // 2.7.0 is the matched line for Compose 1.6 / Kotlin 1.9.24.
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+
+    // Room — offline outbox.
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 }

@@ -1,0 +1,7 @@
+# Placeholder so scripts/cache/ exists in the repo even when the binary
+# installers (wazuh-agent-*.msi, Sysmon.zip) haven't been fetched yet.
+#
+# Run `bash scripts/fetch_install_cache.sh` once on the build host before
+# `docker compose build api` — this populates the directory and the existing
+# `COPY scripts/ scripts/` directive in the Dockerfile bakes the artifacts
+# into the image at /app/scripts/cache/.

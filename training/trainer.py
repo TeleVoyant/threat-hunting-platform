@@ -25,6 +25,7 @@ model on exactly that question.
 """
 
 import math
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -257,6 +258,14 @@ def train_model(
     metrics["window_minutes"] = window_minutes
     metrics["grouping"]       = grouping
     metrics["feature_names"]  = feature_names  # persisted in manifest
+    # Per-feature training-time min/max for inference-time input clipping (v).
+    # Stored as parallel arrays so the manifest stays JSON-clean.
+    metrics["feature_min"] = [float(x) for x in X.min(axis=0).tolist()]
+    metrics["feature_max"] = [float(x) for x in X.max(axis=0).tolist()]
+    # Pin anonymizer state so a model trained with ANONYMIZE=1 refuses to load
+    # against a runtime where it's off (or vice versa) — would silently change
+    # feature values for any per-user counter (gg).
+    metrics["anonymize"] = os.environ.get("APT_ANONYMIZE", "1") == "1"
     if extra_params:
         metrics["tuned_params"] = extra_params
 

@@ -1,0 +1,39 @@
+# config/allowlists.yml
+# Operator-editable allowlists consumed by feature extractors. Hot-reloaded
+# on a stat() check, so edits land without restart.
+#
+# Keep entries lowercase. Comments are preserved across saves.
+
+# Processes that legitimately generate high DNS volume — used by
+# DnsFeatureExtractor to suppress `non_browser_dns_ratio` false positives.
+dns_benign_processes:
+  - chrome.exe
+  - msedge.exe
+  - firefox.exe
+  - brave.exe
+  - opera.exe
+  - iexplore.exe
+  - svchost.exe
+  - backgroundtaskhost.exe
+  - searchindexer.exe
+  - onedrive.exe
+  - teams.exe
+  - slack.exe
+  - outlook.exe
+  - msiexec.exe
+  - wuauclt.exe
+  - windowsupdate.exe
+  - runtimebroker.exe
+
+# Public recursive resolvers that legitimately accept queries on non-port-53
+# (DoH on 443, DoT on 853). Used by DnsFeatureExtractor to keep
+# `non_standard_dns_ratio` from flagging Firefox DoH (p).
+public_resolvers:
+  - 1.1.1.1            # Cloudflare
+  - 1.0.0.1            # Cloudflare secondary
+  - 8.8.8.8            # Google
+  - 8.8.4.4            # Google secondary
+  - 9.9.9.9            # Quad9
+  - 149.112.112.112    # Quad9 secondary
+  - 208.67.222.222     # OpenDNS
+  - 208.67.220.220     # OpenDNS secondary

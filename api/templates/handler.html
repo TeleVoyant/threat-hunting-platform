@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}Handler versions — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="handlerPage()" x-init="load(); startPolling()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Handler-script versions</h1>
+    <div class="eyebrow" style="margin-top:4px;">
+      Manages <code>scripts/agent_command_handler.ps1</code>. Endpoints auto-pull
+      the LIVE version on every 60-s poll. You can also push a specific version
+      to selected agents from <a class="linkish" href="/dashboard/fleet">Fleet</a>.
+    </div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-secondary" x-on:click="load()">
+      <i data-lucide="refresh-cw"></i> Refresh
+    </button>
+    {% if can_manage_versions %}
+    <button class="btn btn-secondary" x-on:click="scanDisk()" :disabled="scan.busy"
+            title="Hash scripts/agent_command_handler.ps1 on the server and stage if changed">
+      <i data-lucide="search"></i>
+      <span x-text="scan.busy ? 'Scanning…' : 'Scan disk for changes'"></span>
+    </button>
+    <button class="btn btn-primary" x-on:click="upload.open = true">
+      <i data-lucide="upload"></i> Upload new
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Auto-staged banner — only renders when a filesystem-scan row is sitting
+     in the staged state, waiting for the admin to promote it. -->
+<template x-if="autoStaged">
+  <div class="card card-pad"
+       style="margin-bottom:14px; background:var(--warning-bg); border:1px solid var(--warning);">
+    <div style="display:flex; align-items:flex-start; gap:12px;">
+      <i data-lucide="alert-triangle" style="color:var(--warning); margin-top:2px;"></i>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600; color:var(--warning);">
+          Auto-detected change pending review
+        </div>
+        <div class="apt-small" style="color:var(--fg-2); margin-top:4px;">
+          A filesystem scan picked up a modified
+          <code>scripts/agent_command_handler.ps1</code>
+          staged as <span class="mono" x-text="autoStaged.version_label"></span>
+          (<span class="apt-small mono" x-text="'sha256:' + autoStaged.sha256.slice(0,12)"></span>).
+          Promote it to push to the fleet, or delete it to discard.
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <button class="btn btn-primary" x-on:click="promote(autoStaged)">
+          <i data-lucide="arrow-up"></i> Promote
+        </button>
+        <button class="btn btn-ghost" x-on:click="del(autoStaged)">
+          <i data-lucide="trash-2"></i> Discard
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Summary tiles -->
+<div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:14px;">
+  <div class="card card-pad">
+    <div class="eyebrow">Live version</div>
+    <div class="apt-h3 mono" x-text="live ? live.version_label : '— none —'"
+         :style="live ? 'color:var(--ok)' : 'color:var(--muted)'"></div>
+    <div class="apt-small" style="color:var(--fg-3);"
+         x-text="live ? (live.agents_on_this + ' agents on this') : 'Upload + promote a version to start'"></div>
+  </div>
+  <div class="card card-pad">
+    <div class="eyebrow">Staged</div>
+    <div class="apt-h3" x-text="counts.staged"></div>
+    <div class="apt-small" style="color:var(--fg-3);">awaiting promotion</div>
+  </div>
+  <div class="card card-pad">
+    <div class="eyebrow">Archived</div>
+    <div class="apt-h3" x-text="counts.archived"></div>
+    <div class="apt-small" style="color:var(--fg-3);">superseded</div>
+  </div>
+  <div class="card card-pad">
+    <div class="eyebrow">Out-of-date agents</div>
+    <div class="apt-h3" :style="outOfDate > 0 ? 'color:var(--warn)' : 'color:var(--ok)'"
+         x-text="outOfDate"></div>
+    <div class="apt-small" style="color:var(--fg-3);"
+         x-text="(noVersion + ' on null + ' + outOfDate + ' not on live')"></div>
+  </div>
+</div>
+
+<!-- Versions list -->
+<div class="card">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+    <h2 class="apt-h3">All versions (newest first)</h2>
+    <div class="eyebrow" x-text="versions.length + ' total'"></div>
+  </div>
+  <template x-for="v in versions" :key="v.id">
+    <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:18px;">
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span class="pill"
+                  :style="v.status === 'live'     ? 'background:var(--success-bg); color:var(--success);'
+                       : v.status === 'staged'   ? 'background:var(--warning-bg); color:var(--warning);'
+                       : 'background:var(--bg-3); color:var(--fg-2);'"
+                  x-text="v.status.toUpperCase()"></span>
+            <span class="mono" x-text="v.version_label" style="font-weight:600;"></span>
+            <span class="apt-small mono" style="color:var(--fg-3);"
+                  x-text="'sha256:' + v.sha256.slice(0,12)"></span>
+            <span class="apt-small" style="color:var(--fg-3);"
+                  x-text="v.size_bytes.toLocaleString() + ' bytes'"></span>
+            <span class="apt-small" style="color:var(--fg-3);"
+                  x-text="v.agents_on_this + ' agents on this'"></span>
+          </div>
+          <div class="apt-small" style="color:var(--fg-3); margin-top:4px;">
+            uploaded by <span x-text="v.uploaded_by"></span> ·
+            <span x-text="new Date(v.uploaded_at * 1000).toLocaleString()"></span>
+            <span x-show="v.promoted_at"> · promoted by
+              <span x-text="v.promoted_by"></span> ·
+              <span x-text="new Date((v.promoted_at||0) * 1000).toLocaleString()"></span>
+            </span>
+          </div>
+          <div x-show="v.notes" class="apt-small" style="margin-top:6px; color:var(--fg-2);">
+            <i data-lucide="message-square"></i>
+            <span x-text="v.notes"></span>
+          </div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          {% if can_push_fleet %}
+          <button class="btn btn-secondary btn-icon" title="Push to all agents"
+                  x-show="v.status === 'live'"
+                  x-on:click="pushToAll(v.version_label)">
+            <i data-lucide="send"></i>
+          </button>
+          {% endif %}
+          {% if can_manage_versions %}
+          <button class="btn btn-primary" x-show="v.status !== 'live'"
+                  x-on:click="promote(v)">
+            <i data-lucide="arrow-up"></i> Promote to live
+          </button>
+          <button class="btn btn-ghost btn-icon" title="Delete"
+                  x-show="v.status !== 'live'"
+                  x-on:click="del(v)">
+            <i data-lucide="trash-2"></i>
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </template>
+  <template x-if="versions.length === 0">
+    <div style="padding:32px; text-align:center; color:var(--fg-3);">
+      No versions uploaded yet.
+      {% if can_manage_versions %}
+      Click <strong>Upload new</strong> to add the first one.
+      {% endif %}
+    </div>
+  </template>
+</div>
+
+<!-- Upload modal -->
+{% if can_manage_versions %}
+<template x-teleport="body">
+  <div>
+    <div class="scrim" x-show="upload.open" x-on:click="upload.open = false" x-transition.opacity></div>
+    <div x-show="upload.open" x-transition
+         style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:55;">
+      <div class="modal">
+        <div style="padding:18px 20px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="apt-h3">Upload new handler version</h2>
+          <button class="btn btn-ghost btn-icon" x-on:click="upload.open = false">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div style="padding:18px 20px; display:flex; flex-direction:column; gap:12px;">
+          <div class="field">
+            <label class="field-label">.ps1 file</label>
+            <input type="file" accept=".ps1" x-on:change="upload.file = $event.target.files[0]" class="input">
+          </div>
+          <div class="field">
+            <label class="field-label">Version label</label>
+            <input class="input mono" type="text" x-model="upload.version"
+                   placeholder="e.g. v2026.05.30-1428">
+          </div>
+          <div class="field">
+            <label class="field-label">Release notes (optional)</label>
+            <textarea class="input" rows="3" x-model="upload.notes"
+                      placeholder="e.g. add UPDATE_HANDLER + ROLLBACK_HANDLER support"></textarea>
+          </div>
+          <div class="apt-small" style="color:var(--fg-3);">
+            Uploaded as <strong>staged</strong>. Promote it to live (one button)
+            to make it the version agents auto-pull on their next poll.
+          </div>
+        </div>
+        <div style="padding:14px 20px; border-top:1px solid var(--border-1); display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn btn-secondary" x-on:click="upload.open = false">Cancel</button>
+          <button class="btn btn-primary" :disabled="!upload.file || !upload.version || upload.busy"
+                  x-on:click="submitUpload()">
+            <span x-text="upload.busy ? 'Uploading…' : 'Upload'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+{% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function handlerPage() {
+  return {
+    versions: [],
+    live: null,
+    autoStaged: null,     // staged row created by the filesystem-scan endpoint
+    counts: { staged: 0, live: 0, archived: 0 },
+    noVersion: 0,
+    outOfDate: 0,
+    upload: { open: false, file: null, version: '', notes: '', busy: false },
+    scan:   { busy: false },
+    _poll: null,
+
+    async load() {
+      try {
+        const r = await fetch('/admin/handler/versions', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const j = await r.json();
+        this.versions = j.versions || [];
+        this.noVersion = j.agents_with_no_version || 0;
+        this.live = this.versions.find(v => v.status === 'live') || null;
+        // Surface the auto-staged row (if any) into the banner state. The
+        // server tags filesystem-scan rows with uploaded_by == 'filesystem-
+        // scan' so we identify them without needing a separate column.
+        this.autoStaged = this.versions.find(
+          v => v.status === 'staged' && v.uploaded_by === 'filesystem-scan'
+        ) || null;
+        this.counts.staged   = this.versions.filter(v => v.status === 'staged').length;
+        this.counts.live     = this.live ? 1 : 0;
+        this.counts.archived = this.versions.filter(v => v.status === 'archived').length;
+        // out-of-date = agents whose handler_version is not the live version
+        const liveLabel = this.live ? this.live.version_label : null;
+        let onLive = 0;
+        for (const v of this.versions) {
+          if (v.status === 'live') onLive += v.agents_on_this;
+        }
+        // total agents = sum of agents_on_this across versions + noVersion
+        const totalReported = this.versions.reduce((s, v) => s + v.agents_on_this, 0);
+        this.outOfDate = totalReported - onLive;
+        if (window.lucide) lucide.createIcons();
+      } catch (e) { console.error(e); }
+    },
+
+    startPolling() { this._poll = setInterval(() => this.load(), 30000); },
+
+    async scanDisk() {
+      // Hash the on-disk scripts/agent_command_handler.ps1 server-side and
+      // act on the result. Three outcomes the user sees:
+      //   already_live         — disk matches the live version → toast "no change"
+      //   matches_existing     — disk matches a staged/archived row → toast "promote
+      //                          row X directly"
+      //   staged               — new bytes detected → row created, banner appears,
+      //                          we reload the list. If a prior auto-stage existed
+      //                          it was replaced in place (replaced_label in the
+      //                          response).
+      this.scan.busy = true;
+      try {
+        const r = await fetch('/admin/handler/scan', {
+          method: 'POST', credentials: 'same-origin',
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          Alpine.store('toast').push('Scan failed: ' + t, 'error', 7000);
+          return;
+        }
+        const j = await r.json();
+        if (j.status === 'already_live') {
+          Alpine.store('toast').push('Disk file matches live — nothing to do.', 'ok');
+        } else if (j.status === 'matches_existing') {
+          Alpine.store('toast').push(
+            `Disk file matches existing ${j.matched_status} '${j.matched_label}'. Promote that row instead of re-staging.`,
+            'info', 6000);
+        } else if (j.status === 'staged') {
+          const msg = j.replaced_label
+            ? `Replaced prior auto-stage ${j.replaced_label} with ${j.version_label}.`
+            : `Staged ${j.version_label}. Review the banner to promote.`;
+          Alpine.store('toast').push(msg, 'ok', 6000);
+          await this.load();
+        }
+      } catch (e) {
+        Alpine.store('toast').push('Scan error: ' + e, 'error', 7000);
+      } finally { this.scan.busy = false; }
+    },
+
+    async submitUpload() {
+      this.upload.busy = true;
+      try {
+        const fd = new FormData();
+        fd.append('file', this.upload.file);
+        fd.append('version_label', this.upload.version);
+        if (this.upload.notes) fd.append('notes', this.upload.notes);
+        const r = await fetch('/admin/handler/upload', {
+          method: 'POST', credentials: 'same-origin', body: fd,
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          Alpine.store('toast').push('Upload failed: ' + t, 'error', 7000);
+          return;
+        }
+        Alpine.store('toast').push('Uploaded as staged.', 'ok');
+        this.upload.open = false;
+        this.upload.file = null; this.upload.version = ''; this.upload.notes = '';
+        await this.load();
+      } catch (e) {
+        Alpine.store('toast').push('Upload error: ' + e, 'error', 7000);
+      } finally { this.upload.busy = false; }
+    },
+
+    async promote(v) {
+      if (!confirm(`Promote ${v.version_label} to LIVE?\n\nAgents will auto-pull this version on their next poll (~60 s).`)) return;
+      const r = await fetch(`/admin/handler/${v.id}/promote`, {
+        method: 'POST', credentials: 'same-origin',
+      });
+      if (r.ok) {
+        Alpine.store('toast').push('Promoted to live. Agents auto-pull next poll.', 'ok');
+        await this.load();
+      } else {
+        Alpine.store('toast').push('Promote failed.', 'error');
+      }
+    },
+
+    async del(v) {
+      if (!confirm(`Delete ${v.version_label}?\n\nThis is permanent.`)) return;
+      const r = await fetch(`/admin/handler/${v.id}`, {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      if (r.ok || r.status === 204) {
+        Alpine.store('toast').push('Deleted.', 'ok');
+        await this.load();
+      } else {
+        Alpine.store('toast').push('Delete failed.', 'error');
+      }
+    },
+
+    async pushToAll(versionLabel) {
+      if (!confirm(`Push ${versionLabel} to ALL enrolled agents?\n\nFire-and-forget — agents apply on their next poll.`)) return;
+      const r = await fetch('/admin/handler/push', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version_label: versionLabel, target_all: true }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        Alpine.store('toast').push(`Queued on ${j.enqueued.length}/${j.enqueued.length + j.failed.length} agents.`, 'ok');
+      } else {
+        Alpine.store('toast').push('Push failed.', 'error');
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

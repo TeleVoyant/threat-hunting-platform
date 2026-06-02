@@ -56,7 +56,21 @@ class AutoRetrainScheduler:
         self,
         app,
         *,
-        interval_seconds: int = 1800,        # 30 min
+        # Cycle cadence -- defaults to 24 h. The retrain pass is memory-heavy
+        # (xgboost + synthetic-data generator) and OOM-kills a thin api
+        # container if it runs aggressively. Operators can change cadence
+        # at runtime via /admin/retrain/interval (dashboard at /dashboard/
+        # retrain -> "Change cadence"). Changes are IN-MEMORY only and
+        # revert to this default on container restart -- the operator
+        # explicitly chose ephemeral semantics so the default is always
+        # honoured after restart and operator overrides are deliberate
+        # short-term decisions during active iteration.
+        interval_seconds: int = 86400,       # 24 h
+        # First-cycle delay after start() -- kept long so the api can serve
+        # dashboard requests for an hour before competing with the retrain
+        # process for RAM. Earlier 60 s default contributed to startup-time
+        # OOM crashes during the first scheduled tick.
+        initial_delay_seconds: int = 3600,   # 1 h
         benign_window_hours: int = 24,
         synth_hosts: int = 3,
         lateral_attacks_per_day: int = 10,
@@ -66,6 +80,7 @@ class AutoRetrainScheduler:
     ):
         self.app = app
         self.interval_seconds = max(60, int(interval_seconds))
+        self.initial_delay_seconds = max(0, int(initial_delay_seconds))
         self.benign_window_hours = benign_window_hours
         self.synth_hosts = synth_hosts
         self.lateral_attacks_per_day = lateral_attacks_per_day
@@ -76,9 +91,10 @@ class AutoRetrainScheduler:
         self._task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
         # Wakes the loop early when the interval is changed or run_now() is
-        # invoked — avoids waiting out the rest of a long sleep before the
+        # invoked -- avoids waiting out the rest of a long sleep before the
         # new cadence takes effect.
         self._interval_changed: Optional[asyncio.Event] = None
+        self.started_at: Optional[float] = None
         self.last_run_at: Optional[float] = None
         self.last_status: str = "never_ran"
         self.last_result: Optional[dict[str, Any]] = None
@@ -88,16 +104,25 @@ class AutoRetrainScheduler:
     def start(self) -> None:
         if self._task and not self._task.done():
             return
+        import time as _time
+        self.started_at = _time.time()
         self._interval_changed = asyncio.Event()
         self._task = asyncio.create_task(self._loop(), name="auto-retrain")
         logger.info(
             "AutoRetrainScheduler started",
             interval_s=self.interval_seconds,
+            initial_delay_s=self.initial_delay_seconds,
             benign_window_h=self.benign_window_hours,
         )
 
     def set_interval(self, seconds: int) -> int:
         """Change the cadence at runtime. Floors at 60s, ceilings at 24h.
+
+        IN-MEMORY ONLY -- a container restart reverts to the constructor
+        default (24h). This is intentional per the 2026-06-02 decision:
+        the dashboard cadence is for short-term operator overrides during
+        active iteration, not durable configuration. To change the durable
+        default, edit RETRAIN_INTERVAL_SECONDS in .env and restart.
 
         Wakes the sleeping loop so the new value takes effect on the next
         tick instead of after the previous (potentially much longer) sleep
@@ -125,10 +150,18 @@ class AutoRetrainScheduler:
         logger.info("AutoRetrainScheduler stopped")
 
     async def _loop(self) -> None:
-        # Small startup delay so the rest of the platform finishes wiring
-        # (DetectionSubscriber, AlertSubscriber, etc.) before the first
-        # retrain touches the same model directory.
-        await self._sleep_interruptible(60)
+        # Initial delay (default 1 h) before the first cycle. Two reasons:
+        #   1) The rest of the platform finishes wiring (DetectionSubscriber,
+        #      AlertSubscriber, etc.) before the first retrain touches the
+        #      same model directory.
+        #   2) Avoid the cold-start OOM where an api container with a tight
+        #      memory limit competes with the retrain pipeline for RAM in
+        #      the first minute of life. The retrain pulls in xgboost +
+        #      synthetic data and routinely needs ~1-2 GB transiently.
+        # Operators who want the old "kick a cycle a minute after boot"
+        # behaviour can set RETRAIN_INITIAL_DELAY_SECONDS=60 in the env.
+        # trigger_now() / set_interval() still wake the sleep early.
+        await self._sleep_interruptible(self.initial_delay_seconds)
         while True:
             try:
                 await self.run_once()
@@ -340,13 +373,34 @@ class AutoRetrainScheduler:
     # ── Public surface ─────────────────────────────────────────────────────
 
     def status(self) -> dict[str, Any]:
+        # Best-effort projection of the next-cycle timestamp. After the first
+        # run, the loop sleeps for interval_seconds between cycles, so
+        # last_run_at + interval. Before the first run, the loop is in its
+        # initial_delay_seconds window so started_at + initial_delay.
+        next_run_at: Optional[float] = None
+        if self.last_run_at is not None:
+            next_run_at = self.last_run_at + self.interval_seconds
+        elif self.started_at is not None:
+            next_run_at = self.started_at + self.initial_delay_seconds
+
         return {
             "running": bool(self._task and not self._task.done()),
             "interval_seconds": self.interval_seconds,
+            "initial_delay_seconds": self.initial_delay_seconds,
+            "started_at": self.started_at,
+            "started_iso": (
+                datetime.fromtimestamp(self.started_at, tz=timezone.utc).isoformat()
+                if self.started_at else None
+            ),
             "last_run_at": self.last_run_at,
             "last_run_iso": (
                 datetime.fromtimestamp(self.last_run_at, tz=timezone.utc).isoformat()
                 if self.last_run_at else None
+            ),
+            "next_run_at": next_run_at,
+            "next_run_iso": (
+                datetime.fromtimestamp(next_run_at, tz=timezone.utc).isoformat()
+                if next_run_at else None
             ),
             "last_status": self.last_status,
             "last_result": self.last_result,

@@ -5,6 +5,75 @@ posts them as native phone notifications. A `ForegroundService` holds the SSE
 connection alive so weekend pages don't go silent while the dashboard is
 closed.
 
+## v0.3 overhaul (in progress)
+
+This release replaces the single-screen v0.2 inbox with a full mobile
+operator console. The dashboard's four "feature packs" (Triage, Field Ops,
+Read-only Telemetry, Admin) are now reachable from a five-tab bottom bar —
+tabs the user's role can't access are hidden entirely. The Anthropic Claude
+Design tokens are ported into Compose so navy / teal / severity colours +
+heartbeat / crit-pulse motion match the dashboard 1:1, with a three-state
+theme cycler (auto / light / dark) the user can override system-wide.
+
+### Package layout
+
+```
+tz.apt.thp/
+├── core/
+│   ├── design/         (Tokens, Typography, Motion, Theme, ThemeController, components/*)
+│   ├── rbac/           (Role, PermissionMap, Session, RequirePermission)
+│   ├── auth/           (SessionRefresher)
+│   └── sync/           (Room outbox + WorkManager flush worker)
+├── feature/
+│   ├── auth/           (EnrollRoute, LockRoute)
+│   ├── inbox/          (InboxRoute + KPI strip + sparkline, InvestigationRoute)
+│   ├── fleet/          (FleetRoute + per-agent action sheet)
+│   ├── models/         (Read-only detector cards + drift sparkline)
+│   ├── audit/          (Last-50 rows + integrity badge)
+│   └── more/           (Settings, Enrollment helper, Diagnostics, Allowlist,
+│                       Hardening, Secret rotation, About, Pending)
+├── navigation/         (Routes, AptNavHost, AptBottomBar)
+├── data/               (ApiClient, Models, Prefs, Enrol, DeviceContext, AuthEvents)
+├── notif/              (NotifChannels, NotifBuilder)
+├── service/            (NotificationListener, PollWorker, AckReceiver, QuickReplyReceiver, BootReceiver)
+├── security/           (BiometricGate)
+├── ui/                 (MainActivity host, QrScanner)
+├── AppGraph.kt         (singleton service locator — instead of Hilt)
+└── AptApplication.kt   (boots theme + session + notif channels)
+```
+
+Module split note: the design plan proposed a Gradle multi-module split
+(`:core-design`, `:core-network`, etc.). In this round we shipped the same
+layered separation as Kotlin packages inside `:app` to keep the build green
+without an attached SDK; the layer boundaries are enforced by convention
+and code review. A future PR can extract these packages to true library
+modules without touching call sites.
+
+### Offline outbox
+
+`core/sync` holds a Room `outbox` table + `OutboxFlushWorker`
+(`CoroutineWorker` + `NetworkType.CONNECTED` constraint). Acks, notes, and
+destructive fleet commands (`isolate`, `unisolate`, `rotate-secret`) are
+enqueued there rather than sent inline — they survive a process death and
+the WorkManager re-fires the flush on connectivity returning. The Pending
+tile under **More** shows queued + failed actions with per-row retry.
+
+### Backend additions for mobile
+
+The mobile surface consumes endpoints that the dashboard already exposes;
+the only two server-side changes needed for this round:
+
+- `GET /auth/me` — returns `{username, role}` so the bottom-bar tab
+  visibility can re-validate against the server after cold-start.
+- `GET /alerts/stats` extended to include flat mobile-friendly keys
+  (`active_hunts`, `open`, `critical`, `high`, …) alongside the existing
+  structured shape (`by_severity: {…}`). Dashboard back-compat preserved.
+
+The `POST /auth/exchange-enroll` response now also includes `role` so the
+phone learns its role the moment it pairs.
+
+
+
 **No third-party push service.** Every byte travels between the phone and the
 platform's own API. This satisfies the Tanzania data-sovereignty constraint
 that forbids relaying detection content via FCM / APNs / Slack / etc.

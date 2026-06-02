@@ -20,8 +20,12 @@ import java.util.concurrent.Executor
  */
 object BiometricGate {
 
-    const val APP_OPEN_GRACE_MS  = 30_000L          // 30s — quick app-switch
+    // App-open: 30 s grace so a quick app-switch (e.g. tap a link, return)
+    // doesn't re-prompt. Any backgrounding longer than 30 s re-authenticates.
+    const val APP_OPEN_GRACE_MS  = 30_000L
     const val SENSITIVE_GRACE_MS = 5L * 60 * 1000   // 5 min between sensitive actions
+                                                     // (per-action callers can opt out via
+                                                     // BiometricGate.reset() before gateSensitive)
 
     @Volatile private var lastAuthMs: Long = 0L
 

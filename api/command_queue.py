@@ -41,13 +41,20 @@ logger = get_logger("api.command_queue")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS agents (
-    agent_id          TEXT PRIMARY KEY,
-    secret_b64        TEXT NOT NULL,
-    profile           TEXT,
-    registered_at     REAL NOT NULL,
-    last_seen_at      REAL,
-    last_status       TEXT,
-    current_sequence  INTEGER NOT NULL DEFAULT 0
+    agent_id                    TEXT PRIMARY KEY,
+    secret_b64                  TEXT NOT NULL,
+    profile                     TEXT,
+    registered_at               REAL NOT NULL,
+    last_seen_at                REAL,
+    last_status                 TEXT,
+    current_sequence            INTEGER NOT NULL DEFAULT 0,
+    handler_version             TEXT,
+    -- OTA post-write verification result reported by agent heartbeat.
+    -- ok | sha_mismatch | parse_failed | invoke_failed | rolled_back
+    handler_update_status       TEXT,
+    handler_update_detail       TEXT,
+    handler_update_bad_version  TEXT,
+    handler_update_at           REAL
 );
 
 CREATE TABLE IF NOT EXISTS commands (
@@ -91,6 +98,34 @@ class CommandQueue:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(_SCHEMA)
+        # Idempotent migration: add handler_version column on pre-existing
+        # databases where CREATE TABLE IF NOT EXISTS won't apply the new
+        # column. SQLite doesn't have ADD COLUMN IF NOT EXISTS, so we
+        # probe PRAGMA table_info first.
+        existing_cols = {
+            row[1] for row in self.conn.execute(
+                "PRAGMA table_info(agents)"
+            ).fetchall()
+        }
+        if "handler_version" not in existing_cols:
+            self.conn.execute(
+                "ALTER TABLE agents ADD COLUMN handler_version TEXT"
+            )
+        # 2026-06-02: OTA post-write verification fields. Each is additive
+        # and nullable — old agents that don't report them stay NULL, which
+        # the dashboard renders as the existing "LATEST/OUT OF DATE" pill
+        # (no UPDATE FAILED red overlay). Same idempotent-ALTER pattern as
+        # handler_version above.
+        for col_name, col_type in (
+            ("handler_update_status",      "TEXT"),
+            ("handler_update_detail",      "TEXT"),
+            ("handler_update_bad_version", "TEXT"),
+            ("handler_update_at",          "REAL"),
+        ):
+            if col_name not in existing_cols:
+                self.conn.execute(
+                    f"ALTER TABLE agents ADD COLUMN {col_name} {col_type}"
+                )
         self.conn.commit()
         self.default_ttl = default_command_ttl_sec
         # Single lock guards multi-statement transactions (sequence allocation).
@@ -133,11 +168,29 @@ class CommandQueue:
         ).fetchone()
         return decode_secret(row["secret_b64"]) if row else None
 
+    def _agent_row_to_dict(self, r) -> dict:
+        """Shared row → dict mapping for list_agents + get_agent."""
+        return {
+            "agent_id":                   r["agent_id"],
+            "profile":                    r["profile"],
+            "registered_at":              r["registered_at"],
+            "last_seen_at":               r["last_seen_at"],
+            "last_status":                r["last_status"],
+            "current_sequence":           r["current_sequence"],
+            "handler_version":            r["handler_version"],
+            "handler_update_status":      r["handler_update_status"],
+            "handler_update_detail":      r["handler_update_detail"],
+            "handler_update_bad_version": r["handler_update_bad_version"],
+            "handler_update_at":          r["handler_update_at"],
+        }
+
     def list_agents(self) -> list[dict]:
         rows = self.conn.execute(
             """
             SELECT agent_id, profile, registered_at, last_seen_at, last_status,
-                   current_sequence,
+                   current_sequence, handler_version,
+                   handler_update_status, handler_update_detail,
+                   handler_update_bad_version, handler_update_at,
                    (SELECT COUNT(*) FROM commands
                     WHERE agent_id = a.agent_id AND status = 'pending'
                           AND expires_at > ?) AS pending_commands
@@ -146,24 +199,40 @@ class CommandQueue:
             """,
             (time.time(),),
         ).fetchall()
-        return [
-            {
-                "agent_id":         r["agent_id"],
-                "profile":          r["profile"],
-                "registered_at":    r["registered_at"],
-                "last_seen_at":     r["last_seen_at"],
-                "last_status":      r["last_status"],
-                "current_sequence": r["current_sequence"],
-                "pending_commands": r["pending_commands"],
-            }
-            for r in rows
-        ]
+        out = []
+        for r in rows:
+            d = self._agent_row_to_dict(r)
+            d["pending_commands"] = r["pending_commands"]
+            out.append(d)
+        return out
+
+    def get_agent(self, agent_id: str) -> Optional[dict]:
+        """Single-agent fetch with the full set of fields list_agents returns
+        (minus pending_commands which would require a join). Used by the
+        heartbeat handler to detect handler_update_status transitions for
+        audit emission."""
+        r = self.conn.execute(
+            """
+            SELECT agent_id, profile, registered_at, last_seen_at, last_status,
+                   current_sequence, handler_version,
+                   handler_update_status, handler_update_detail,
+                   handler_update_bad_version, handler_update_at
+            FROM agents
+            WHERE agent_id = ?
+            """,
+            (agent_id,),
+        ).fetchone()
+        return self._agent_row_to_dict(r) if r else None
 
     def update_agent_status(
         self,
         agent_id: str,
         status: Optional[str] = None,
         profile: Optional[str] = None,
+        handler_version: Optional[str] = None,
+        handler_update_status:      Optional[str] = None,
+        handler_update_detail:      Optional[str] = None,
+        handler_update_bad_version: Optional[str] = None,
     ) -> None:
         now = time.time()
         sets = ["last_seen_at = ?"]
@@ -174,6 +243,18 @@ class CommandQueue:
         if profile is not None:
             sets.append("profile = ?")
             params.append(profile)
+        if handler_version is not None:
+            sets.append("handler_version = ?")
+            params.append(handler_version)
+        # Any of the three OTA update fields being explicitly sent updates
+        # all four columns together (status + detail + bad_version + at).
+        # An agent that *clears* its failure marker sends status="ok" with
+        # null detail / bad_version, which correctly NULLs those columns.
+        if handler_update_status is not None:
+            sets.append("handler_update_status = ?");      params.append(handler_update_status)
+            sets.append("handler_update_detail = ?");      params.append(handler_update_detail)
+            sets.append("handler_update_bad_version = ?"); params.append(handler_update_bad_version)
+            sets.append("handler_update_at = ?");          params.append(now)
         params.append(agent_id)
         self.conn.execute(
             f"UPDATE agents SET {', '.join(sets)} WHERE agent_id = ?",

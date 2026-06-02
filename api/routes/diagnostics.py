@@ -89,9 +89,17 @@ async def services(
     # Detection subscriber / drift monitors
     sub = getattr(state, "detection_subscriber", None)
     if sub:
-        names = list(getattr(sub, "drift_monitors", {}) or {})
-        out.append({"name": "Detection subscriber", "status": "ok",
-                    "detail": "Drift monitors: " + (", ".join(names) or "none")})
+        loaded = sorted(getattr(sub, "_loaded", set()))
+        load_errs = sub.load_errors() if hasattr(sub, "load_errors") else {}
+        if load_errs:
+            # Any model that failed integrity check (h) flips this red so the
+            # SOC can see why a detector is dark instead of silently missing it.
+            status = "fail" if any(v.startswith("INTEGRITY:") for v in load_errs.values()) else "degraded"
+            detail = "; ".join(f"{k}: {v}" for k, v in load_errs.items())
+        else:
+            status = "ok"
+            detail = f"Loaded: {', '.join(loaded) or 'none'}"
+        out.append({"name": "Detection subscriber", "status": status, "detail": detail})
     else:
         out.append({"name": "Detection subscriber", "status": "warn",
                     "detail": "Not initialised (api-only mode?)"})
@@ -291,3 +299,86 @@ async def tail_logs(
         "path": None, "lines": [],
         "note": "No log file mounted. Configure LOG_FILE or run `docker compose logs -f api`.",
     }
+
+
+# ── Dead-letter queue inspector + replay (dd) ───────────────────────────────
+# Without these, the DLQ silently grows and a misconfigured preprocessor
+# field can drop hours of traffic before anyone notices.
+
+
+@router.get("/dead-letter")
+async def dlq_list(
+    request: Request,
+    limit: int = Query(50, ge=1, le=500),
+    user: User = Depends(require_permission("read_detections")),
+):
+    pp = getattr(request.app.state, "preprocessor", None)
+    if pp is None or not getattr(pp, "dead_letter", None):
+        return {"entries": [], "count": 0, "note": "DLQ not initialised"}
+    dlq = pp.dead_letter
+    return {"entries": dlq.list_recent(limit), "count": dlq.count()}
+
+
+@router.post("/dead-letter/replay/{dlq_id}")
+async def dlq_replay(
+    dlq_id: str,
+    request: Request,
+    user: User = Depends(require_permission("manage_detectors")),
+):
+    """Re-validate a quarantined event after a preprocessor fix.
+
+    On success the entry is removed from the DLQ and the event is emitted on
+    the bus exactly as if it had just arrived from Wazuh. On failure the
+    entry stays put with the new reason recorded in the audit log so the
+    analyst can iterate."""
+    pp = getattr(request.app.state, "preprocessor", None)
+    if pp is None or not getattr(pp, "dead_letter", None):
+        return {"ok": False, "message": "DLQ not initialised"}
+
+    from shared.events import bus, EVENT_INGESTED  # local to dodge cycles
+    try:
+        entry = pp.dead_letter.get(dlq_id)
+    except FileNotFoundError:
+        return {"ok": False, "message": f"DLQ entry not found: {dlq_id}"}
+
+    raw = entry.get("event") or {}
+    normalised = pp.normalize_batch([raw])
+    if not normalised:
+        # The event still fails — stats incremented `rejected`; leave the
+        # entry put so the analyst can try again after another fix.
+        request.app.state.audit_trail.log(
+            action="diag.dlq.replay_failed", actor=user.username, target=dlq_id,
+            details={"reason": entry.get("reason")},
+        )
+        return {"ok": False, "message": "Still invalid — left in DLQ"}
+
+    await bus.emit(EVENT_INGESTED, {"events": normalised, "correlation_id": f"dlq-{dlq_id}"})
+    pp.dead_letter.remove(dlq_id)
+    request.app.state.audit_trail.log(
+        action="diag.dlq.replayed", actor=user.username, target=dlq_id,
+        details={"events": len(normalised)},
+    )
+    return {"ok": True, "events": len(normalised)}
+
+
+# ── Preprocessor backfill window (hh) ───────────────────────────────────────
+
+
+@router.post("/preprocessor/backfill")
+async def set_backfill(
+    request: Request,
+    hours: int = Query(..., ge=1, le=24 * 30),
+    user: User = Depends(require_permission("manage_detectors")),
+):
+    """Temporarily widen MAX_EVENT_AGE so outage-replay ingest survives.
+
+    Pass hours=24 to restore the default."""
+    pp = getattr(request.app.state, "preprocessor", None)
+    if pp is None:
+        return {"ok": False, "message": "Preprocessor not initialised"}
+    pp.set_backfill_window(hours)
+    request.app.state.audit_trail.log(
+        action="diag.preprocessor.backfill", actor=user.username,
+        target="preprocessor", details={"max_event_age_hours": hours},
+    )
+    return {"ok": True, "max_event_age_hours": hours}

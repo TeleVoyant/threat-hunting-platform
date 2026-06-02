@@ -268,7 +268,108 @@ async def exchange_enroll(body: _EnrollExchange, request: Request):
     return {
         "username": username, "api_key": new_key,
         "server_url": server_url,
+        "role": user.role.value,
         "warning": "Stored once on the device; cannot be retrieved again from the server.",
+    }
+
+
+@router.post("/unpair")
+async def unpair(request: Request):
+    """Mobile self-unpair. Authenticated by the phone's own X-API-Key —
+    looks up the user that key belongs to, clears their `mobile_api_key_hash`
+    slot in security.yml, and marks every active `paired_devices` row for
+    that user inactive. Symmetric counterpart to the admin-driven
+    `DELETE /admin/paired-devices/{id}`, but callable by the phone itself
+    so the dashboard's Paired Devices view stays in sync after the phone's
+    in-app Unpair flow.
+
+    Refuses dashboard credentials: if the X-API-Key matches the user's
+    dashboard `api_key_hash` (rather than the `mobile_api_key_hash`), the
+    request is rejected so a dashboard key can never accidentally evict its
+    own companion-phone slot.
+    """
+    import hashlib as _hash
+    auth_manager = request.app.state.auth_manager
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        raise HTTPException(401, "X-API-Key required")
+    user = auth_manager.authenticate_api_key(api_key)
+    if user is None:
+        raise HTTPException(401, "Invalid api_key")
+
+    # Mobile slot match — refuse otherwise.
+    key_hash = _hash.sha256(api_key.encode()).hexdigest()
+    if (user.mobile_api_key_hash or "") != key_hash:
+        raise HTTPException(
+            403,
+            "Not a mobile api_key; this endpoint is only for the companion app",
+        )
+
+    # Clear the phone slot in security.yml. Dashboard credential untouched.
+    from api.routes.admin import _read_security_yml, _write_security_yml, _reload_auth
+    data = _read_security_yml()
+    target = next(
+        (u for u in data.get("users", []) if u["username"] == user.username),
+        None,
+    )
+    key_cleared = False
+    if target is not None and target.get("mobile_api_key_hash"):
+        target.pop("mobile_api_key_hash", None)
+        _write_security_yml(data)
+        _reload_auth(request)
+        key_cleared = True
+
+    # Mark every active paired_devices row for this user inactive. A single
+    # user MAY have multiple active rows (if they paired several phones at
+    # different times); we mark them all since after this call ALL of them
+    # share an invalidated server-side key anyway.
+    store = getattr(request.app.state, "paired_devices", None)
+    rows_marked = 0
+    if store is not None:
+        for row in store.list_all(include_inactive=False):
+            if row.get("username") == user.username and store.unpair(row["id"]):
+                rows_marked += 1
+
+    request.app.state.audit_trail.log(
+        action="auth.companion_unpair",
+        actor=user.username, target=user.username,
+        details={
+            "key_cleared": key_cleared,
+            "rows_marked": rows_marked,
+            "via":         "mobile_self_unpair",
+        },
+    )
+    return {
+        "status":      "unpaired",
+        "key_cleared": key_cleared,
+        "rows_marked": rows_marked,
+    }
+
+
+@router.get("/me")
+async def me(request: Request):
+    """
+    Returns the authenticated user's profile. Mobile uses this on cold-start
+    to re-validate that the persisted role still matches the server (e.g.
+    after an admin promotes the user via the dashboard). Identical auth
+    handling to other API-key-gated routes.
+    """
+    # X-API-Key header is the supported transport for the mobile app and any
+    # external script. The dashboard cookie also resolves to a user via the
+    # auth manager's middleware. Both paths land here.
+    auth_manager = request.app.state.auth_manager
+    api_key = request.headers.get("X-API-Key")
+    user = None
+    if api_key:
+        user = auth_manager.authenticate_api_key(api_key)
+    if user is None:
+        # Fall back to cookie path so the dashboard can hit /auth/me too.
+        user = current_user_from_cookie(request, request.cookies.get(COOKIE_NAME))
+    if user is None:
+        raise HTTPException(401, "Unauthenticated")
+    return {
+        "username": user.username,
+        "role": user.role.value,
     }
 
 

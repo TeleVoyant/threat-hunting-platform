@@ -16,6 +16,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from shared.commands import (
@@ -74,6 +75,21 @@ class PollResponse(BaseModel):
 class HeartbeatBody(BaseModel):
     profile: Optional[str] = None
     status:  Optional[str] = "ok"
+    # Reported by the agent so the dashboard's Fleet table can flag which
+    # endpoints are on the latest handler script. Optional so an old agent
+    # build talking to a new server is silently tolerated (handler_version
+    # stays NULL in the agents row until the agent upgrades).
+    handler_version: Optional[str] = None
+    # OTA post-write verification status (added 2026-06-02 after the deadman
+    # double-BOM incident). The agent's _HandlerFetchAndApply now runs three
+    # post-write checks (sha/parse/self-test invocation) and auto-rolls-back
+    # on any failure. This field surfaces the result so an operator sees
+    # "UPDATE FAILED" instead of silently watching an agent stay on the old
+    # version forever. Values: ok|sha_mismatch|parse_failed|invoke_failed|
+    # rolled_back. Null on old agents — server tolerates.
+    handler_update_status:      Optional[str] = None
+    handler_update_detail:      Optional[str] = None
+    handler_update_bad_version: Optional[str] = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -163,6 +179,60 @@ async def submit_result(
         },
     )
 
+    # Richer per-action audit row for isolation results. The agent emits a
+    # JSON blob in `output` for isolate/unisolate; surface the parsed fields
+    # so a SOC search by action finds them without re-parsing.
+    if cmd and cmd["command_type"] in {"isolate", "unisolate"}:
+        try:
+            parsed = json.loads(result.output) if result.output else {}
+        except (json.JSONDecodeError, ValueError):
+            parsed = {"raw": result.output[:200] if result.output else ""}
+        applied_action = "fleet.isolate.applied" if cmd["command_type"] == "isolate" else "fleet.unisolate.applied"
+        _audit(request).log(
+            action=applied_action,
+            actor=f"agent:{agent_id}",
+            target=result.command_id,
+            details={
+                "status":  result.status.value,
+                "level":   parsed.get("level") or parsed.get("unisolated_from"),
+                "deadline_at":        parsed.get("deadline_at"),
+                "adapters_disabled":  parsed.get("adapters_disabled"),
+                "lifeline_verified":  parsed.get("lifeline_verified"),
+                "block_verified":     parsed.get("block_verified"),
+                "deadman_registered": parsed.get("deadman_registered"),
+                "reason":  parsed.get("reason"),
+            },
+        )
+
+    # Parallel audit row for handler OTA results so the same trail exists
+    # for isolation AND for handler updates: search by action, find every
+    # apply event regardless of which path issued it.
+    if cmd and cmd["command_type"] in {"update_handler", "rollback_handler"}:
+        try:
+            parsed = json.loads(result.output) if result.output else {}
+        except (json.JSONDecodeError, ValueError):
+            parsed = {"raw": result.output[:200] if result.output else ""}
+        applied_action = (
+            "handler.update.applied"
+            if cmd["command_type"] == "update_handler"
+            else "handler.rollback.applied"
+        )
+        # The Invoke-UpdateHandler success path returns "applied <version>"
+        # as a plain string; rollback returns a JSON blob. Surface whichever
+        # structured fields are there + the raw output for anything else.
+        _audit(request).log(
+            action=applied_action,
+            actor=f"agent:{agent_id}",
+            target=result.command_id,
+            details={
+                "status":  result.status.value,
+                "from_version": parsed.get("from"),
+                "to_version":   parsed.get("to"),
+                "reason":       parsed.get("reason"),
+                "output_preview": result.output[:200] if result.output else "",
+            },
+        )
+
     return {"received": True}
 
 
@@ -176,9 +246,119 @@ async def heartbeat(
     """Lightweight liveness ping. Updates last_seen_at + optional profile."""
     _check_agent_auth(request, agent_id, authorization)
     store = _store(request)
+
+    # Snapshot the prior update-status so we can emit a single audit event
+    # on transitions (ok → failure, or any-failure → ok). Heartbeats arrive
+    # every poll (~60s); without dedup we'd spam the audit log.
+    prior = store.get_agent(agent_id) or {}
+    prior_upd_status = (prior.get("handler_update_status") or "ok")
+
     store.update_agent_status(
         agent_id,
         status=body.status,
         profile=body.profile,
+        handler_version=body.handler_version,
+        handler_update_status=body.handler_update_status,
+        handler_update_detail=body.handler_update_detail,
+        handler_update_bad_version=body.handler_update_bad_version,
     )
+
+    # Audit on status TRANSITION only. Comparing the incoming status (if any)
+    # against the prior persisted status — a heartbeat that doesn't report
+    # the field at all (old agent) is a no-op for audit purposes.
+    new_upd_status = body.handler_update_status
+    if new_upd_status and new_upd_status != prior_upd_status:
+        if new_upd_status != "ok":
+            _audit(request).log(
+                action="handler.update.failed",
+                actor=f"agent:{agent_id}",
+                target=body.handler_update_bad_version or "",
+                details={
+                    "status":      new_upd_status,
+                    "detail":      (body.handler_update_detail or "")[:240],
+                    "bad_version": body.handler_update_bad_version,
+                    "still_on":    body.handler_version,
+                },
+            )
+        else:
+            # Transition from any failure back to ok = recovery.
+            _audit(request).log(
+                action="handler.update.recovered",
+                actor=f"agent:{agent_id}",
+                target=body.handler_version or "",
+                details={
+                    "recovered_from": prior_upd_status,
+                    "now_on_version": body.handler_version,
+                },
+            )
+
     return {"ok": True, "server_time": int(time.time())}
+
+
+# ── Handler OTA — manifest + content (agent-facing, HMAC-auth) ─────────────
+
+def _handler_store(request: Request):
+    return getattr(request.app.state, "handler_store", None)
+
+
+@router.get("/{agent_id}/handler/manifest")
+async def handler_manifest(
+    agent_id: str,
+    request: Request,
+    authorization: str = Header(default=""),
+    version: Optional[str] = None,
+):
+    """Return the version label + SHA-256 of either the current LIVE handler
+    or a specific staged/archived version when `?version=` is passed.
+
+    The agent polls this on every cycle to decide whether to self-update.
+    Response is a tiny JSON so the per-poll cost is negligible.
+    """
+    _check_agent_auth(request, agent_id, authorization)
+    store = _handler_store(request)
+    if store is None:
+        raise HTTPException(503, "Handler-version store unavailable")
+    row = store.get_by_label(version) if version else store.get_live()
+    if row is None:
+        # No version has been uploaded yet. Tell the agent there's nothing
+        # to do — it'll keep running whatever it has, no .bak gymnastics.
+        return {
+            "version": None, "sha256": None, "size_bytes": 0, "status": None,
+        }
+    return {
+        "version":    row["version_label"],
+        "sha256":     row["sha256"],
+        "size_bytes": row["size_bytes"],
+        "status":     row["status"],
+    }
+
+
+@router.get("/{agent_id}/handler/content", response_class=PlainTextResponse)
+async def handler_content(
+    agent_id: str,
+    request: Request,
+    authorization: str = Header(default=""),
+    version: Optional[str] = None,
+):
+    """Return the raw .ps1 bytes for the requested version (or the live
+    version if `?version=` is omitted). Defence in depth: the response
+    carries `X-Handler-SHA256` so the agent can verify the bytes without
+    re-decoding the manifest's separate JSON. The agent MUST verify the
+    SHA-256 before writing the file to disk.
+    """
+    _check_agent_auth(request, agent_id, authorization)
+    store = _handler_store(request)
+    if store is None:
+        raise HTTPException(503, "Handler-version store unavailable")
+    row = store.get_by_label(version) if version else store.get_live()
+    if row is None:
+        raise HTTPException(404, "Handler version not found")
+    content = store.content_bytes_of(row).decode("utf-8", errors="replace")
+    return PlainTextResponse(
+        content=content,
+        headers={
+            "X-Handler-Version": row["version_label"],
+            "X-Handler-SHA256":  row["sha256"],
+            "Cache-Control":     "no-store",
+        },
+    )

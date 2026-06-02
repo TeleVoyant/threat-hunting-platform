@@ -1,4 +1,53 @@
 // app.js — Alpine stores, HTMX hooks, clipboard helper, ⌘K shortcut.
+
+// ── Sidebar toggle (vanilla, no Alpine dependency) ─────────────────────────
+// Defined at module top so the button's onclick can call it the instant the
+// script parses — independent of Alpine boot timing, x-store registration,
+// or x-on:click directive binding. The Alpine.store('sidebar') below mirrors
+// the same state so any future :class / x-show bindings stay in sync, but
+// the click path no longer routes through Alpine.
+window.aptToggleSidebar = function () {
+  const root = document.documentElement;
+  const next = root.dataset.sidebar === 'collapsed' ? 'expanded' : 'collapsed';
+  root.dataset.sidebar = next;
+  try { localStorage.setItem('sidebarCollapsed', next === 'collapsed' ? '1' : '0'); } catch (_) {}
+  if (window.Alpine && Alpine.store('sidebar')) {
+    Alpine.store('sidebar').collapsed = (next === 'collapsed');
+  }
+  // Lightweight diagnostic — kept because the previous Alpine-based path
+  // failed silently and there's no other surface to confirm the click
+  // landed in production.
+  console.debug('[sidebar] toggled →', next);
+};
+
+// ── Topbar uptime pill (vanilla, no Alpine dependency) ────────────────────
+// Same Alpine-binding failure mode as sidebar: x-data="uptimePill" + x-init
+// silently never fired in production. Vanilla mount on DOMContentLoaded
+// guarantees the pill updates regardless of Alpine state.
+window.aptStartUptimePill = function () {
+  const el = document.getElementById('uptime-pill-text');
+  if (!el) return;
+  let startedAt = 0;
+  const refresh = async () => {
+    try {
+      const r = await fetch('/diag/uptime', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const j = await r.json();
+      startedAt = j.started_at || 0;
+      el.textContent = 'Up ' + (j.label || '…');
+    } catch (_) { /* keep last visible value */ }
+  };
+  refresh();
+  setInterval(refresh, 30_000);                // resync every 30 s
+  setInterval(() => {                          // local 1-Hz tick between syncs
+    if (!startedAt) return;
+    el.textContent = 'Up ' + formatUptime((Date.now() / 1000) - startedAt);
+  }, 1000);
+};
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof aptStartUptimePill === 'function') aptStartUptimePill();
+});
+
 document.addEventListener('alpine:init', () => {
   Alpine.store('toast', {
     items: [],
@@ -142,38 +191,7 @@ document.addEventListener('alpine:init', () => {
     },
   });
 
-  // ── Topbar uptime pill ────────────────────────────────────────────────
-  // Registered as Alpine.data() inside alpine:init so it's guaranteed to
-  // exist before Alpine processes any x-data on the page. Use as:
-  //   <span x-data="uptimePill" x-init="start()">…</span>
-  Alpine.data('uptimePill', () => ({
-    label: '',
-    startedAt: 0,
-    _pollTimer: null,
-    _tickTimer: null,
-    async refresh() {
-      try {
-        const r = await fetch('/diag/uptime', { credentials: 'same-origin' });
-        if (!r.ok) return;
-        const j = await r.json();
-        this.startedAt = j.started_at || 0;
-        this.label = j.label || '';
-      } catch (_) { /* keep last value */ }
-    },
-    start() {
-      console.log('[uptimePill] mounted');
-      this.refresh();
-      this._pollTimer = setInterval(() => this.refresh(), 30_000);
-      this._tickTimer = setInterval(() => {
-        if (!this.startedAt) return;
-        this.label = formatUptime((Date.now() / 1000) - this.startedAt);
-      }, 1000);
-    },
-    destroy() {
-      if (this._pollTimer) clearInterval(this._pollTimer);
-      if (this._tickTimer) clearInterval(this._tickTimer);
-    },
-  }));
+  // (Topbar uptime pill is mounted by aptStartUptimePill() above — vanilla.)
 });
 
 // Kick off the notifications store on every dashboard page load.
@@ -244,8 +262,8 @@ document.addEventListener('htmx:afterSettle', () => {
   }
 });
 
-// ── Topbar uptime pill — formatter ──────────────────────────────────────────
-// The Alpine data factory is registered inside the alpine:init handler above.
+// ── Uptime label formatter ──────────────────────────────────────────────────
+// Shared by the vanilla aptStartUptimePill helper above.
 function formatUptime(seconds) {
   const s = Math.max(0, Math.floor(seconds));
   if (s < 60)         return `${s}s`;

@@ -4,7 +4,7 @@
   "created_at": 1779800258.2412958,
   "content_hash": "5c25da8636edc53ac6322d312050c7cb7d32fc195268221399f92dc451fa086a",
   "signature": "81178f1df6587727e0bea6cc7a70dad1c081539119616036e466819dd1cc6b85",
-  "status": "staged",
+  "status": "archived",
   "metadata": {
     "n_train": 691,
     "n_eval": 173,

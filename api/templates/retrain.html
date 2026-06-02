@@ -23,7 +23,7 @@
 
 <!-- Live status -->
 <div class="card card-pad" style="margin-bottom:14px;">
-  <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:18px;">
+  <div style="display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:18px;">
     <div>
       <div class="eyebrow">Status</div>
       <div class="apt-h2" x-text="status.running ? 'Running' : 'Stopped'"
@@ -38,10 +38,25 @@
       <div class="apt-h2" x-text="status.last_run_iso ? new Date(status.last_run_iso).toLocaleString() : '—'"></div>
     </div>
     <div>
+      <div class="eyebrow" x-text="status.last_run_at ? 'Next run' : 'First run'"></div>
+      <div class="apt-h2" x-text="nextRunDisplay()"
+           :title="status.next_run_iso ? new Date(status.next_run_iso).toLocaleString() : ''"></div>
+    </div>
+    <div>
       <div class="eyebrow">Last outcome</div>
       <div class="apt-h2" x-text="status.last_status || '—'"
            :style="outcomeColor(status.last_status)"></div>
     </div>
+  </div>
+  <div class="apt-small" style="margin-top:10px; color:var(--fg-3);"
+       x-show="status.running && !status.last_run_at">
+    <i data-lucide="info"></i>
+    First cycle is held back by an initial delay of
+    <strong x-text="humanInterval(status.initial_delay_seconds)"></strong>
+    after api start — keeps the api responsive during cold boot and avoids
+    competing for RAM with the retrain pipeline. Override via
+    <code>RETRAIN_INITIAL_DELAY_SECONDS</code> or just hit
+    <em>Run cycle now</em> to fire immediately.
   </div>
 </div>
 
@@ -69,12 +84,10 @@
     </button>
     <div style="margin-left:auto; align-self:center; color:var(--muted); font-size:13px;">
       Quick set:
-      <a href="#" x-on:click.prevent="quick(60)">1 min</a> ·
-      <a href="#" x-on:click.prevent="quick(900)">15 min</a> ·
-      <a href="#" x-on:click.prevent="quick(1800)">30 min</a> ·
       <a href="#" x-on:click.prevent="quick(3600)">1 h</a> ·
       <a href="#" x-on:click.prevent="quick(21600)">6 h</a> ·
-      <a href="#" x-on:click.prevent="quick(86400)">24 h</a>
+      <a href="#" x-on:click.prevent="quick(43200)">12 h</a> ·
+      <a href="#" x-on:click.prevent="quick(86400)" style="font-weight:600;">24 h ★</a>
     </div>
   </div>
 </div>
@@ -134,9 +147,9 @@
             </div>
             <div style="margin-top:4px; font-size:12px; color:var(--muted);">
               created <span x-text="new Date((v.created_at||0)*1000).toLocaleString()"></span> ·
-              AUC <span x-text="v.metadata?.eval_auc?.toFixed(4) || '—'"></span> ·
-              logloss <span x-text="v.metadata?.eval_logloss?.toFixed(4) || '—'"></span> ·
-              positives <span x-text="v.metadata?.n_pos_train || '—'"></span>
+              AUC <span x-text="v.metadata?.eval_auc?.toFixed(4) || '--'"></span> ·
+              logloss <span x-text="v.metadata?.eval_logloss?.toFixed(4) || '--'"></span> ·
+              positives <span x-text="v.metadata?.n_pos_train || '--'"></span>
             </div>
           </div>
           <button class="btn btn-primary"
@@ -144,7 +157,91 @@
                   :disabled="busy">
             <i data-lucide="check"></i> Promote
           </button>
+          <button class="btn btn-ghost"
+                  x-on:click="discard(name, v.version)"
+                  :disabled="busy"
+                  title="Move to discarded -- doesn't delete from disk yet"
+                  style="color:var(--warn);">
+            <i data-lucide="x"></i> Discard
+          </button>
         </div>
+      </template>
+
+      <!--
+        Discarded versions: collapsible <details>. Default closed so the
+        staged queue stays the visual focus. Per-row checkbox feeds the
+        bulk-delete bar; per-row "Delete" button is the single-version path.
+        Both flows show a confirm() dialog before destructive action.
+      -->
+      <template x-if="(status.discarded?.[name] || []).length > 0">
+        <details style="margin-top:14px;" x-data="{ open: false }"
+                 x-on:toggle="open = $event.target.open">
+          <summary style="cursor:pointer; padding:6px 10px; background:var(--bg-3); border-radius:6px;
+                          display:flex; align-items:center; gap:10px; user-select:none;">
+            <i data-lucide="chevron-right"
+               style="transition:transform .15s ease;"
+               :style="open ? 'transform:rotate(90deg);' : ''"></i>
+            <span style="flex:1;">
+              Discarded versions
+              <span class="eyebrow" style="margin-left:6px;"
+                    x-text="'(' + (status.discarded?.[name]?.length || 0) + ')'"></span>
+            </span>
+          </summary>
+
+          <div style="padding:10px 4px 4px 4px;">
+            <!-- Bulk action bar: only visible when something is selected -->
+            <div x-show="(selected[name] || []).length > 0"
+                 x-transition.opacity
+                 style="display:flex; justify-content:space-between; align-items:center;
+                        padding:8px 12px; margin-bottom:8px;
+                        background:var(--bad-bg, rgba(220,80,80,.08)); border-radius:6px;">
+              <span style="font-size:13px;">
+                <strong x-text="(selected[name] || []).length"></strong> selected
+              </span>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-ghost"
+                        x-on:click="clearSelection(name)"
+                        :disabled="busy">Clear</button>
+                <button class="btn btn-primary"
+                        x-on:click="bulkDeleteDiscarded(name)"
+                        :disabled="busy"
+                        style="background:var(--bad); color:#fff;">
+                  <i data-lucide="trash-2"></i> Delete selected
+                </button>
+              </div>
+            </div>
+
+            <template x-for="v in (status.discarded?.[name] || [])" :key="v.version">
+              <div style="margin-top:6px; padding:8px 12px; background:var(--bg-2);
+                          border-radius:6px; display:flex; align-items:center; gap:14px;
+                          opacity:.85;">
+                <input type="checkbox"
+                       :value="v.version"
+                       :checked="(selected[name] || []).includes(v.version)"
+                       x-on:change="toggleSelection(name, v.version, $event.target.checked)"
+                       style="cursor:pointer;">
+                <div style="flex:1; min-width:0;">
+                  <div><code x-text="v.version"></code>
+                    <span class="badge" style="margin-left:8px;" x-text="v.status"></span>
+                  </div>
+                  <div style="margin-top:4px; font-size:12px; color:var(--muted);">
+                    created <span x-text="new Date((v.created_at||0)*1000).toLocaleString()"></span>
+                    <template x-if="v.metadata?.eval_auc">
+                      <span> &middot; AUC <span x-text="v.metadata.eval_auc.toFixed(4)"></span></span>
+                    </template>
+                  </div>
+                </div>
+                <button class="btn btn-ghost"
+                        x-on:click="deleteVersion(name, v.version)"
+                        :disabled="busy"
+                        title="Permanently remove this version from disk"
+                        style="color:var(--bad);">
+                  <i data-lucide="trash-2"></i> Delete
+                </button>
+              </div>
+            </template>
+          </div>
+        </details>
       </template>
     </div>
   </template>
@@ -155,10 +252,16 @@
 <script>
 function retrainPage() {
   return {
-    status: { running: false, staged: {}, active: {} },
-    form: { value: 30, unit: 60 },
+    status: { running: false, staged: {}, discarded: {}, active: {} },
+    // Default form reflects the new server-side default cadence (24 h)
+    // rather than the old 30-min option that contributed to OOM crashes.
+    form: { value: 24, unit: 3600 },
     busy: false,
     _poll: null,
+    // Per-detector selection state for the discarded-versions bulk-delete
+    // bar. Shape: { lateral_movement: ['v1738..', 'v1738..'], dns_exfiltration: [] }.
+    // Cleared after a successful bulk-delete or via the Clear button.
+    selected: { lateral_movement: [], dns_exfiltration: [] },
 
     humanInterval(s) {
       if (!s) return '—';
@@ -166,6 +269,20 @@ function retrainPage() {
       if (s < 3600) return Math.round(s/60) + ' min';
       if (s < 86400) return (s/3600).toFixed(1) + ' h';
       return (s/86400).toFixed(1) + ' d';
+    },
+
+    // "in N min/h" / "overdue by N min" relative-time display for next-run.
+    nextRunDisplay() {
+      const ts = this.status.next_run_at;
+      if (!ts) return '—';
+      const nowSec = Date.now() / 1000;
+      const delta = ts - nowSec;
+      const abs = Math.abs(delta);
+      const label = abs < 60   ? Math.round(abs) + ' s'
+                  : abs < 3600 ? Math.round(abs/60) + ' min'
+                  : abs < 86400 ? (abs/3600).toFixed(1) + ' h'
+                              : (abs/86400).toFixed(1) + ' d';
+      return delta >= 0 ? 'in ' + label : 'overdue ' + label;
     },
 
     outcomeColor(s) {
@@ -243,6 +360,86 @@ function retrainPage() {
         await this.load();
       } catch (e) { alert(e.message); }
       finally    { this.busy = false; }
+    },
+
+    // Move a staged version into the Discarded list. Files remain on disk;
+    // permanent removal is a separate explicit delete action. Single confirm
+    // is fine here since the action is reversible (re-promote would need
+    // backend support but the bytes are intact).
+    async discard(name, version) {
+      if (!confirm(`Discard ${name} ${version}?\n\nIt moves to the Discarded list. Files stay on disk -- you can permanently delete them from there with another explicit step.`)) return;
+      this.busy = true;
+      try {
+        const r = await fetch(`/models/${name}/versions/${version}/discard`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        if (!r.ok) throw new Error('discard failed: ' + (await r.text()));
+        await this.load();
+      } catch (e) { alert(e.message); }
+      finally    { this.busy = false; }
+    },
+
+    // Permanently delete a single discarded version. Two-step confirmation:
+    // first the OS confirm() dialog, then a typed-name match could be added
+    // for extra friction if this ever turns into a major-incident vector --
+    // for now a single confirm is sufficient since only discarded/archived
+    // can be deleted (server-side guard).
+    async deleteVersion(name, version) {
+      if (!confirm(`PERMANENTLY DELETE ${name} ${version}?\n\nFiles are removed from disk. This cannot be undone.`)) return;
+      this.busy = true;
+      try {
+        const r = await fetch(`/models/${name}/versions/${version}`, {
+          method: 'DELETE', credentials: 'same-origin',
+        });
+        if (!r.ok && r.status !== 204) throw new Error('delete failed: ' + (await r.text()));
+        // Drop from selection if it was there
+        this.selected[name] = (this.selected[name] || []).filter(v => v !== version);
+        await this.load();
+      } catch (e) { alert(e.message); }
+      finally    { this.busy = false; }
+    },
+
+    // Multi-version delete with confirmation. Server returns per-version
+    // results so we surface any partial failures (e.g. a race where another
+    // operator promoted one of the selected versions to active just before
+    // we tried to delete it).
+    async bulkDeleteDiscarded(name) {
+      const vs = (this.selected[name] || []).slice();
+      if (vs.length === 0) return;
+      if (!confirm(`PERMANENTLY DELETE ${vs.length} discarded version(s) of ${name}?\n\n` +
+                   vs.map(v => '  - ' + v).join('\n') +
+                   `\n\nFiles are removed from disk. This cannot be undone.`)) return;
+      this.busy = true;
+      try {
+        const r = await fetch(`/models/${name}/versions/bulk-delete`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ versions: vs }),
+        });
+        if (!r.ok) throw new Error('bulk-delete failed: ' + (await r.text()));
+        const result = await r.json();
+        if (result.n_failed > 0) {
+          alert(`Deleted ${result.n_deleted} of ${vs.length}. ` +
+                `${result.n_failed} failed:\n\n` +
+                result.failed.map(f => `${f.version}: ${f.error}`).join('\n'));
+        }
+        this.selected[name] = [];
+        await this.load();
+      } catch (e) { alert(e.message); }
+      finally    { this.busy = false; }
+    },
+
+    toggleSelection(name, version, checked) {
+      if (!this.selected[name]) this.selected[name] = [];
+      if (checked) {
+        if (!this.selected[name].includes(version)) this.selected[name].push(version);
+      } else {
+        this.selected[name] = this.selected[name].filter(v => v !== version);
+      }
+    },
+
+    clearSelection(name) {
+      this.selected[name] = [];
     },
   };
 }

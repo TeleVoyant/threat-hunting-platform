@@ -35,7 +35,27 @@ class DeadLetterQueue:
     def list_recent(self, limit: int = 100) -> list[dict]:
         """List recent dead letter entries for inspection."""
         files = sorted(self.storage_dir.glob("dlq_*.json"), reverse=True)[:limit]
-        return [json.loads(f.read_text()) for f in files]
+        return [{"id": f.stem, **json.loads(f.read_text())} for f in files]
 
     def count(self) -> int:
         return len(list(self.storage_dir.glob("dlq_*.json")))
+
+    def get(self, dlq_id: str) -> dict:
+        """Fetch a single DLQ entry by id (file stem). Raises FileNotFoundError."""
+        # Refuse path-traversal-ish ids.
+        if "/" in dlq_id or ".." in dlq_id or not dlq_id.startswith("dlq_"):
+            raise ValueError(f"Bad DLQ id: {dlq_id!r}")
+        path = self.storage_dir / f"{dlq_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(dlq_id)
+        return {"id": dlq_id, **json.loads(path.read_text())}
+
+    def remove(self, dlq_id: str) -> bool:
+        """Delete a DLQ entry — used after a successful replay."""
+        if "/" in dlq_id or ".." in dlq_id or not dlq_id.startswith("dlq_"):
+            raise ValueError(f"Bad DLQ id: {dlq_id!r}")
+        path = self.storage_dir / f"{dlq_id}.json"
+        if not path.exists():
+            return False
+        path.unlink()
+        return True

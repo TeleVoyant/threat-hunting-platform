@@ -1,0 +1,629 @@
+{% extends "base.html" %}
+{% block title %}Evaluations — APT THP{% endblock %}
+{% block content %}
+
+<div x-data="evaluationsPage()" x-init="init()">
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
+  <div>
+    <h1 class="apt-h1">Evaluations</h1>
+    <div class="eyebrow" style="margin-top:4px;">
+      Reporting-grade detector metrics · NFR-02 grading · stakeholder snapshots
+    </div>
+  </div>
+  <div style="display:flex; gap:6px;">
+    <button class="btn btn-secondary" :class="{'btn-primary': tab==='latest'}"
+            x-on:click="tab='latest'; $nextTick(()=>buildLatestCharts())">Latest</button>
+    <button class="btn btn-secondary" :class="{'btn-primary': tab==='history'}"
+            x-on:click="tab='history'; $nextTick(()=>buildSparklines())">History</button>
+    {% if can_evaluate %}
+    <button class="btn btn-secondary" :class="{'btn-primary': tab==='run'}"
+            x-on:click="tab='run'">Run new</button>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Detector switch (shared across tabs) ─────────────────────────────────── #}
+<div class="card" style="padding:12px 16px; margin-bottom:18px; display:flex; align-items:center; gap:12px;">
+  <span class="eyebrow">Detector</span>
+  <template x-for="d in detectors" :key="d">
+    <button class="btn" :class="detector===d ? 'btn-primary' : 'btn-secondary'"
+            x-on:click="detector=d; loadDetector()" x-text="d"></button>
+  </template>
+  <span style="flex:1;"></span>
+  <span class="apt-small" style="color:var(--fg-3);" x-show="latest"
+        x-text="latest ? ('Showing ' + (latest.job_id || '—') + ' · ' + (latest.report ? (latest.report.evaluated_at || '') : '')) : ''"></span>
+</div>
+
+{# ═════════════════════════════════════════════════════════════════════════ #}
+{# ── Tab: LATEST ────────────────────────────────────────────────────────── #}
+{# ═════════════════════════════════════════════════════════════════════════ #}
+<div x-show="tab==='latest'" x-cloak>
+
+  <div x-show="!latest" class="card" style="padding:24px; text-align:center; color:var(--fg-3);">
+    No successful evaluations for this detector yet.
+    {% if can_evaluate %}
+    <button class="btn btn-primary" style="margin-left:12px;"
+            x-on:click="tab='run'">Run one now</button>
+    {% endif %}
+  </div>
+
+  <div x-show="latest">
+    {# KPI tile row #}
+    <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px;">
+      <template x-for="k in kpiTiles()" :key="k.label">
+        <div class="card" style="padding:14px 16px;">
+          <div class="eyebrow" x-text="k.label"></div>
+          <div class="mono tabnum" style="font-size:22px; margin:4px 0;"
+               :style="k.passes===true  ? 'color:var(--success);' :
+                       k.passes===false ? 'color:var(--critical);' : ''"
+               x-text="k.value"></div>
+          <div class="apt-small" style="color:var(--fg-3);" x-text="k.target || k.hint"></div>
+        </div>
+      </template>
+    </div>
+
+    {# Threshold scrubber (non-destructive) #}
+    <div class="card" style="padding:14px 18px; margin-bottom:14px; display:flex; align-items:center; gap:14px;">
+      <span class="eyebrow">Preview at threshold</span>
+      <input type="range" min="0" max="1" step="0.01" x-model.number="scrubThreshold"
+             x-on:input="onScrub()" style="flex:1;">
+      <span class="mono tabnum" x-text="scrubThreshold.toFixed(2)"></span>
+      <span class="apt-small" style="color:var(--fg-3);" x-show="scrubMetrics"
+            x-text="scrubMetrics ? ('P=' + scrubMetrics.precision.toFixed(3) + ' · R=' + scrubMetrics.recall.toFixed(3) + ' · FPR=' + scrubMetrics.fpr.toFixed(3) + ' · ~' + scrubMetrics.alerts_per_day + '/day') : ''"></span>
+      {% if can_manage_detectors %}
+      <button class="btn btn-primary" x-on:click="applyAsProduction()"
+              :disabled="Math.abs(scrubThreshold - productionThreshold) < 0.005">
+        Apply as production
+      </button>
+      <button class="btn btn-ghost" x-on:click="resetScrubToProduction()"
+              :disabled="Math.abs(scrubThreshold - productionThreshold) < 0.005"
+              title="Reset preview to the production threshold">Reset</button>
+      {% endif %}
+    </div>
+
+    {# Chart grid #}
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+      <div class="card" style="padding:14px 18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">ROC curve</div>
+        <div class="chart-box" style="height:240px;"><canvas id="ev-roc"></canvas></div>
+      </div>
+      <div class="card" style="padding:14px 18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Precision–Recall curve</div>
+        <div class="chart-box" style="height:240px;"><canvas id="ev-pr"></canvas></div>
+      </div>
+
+      <div class="card" style="padding:14px 18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Confusion matrix</div>
+        {# Tailwind grid, no Chart.js. Live-updates when scrubbing. #}
+        <div style="display:grid; grid-template-columns:64px 1fr 1fr; gap:6px; align-items:stretch; margin-top:8px;">
+          <div></div>
+          <div class="apt-small" style="text-align:center; color:var(--fg-3);">predicted attack</div>
+          <div class="apt-small" style="text-align:center; color:var(--fg-3);">predicted benign</div>
+
+          <div class="apt-small" style="display:flex; align-items:center; justify-content:flex-end; color:var(--fg-3); padding-right:6px;">actual attack</div>
+          <div style="padding:18px; border-radius:var(--r-2); background:var(--success-bg); text-align:center;">
+            <div class="apt-small" style="color:var(--success);">TP</div>
+            <div class="mono tabnum" style="font-size:22px; color:var(--success);" x-text="scrubMetrics ? scrubMetrics.tp : '—'"></div>
+          </div>
+          <div style="padding:18px; border-radius:var(--r-2); background:var(--critical-bg); text-align:center;">
+            <div class="apt-small" style="color:var(--critical);">FN</div>
+            <div class="mono tabnum" style="font-size:22px; color:var(--critical);" x-text="scrubMetrics ? scrubMetrics.fn : '—'"></div>
+          </div>
+
+          <div class="apt-small" style="display:flex; align-items:center; justify-content:flex-end; color:var(--fg-3); padding-right:6px;">actual benign</div>
+          <div style="padding:18px; border-radius:var(--r-2); background:var(--warning-bg); text-align:center;">
+            <div class="apt-small" style="color:var(--warning);">FP</div>
+            <div class="mono tabnum" style="font-size:22px; color:var(--warning);" x-text="scrubMetrics ? scrubMetrics.fp : '—'"></div>
+          </div>
+          <div style="padding:18px; border-radius:var(--r-2); background:var(--bg-3); text-align:center;">
+            <div class="apt-small" style="color:var(--fg-2);">TN</div>
+            <div class="mono tabnum" style="font-size:22px; color:var(--fg-1);" x-text="scrubMetrics ? scrubMetrics.tn : '—'"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Score distribution</div>
+        <div class="chart-box" style="height:240px;"><canvas id="ev-dist"></canvas></div>
+        <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">
+          Two tight peaks at 0 and 1 = strong separability. Overlap in the middle = uncertain regime.
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Calibration (reliability)</div>
+        <div class="chart-box" style="height:240px;"><canvas id="ev-calib"></canvas></div>
+        <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">
+          On-diagonal = confidence reads as probability. Below = over-confident; above = under-confident.
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Threshold sweep</div>
+        <table class="tbl" style="margin-top:6px;">
+          <thead><tr>
+            <th>thr</th><th>P</th><th>R</th><th>F1</th><th>FPR</th>
+            <th>alerts/day</th>
+          </tr></thead>
+          <tbody>
+            <template x-for="row in threshSweep()" :key="row.threshold">
+              <tr :style="Math.abs(row.threshold - scrubThreshold) < 0.05 ? 'background:var(--bg-3);' : ''">
+                <td class="mono tabnum" x-text="row.threshold.toFixed(2)"></td>
+                <td class="mono tabnum" x-text="row.precision.toFixed(3)"></td>
+                <td class="mono tabnum" x-text="row.recall.toFixed(3)"></td>
+                <td class="mono tabnum" x-text="row.f1.toFixed(3)"></td>
+                <td class="mono tabnum" x-text="row.fpr.toFixed(3)"></td>
+                <td class="mono tabnum" x-text="row.alerts_per_day != null ? row.alerts_per_day : '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# Run metadata footer #}
+    <details class="card" style="padding:0;">
+      <summary style="padding:12px 18px; cursor:pointer; color:var(--fg-2);">
+        <i data-lucide="chevron-right"></i> Run metadata
+      </summary>
+      <div style="padding:0 18px 18px;" x-show="latest">
+        <pre class="mono apt-small" style="background:var(--bg-2); padding:12px; border-radius:var(--r-2); white-space:pre-wrap;"
+             x-text="JSON.stringify({params: latest && latest.params, dataset: latest && latest.report && latest.report.dataset, grouping: latest && latest.report && latest.report.grouping, window_minutes: latest && latest.report && latest.report.window_minutes, model_path: latest && latest.report && latest.report.model_path, duration_sec: latest && latest.duration_sec}, null, 2)"></pre>
+      </div>
+    </details>
+  </div>
+</div>
+
+{# ═════════════════════════════════════════════════════════════════════════ #}
+{# ── Tab: HISTORY ───────────────────────────────────────────────────────── #}
+{# ═════════════════════════════════════════════════════════════════════════ #}
+<div x-show="tab==='history'" x-cloak>
+  {# Sparkline tiles #}
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px;">
+    <template x-for="m in ['precision','recall','roc_auc','fpr']" :key="m">
+      <div class="card" style="padding:12px 16px;">
+        <div class="eyebrow" x-text="m.toUpperCase().replace('_',' ')"></div>
+        <div style="display:flex; align-items:flex-end; gap:10px;">
+          <div class="mono tabnum" style="font-size:18px;" x-text="trendLatest(m)"></div>
+          <div class="chart-box" style="flex:1; height:30px;">
+            <canvas :id="'ev-spark-' + m"></canvas>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table class="tbl">
+      <thead><tr>
+        <th>time</th><th>status</th><th>P</th><th>R</th><th>F1</th>
+        <th>ROC-AUC</th><th>FPR</th><th>NFR-02</th><th>duration</th><th></th>
+      </tr></thead>
+      <tbody>
+        <template x-for="e in history" :key="e.job_id">
+          <tr>
+            <td class="mono apt-small" x-text="(new Date((e.started_at||0)*1000)).toISOString().slice(0,19)"></td>
+            <td>
+              <span :class="'status-' + (e.status==='ok' ? 'active' : 'blocked')">●</span>
+              <span x-text="e.status"></span>
+            </td>
+            <td class="mono tabnum" x-text="e.report ? e.report.precision.toFixed(3) : '—'"></td>
+            <td class="mono tabnum" x-text="e.report ? e.report.recall.toFixed(3) : '—'"></td>
+            <td class="mono tabnum" x-text="e.report ? e.report.f1.toFixed(3) : '—'"></td>
+            <td class="mono tabnum" x-text="e.report ? e.report.roc_auc.toFixed(3) : '—'"></td>
+            <td class="mono tabnum" x-text="e.report ? e.report.fpr.toFixed(3) : '—'"></td>
+            <td>
+              <template x-if="e.report && e.report.nfr_02_grade">
+                <span>
+                  <template x-for="ent in Object.entries(e.report.nfr_02_grade)" :key="ent[0]">
+                    <span class="pill" :style="ent[1].passes ? 'background:var(--success-bg);color:var(--success);margin-right:3px;' : 'background:var(--critical-bg);color:var(--critical);margin-right:3px;'"
+                          x-text="(ent[1].passes ? '✓' : '✗') + ' ' + ent[0]"></span>
+                  </template>
+                </span>
+              </template>
+            </td>
+            <td class="mono apt-small" x-text="(e.duration_sec || 0).toFixed(1) + 's'"></td>
+            <td>
+              <button class="btn btn-ghost btn-icon" title="View as Latest"
+                      x-on:click="loadAsLatest(e)">
+                <i data-lucide="external-link" style="pointer-events:none;"></i>
+              </button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="history.length===0">
+          <td colspan="10" style="text-align:center; padding:24px; color:var(--fg-3);">
+            No evaluations recorded for this detector.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ═════════════════════════════════════════════════════════════════════════ #}
+{# ── Tab: RUN NEW ───────────────────────────────────────────────────────── #}
+{# ═════════════════════════════════════════════════════════════════════════ #}
+{% if can_evaluate %}
+<div x-show="tab==='run'" x-cloak>
+  <div class="card" style="padding:18px 20px;">
+    <div class="eyebrow" style="margin-bottom:8px;">Preset</div>
+    <div style="display:flex; gap:8px; margin-bottom:18px;">
+      <template x-for="p in presets" :key="p.id">
+        <button class="btn" :class="runForm.preset===p.id ? 'btn-primary' : 'btn-secondary'"
+                x-on:click="applyPreset(p.id)" style="flex:1; flex-direction:column; align-items:flex-start; padding:12px 14px; gap:2px;">
+          <span style="font-weight:700;" x-text="p.label"></span>
+          <span class="apt-small" style="font-weight:400; opacity:0.85;" x-text="p.hint"></span>
+        </button>
+      </template>
+    </div>
+
+    <div class="form-grid">
+      <div class="field"><label class="field-label">Hours</label>
+        <input class="input" type="number" x-model.number="runForm.hours" min="1" max="720"
+               :disabled="runForm.preset!=='custom'"></div>
+      <div class="field"><label class="field-label">Hosts</label>
+        <input class="input" type="number" x-model.number="runForm.hosts" min="1" max="50"
+               :disabled="runForm.preset!=='custom'"></div>
+      <div class="field"><label class="field-label">Lateral attacks/day</label>
+        <input class="input" type="number" x-model.number="runForm.lateral_attacks" min="0"
+               :disabled="runForm.preset!=='custom'"></div>
+      <div class="field"><label class="field-label">DNS attacks/day</label>
+        <input class="input" type="number" x-model.number="runForm.dns_attacks" min="0"
+               :disabled="runForm.preset!=='custom'"></div>
+      <div class="field"><label class="field-label">Seed</label>
+        <input class="input" type="number" x-model.number="runForm.seed"></div>
+      <div class="field"><label class="field-label">Threshold</label>
+        <input class="input" type="number" step="0.01" min="0" max="1" x-model.number="runForm.threshold"></div>
+    </div>
+
+    <div class="apt-small" style="margin-top:12px; padding:10px 12px; background:var(--bg-2); border-radius:var(--r-2); color:var(--fg-2);">
+      <strong>Expected base rate:</strong> <span class="mono tabnum" x-text="(expectedBaseRate()*100).toFixed(3) + '%'"></span>
+      &nbsp;positive windows across <span class="mono tabnum" x-text="expectedWindowCount()"></span> total windows
+      <span x-show="runForm.preset==='realistic'" style="color:var(--warning); margin-left:8px;">
+        — close to real SOC noise floor; the FPR shown here is the one to quote
+      </span>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:18px;">
+      <button class="btn btn-primary" x-on:click="submitRun()" :disabled="running">
+        <span x-show="!running">Run evaluation against <span class="mono" x-text="detector"></span></span>
+        <span x-show="running">Running… polling status</span>
+      </button>
+    </div>
+    <div class="apt-small" style="color:var(--fg-3); margin-top:8px;" x-show="lastRunMsg" x-text="lastRunMsg"></div>
+  </div>
+</div>
+{% endif %}
+
+</div>{# /x-data #}
+{% endblock %}
+
+{% block extra_body %}
+<script>
+function evaluationsPage() {
+  return {
+    tab: 'latest',
+    detectors: ['lateral_movement', 'dns_exfiltration'],
+    detector: 'lateral_movement',
+
+    // Latest tab
+    latest: null,
+    productionThreshold: 0.5,
+    scrubThreshold: 0.5,
+    scrubMetrics: null,
+    _charts: { roc: null, pr: null, dist: null, calib: null, sparks: {} },
+
+    // History tab
+    history: [],
+
+    // Run tab
+    presets: [
+      { id: 'saturated', label: 'Saturated', hint: 'training-distribution; stable headline metrics' },
+      { id: 'realistic', label: 'Realistic', hint: '~0.005% base rate; the FPR to quote' },
+      { id: 'custom',    label: 'Custom',    hint: 'edit the fields below' },
+    ],
+    runForm: { preset: 'saturated', hours: 48, hosts: 10, lateral_attacks: 8, dns_attacks: 8, seed: 42, threshold: 0.5 },
+    running: false,
+    lastRunMsg: '',
+
+    async init() {
+      // Allow deep-link via ?detector=name
+      const qp = new URLSearchParams(window.location.search);
+      const det = qp.get('detector');
+      if (det && this.detectors.includes(det)) this.detector = det;
+      await this.loadDetector();
+      this.applyPreset('saturated');
+    },
+
+    async loadDetector() {
+      // Production threshold for the "Apply as production" comparison
+      try {
+        const r = await fetch('/models/detectors', { credentials: 'same-origin' });
+        if (r.ok) {
+          const d = await r.json();
+          const det = (d.detectors || []).find(x => x.name === this.detector);
+          if (det) this.productionThreshold = det.threshold != null ? det.threshold : 0.5;
+        }
+      } catch (_) {}
+
+      // Pull history; pick latest successful as the Latest tab's report.
+      try {
+        const r = await fetch('/models/' + this.detector + '/evaluations', { credentials: 'same-origin' });
+        const d = await r.json();
+        this.history = d.evaluations || [];
+      } catch (_) { this.history = []; }
+
+      this.latest = this.history.find(e => e.status === 'ok') || null;
+      if (this.latest && this.latest.report) {
+        this.scrubThreshold = this.latest.report.operating_threshold != null
+          ? this.latest.report.operating_threshold : 0.5;
+        this.onScrub();
+      }
+      // Defer chart build until the panes are visible.
+      if (this.tab === 'latest') await this.$nextTick().then(() => this.buildLatestCharts());
+      if (this.tab === 'history') await this.$nextTick().then(() => this.buildSparklines());
+    },
+
+    // ── Latest tab ─────────────────────────────────────────────────────────
+
+    kpiTiles() {
+      if (!this.latest || !this.latest.report) return [];
+      const r = this.latest.report;
+      const grade = r.nfr_02_grade || {};
+      const tile = (label, value, gradeKey, target) => ({
+        label,
+        value: (typeof value === 'number') ? value.toFixed(3) : '—',
+        passes: gradeKey && grade[gradeKey] ? grade[gradeKey].passes : null,
+        target: target ? ('target ' + target) : '',
+        hint: '',
+      });
+      const ad = (r.alerts_per_day_at_threshold || []).find(
+        x => Math.abs(x.threshold - (r.operating_threshold || 0.5)) < 0.01
+      );
+      return [
+        tile('Precision', r.precision, 'precision', '≥ 0.85'),
+        tile('Recall',    r.recall,    'recall',    '≥ 0.90'),
+        tile('F1',        r.f1,         null),
+        tile('ROC-AUC',   r.roc_auc,   'roc_auc',   '≥ 0.93'),
+        tile('FPR',       r.fpr,       'fpr',       '< 0.05'),
+        { label: 'Alerts/day', value: ad ? ad.alerts_per_day.toFixed(1) : '—',
+          passes: null, hint: ad ? (ad.false_alerts_per_day.toFixed(1) + ' false') : '' },
+      ];
+    },
+
+    threshSweep() {
+      if (!this.latest || !this.latest.report) return [];
+      const sweep = this.latest.report.threshold_sweep || [];
+      const ad = this.latest.report.alerts_per_day_at_threshold || [];
+      return sweep.map(row => {
+        const a = ad.find(x => Math.abs(x.threshold - row.threshold) < 0.001);
+        return { ...row, alerts_per_day: a ? a.alerts_per_day : null };
+      });
+    },
+
+    onScrub() {
+      if (!this.latest || !this.latest.report) { this.scrubMetrics = null; return; }
+      const sweep = this.latest.report.threshold_sweep || [];
+      if (sweep.length === 0) { this.scrubMetrics = null; return; }
+      // Pick the sweep row closest to the scrubbed threshold.
+      let best = sweep[0], bestD = Math.abs(sweep[0].threshold - this.scrubThreshold);
+      for (const row of sweep) {
+        const d = Math.abs(row.threshold - this.scrubThreshold);
+        if (d < bestD) { best = row; bestD = d; }
+      }
+      const hours = this.latest.params ? this.latest.params.hours : 0;
+      const ad = hours > 0 ? ((best.tp + best.fp) / (hours / 24)).toFixed(1) : '—';
+      this.scrubMetrics = { ...best, alerts_per_day: ad };
+    },
+
+    async applyAsProduction() {
+      if (!{{ 'true' if can_manage_detectors else 'false' }}) return;
+      const r = await fetch('/models/detectors/' + this.detector + '/threshold', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold: this.scrubThreshold }),
+      });
+      if (r.ok) {
+        this.productionThreshold = this.scrubThreshold;
+        Alpine.store('toast').push(this.detector + ' production threshold → ' + this.scrubThreshold.toFixed(2), 'ok');
+      } else {
+        Alpine.store('toast').push('Threshold update failed.', 'error');
+      }
+    },
+
+    resetScrubToProduction() {
+      this.scrubThreshold = this.productionThreshold;
+      this.onScrub();
+    },
+
+    destroyCharts() {
+      for (const k of Object.keys(this._charts)) {
+        if (k === 'sparks') {
+          for (const m of Object.keys(this._charts.sparks)) {
+            try { this._charts.sparks[m].destroy(); } catch (_) {}
+            delete this._charts.sparks[m];
+          }
+        } else if (this._charts[k]) {
+          try { this._charts[k].destroy(); } catch (_) {}
+          this._charts[k] = null;
+        }
+      }
+    },
+
+    // Wait until every chart canvas has a non-zero parent width — Chart.js
+    // with responsive:true latches onto whatever it measures at init time and
+    // doesn't recover well from a 0→N grow-then-resize cycle.
+    async _waitForLayout() {
+      const ids = ['ev-roc', 'ev-pr', 'ev-dist', 'ev-calib'];
+      for (let frame = 0; frame < 40; frame++) {       // up to ~660ms
+        await new Promise(r => requestAnimationFrame(r));
+        const allReady = ids.every(id => {
+          const c = document.getElementById(id);
+          if (!c || !c.parentElement) return false;
+          return c.parentElement.offsetWidth > 50;     // any sane width
+        });
+        if (allReady) {
+          console.log('[evaluations] layout ready after', frame + 1, 'frames');
+          return;
+        }
+      }
+      console.warn('[evaluations] layout never settled; building anyway');
+    },
+
+    async buildLatestCharts() {
+      if (!this.latest || !this.latest.report || !window.AptCharts) {
+        console.log('[evaluations] buildLatestCharts skipped',
+          { hasLatest: !!this.latest, hasCharts: !!window.AptCharts });
+        return;
+      }
+      await this._waitForLayout();
+      const r = this.latest.report;
+      console.log('[evaluations] building charts for', this.detector,
+        'roc=' + (r.roc_curve ? r.roc_curve.length : 0),
+        'pr=' + (r.pr_curve ? r.pr_curve.length : 0),
+        'dist=' + (r.score_distribution ? 'y' : 'n'),
+        'calib=' + (r.calibration ? r.calibration.length : 0));
+      this.destroyCharts();
+
+      const rocPts = (r.roc_curve || []).length ? r.roc_curve.map(p => ({ x: p.fpr, y: p.tpr }))
+        : (r.threshold_sweep || []).map(p => ({ x: p.fpr, y: p.recall }));
+      const prPts = (r.pr_curve || []).length ? r.pr_curve.map(p => ({ x: p.recall, y: p.precision }))
+        : (r.threshold_sweep || []).map(p => ({ x: p.recall, y: p.precision }));
+
+      const rocCanvas   = document.getElementById('ev-roc');
+      const prCanvas    = document.getElementById('ev-pr');
+      const distCanvas  = document.getElementById('ev-dist');
+      const calibCanvas = document.getElementById('ev-calib');
+
+      if (rocCanvas)
+        this._charts.roc = window.AptCharts.curveChart(rocCanvas, rocPts, {
+          xLabel: 'FPR', yLabel: 'TPR', seriesLabel: 'ROC (AUC ' + (r.roc_auc||0).toFixed(3) + ')',
+          fill: true, referenceDiagonal: true });
+      if (prCanvas)
+        this._charts.pr = window.AptCharts.curveChart(prCanvas, prPts, {
+          xLabel: 'Recall', yLabel: 'Precision', seriesLabel: 'PR (AP ' + (r.pr_auc||0).toFixed(3) + ')',
+          fill: true });
+      if (distCanvas && r.score_distribution)
+        this._charts.dist = window.AptCharts.scoreHistogram(distCanvas, r.score_distribution);
+      if (calibCanvas && r.calibration && r.calibration.length) {
+        const calibPts = r.calibration.map(b => ({ x: b.predicted_mean, y: b.actual_positive }));
+        this._charts.calib = window.AptCharts.curveChart(calibCanvas, calibPts, {
+          xLabel: 'Predicted probability', yLabel: 'Actual positive frac',
+          seriesLabel: 'observed', fill: false, referenceDiagonal: true });
+      }
+    },
+
+    // ── History tab ────────────────────────────────────────────────────────
+
+    trendLatest(metric) {
+      const v = this.history.find(e => e.report && typeof e.report[metric] === 'number');
+      return v ? v.report[metric].toFixed(3) : '—';
+    },
+
+    async buildSparklines() {
+      if (!window.AptCharts) return;
+      await this._waitForLayout();
+      ['precision','recall','roc_auc','fpr'].forEach(metric => {
+        const canvas = document.getElementById('ev-spark-' + metric);
+        if (!canvas) return;
+        if (this._charts.sparks[metric]) { try { this._charts.sparks[metric].destroy(); } catch (_) {} }
+        // Newest first in history; reverse for chronological sparkline.
+        const vals = this.history.slice(0, 10).reverse()
+          .map(e => (e.report && typeof e.report[metric] === 'number') ? e.report[metric] : null)
+          .filter(v => v !== null);
+        if (vals.length === 0) return;
+        this._charts.sparks[metric] = window.AptCharts.sparkline(canvas, vals);
+      });
+    },
+
+    loadAsLatest(e) {
+      this.latest = e;
+      if (e.report && e.report.operating_threshold != null) {
+        this.scrubThreshold = e.report.operating_threshold;
+      }
+      this.onScrub();
+      this.tab = 'latest';
+      this.$nextTick(() => this.buildLatestCharts());
+    },
+
+    // ── Run tab ────────────────────────────────────────────────────────────
+
+    applyPreset(id) {
+      this.runForm.preset = id;
+      if (id === 'saturated') {
+        Object.assign(this.runForm, { hours: 48, hosts: 10, lateral_attacks: 8, dns_attacks: 8 });
+      } else if (id === 'realistic') {
+        Object.assign(this.runForm, { hours: 168, hosts: 50, lateral_attacks: 1, dns_attacks: 1 });
+      }
+    },
+
+    expectedWindowCount() {
+      const wins = (this.runForm.hours * 60 / 5) * this.runForm.hosts;
+      return Math.max(0, Math.floor(wins));
+    },
+    expectedBaseRate() {
+      const totalAttacks = (this.runForm.lateral_attacks + this.runForm.dns_attacks)
+        * Math.max(1, Math.floor(this.runForm.hours / 24));
+      const wins = this.expectedWindowCount();
+      return wins > 0 ? totalAttacks / wins : 0;
+    },
+
+    async submitRun() {
+      this.running = true;
+      this.lastRunMsg = 'Submitting…';
+      const body = {
+        hours: this.runForm.hours, hosts: this.runForm.hosts,
+        lateral_attacks: this.runForm.lateral_attacks,
+        dns_attacks:     this.runForm.dns_attacks,
+        seed: this.runForm.seed, threshold: this.runForm.threshold,
+      };
+      let jobId = null;
+      try {
+        const r = await fetch('/models/' + this.detector + '/evaluate', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        jobId = d.job_id;
+        this.lastRunMsg = 'Queued as ' + jobId + ' — polling for completion…';
+      } catch (e) {
+        this.running = false;
+        this.lastRunMsg = 'Submit failed: ' + e.message;
+        return;
+      }
+
+      // Poll until the job_id appears in /evaluations with a terminal status.
+      const start = Date.now();
+      while (Date.now() - start < 12 * 60 * 1000) {
+        await new Promise(r => setTimeout(r, 4000));
+        try {
+          const r = await fetch('/models/' + this.detector + '/evaluations', { credentials: 'same-origin' });
+          const d = await r.json();
+          const entry = (d.evaluations || []).find(e => e.job_id === jobId);
+          if (entry && (entry.status === 'ok' || entry.status === 'failed')) {
+            this.history = d.evaluations || [];
+            this.lastRunMsg = 'Completed: ' + entry.status + ' in ' + (entry.duration_sec || 0).toFixed(1) + 's';
+            if (entry.status === 'ok') {
+              this.latest = entry;
+              this.scrubThreshold = entry.report && entry.report.operating_threshold != null
+                ? entry.report.operating_threshold : 0.5;
+              this.onScrub();
+              this.tab = 'latest';
+              await this.$nextTick();
+              this.buildLatestCharts();
+            }
+            this.running = false;
+            return;
+          }
+        } catch (_) {}
+      }
+      this.running = false;
+      this.lastRunMsg = 'Timed out waiting for ' + jobId + ' — check History.';
+    },
+  };
+}
+</script>
+{% endblock %}

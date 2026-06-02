@@ -25,8 +25,18 @@
         <span class="mono tabnum apt-small">conf {{ "%.2f"|format(d.confidence) }}</span>
       </div>
       <div class="apt-small">{{ d.description }}</div>
-      <div class="apt-small" style="color:var(--fg-3);">
-        Source: <span class="mono">{{ d.source_entity }}</span>
+      <div class="apt-small" style="color:var(--fg-3); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span>Source: <span class="mono">{{ d.source_entity }}</span></span>
+        {% if can_manage_fleet %}
+        {# Splits source_entity on ':' so lateral_movement's "host:user" form
+           reduces to "host" for the fleet command. agent_id = COMPUTERNAME
+           on the endpoint. #}
+        <button class="btn btn-ghost btn-icon" title="Isolate source host"
+                x-on:click.stop="window.aptOpenIsolate({{ d.source_entity|tojson }}, {{ alert.alert_id|tojson }}, {{ d.detector_name|tojson }})"
+                style="padding:2px 6px;">
+          <i data-lucide="shield-off"></i>
+        </button>
+        {% endif %}
       </div>
     </div>
     {% endfor %}

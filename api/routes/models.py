@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from api.middleware import require_permission
@@ -83,10 +83,14 @@ async def list_versions(
         versions = _store().list_versions(name)
     except FileNotFoundError:
         return {"name": name, "versions": []}
-    # Strip feature_names from each manifest (verbose) — caller can request
-    # full manifest separately if needed
+    # Strip verbose per-feature arrays from each manifest. The /versions
+    # endpoint feeds dropdowns + summary tiles; the dashboard never needs
+    # the full schema. Callers wanting the raw manifest can hit the file.
     for v in versions:
-        v.get("metadata", {}).pop("feature_names", None)
+        meta = v.get("metadata", {})
+        meta.pop("feature_names", None)
+        meta.pop("feature_min", None)
+        meta.pop("feature_max", None)
     return {"name": name, "versions": versions}
 
 
@@ -341,6 +345,108 @@ async def promote_version(
             "manifest": manifest}
 
 
+@router.post("/{name}/versions/{version}/discard")
+async def discard_version(
+    name: str,
+    version: str,
+    request: Request,
+    user: User = Depends(require_permission("retrain_models")),
+):
+    """Discard a staged version. Flips status staged -> discarded; files
+    stay on disk so the operator can still inspect or undo. Permanent
+    removal is via DELETE /{name}/versions/{version} after discard."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    store = _store()
+    try:
+        manifest = store.discard(name, version)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+    _audit(request).log(
+        action="model.discard",
+        actor=user.username,
+        target=name,
+        details={"version": version},
+    )
+    return {"status": "discarded", "name": name, "version": version,
+            "manifest": manifest}
+
+
+@router.delete("/{name}/versions/{version}", status_code=204)
+async def delete_version(
+    name: str,
+    version: str,
+    request: Request,
+    user: User = Depends(require_permission("retrain_models")),
+):
+    """Permanently delete a discarded or archived version. Refuses active
+    (would brick detection) and staged (operator must discard first)."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    store = _store()
+    try:
+        store.delete(name, version)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+    _audit(request).log(
+        action="model.delete",
+        actor=user.username,
+        target=name,
+        details={"version": version},
+    )
+    return Response(status_code=204)
+
+
+class _BulkDeleteRequest(BaseModel):
+    versions: list[str] = Field(..., min_length=1, max_length=100)
+
+
+@router.post("/{name}/versions/bulk-delete")
+async def bulk_delete_versions(
+    name: str,
+    body: _BulkDeleteRequest,
+    request: Request,
+    user: User = Depends(require_permission("retrain_models")),
+):
+    """Multi-version delete -- same allow-rules as single delete (only
+    discarded or archived). Per-version results returned so the operator
+    sees which ones got deleted vs which were blocked. Partial success
+    is treated as success at the HTTP level (200), with details in body."""
+    if name not in _KNOWN_MODELS:
+        raise HTTPException(404, f"Unknown model: {name}")
+    store = _store()
+    deleted: list[str] = []
+    failed:  list[dict] = []
+    for v in body.versions:
+        try:
+            store.delete(name, v)
+            deleted.append(v)
+        except FileNotFoundError as e:
+            failed.append({"version": v, "error": f"not found: {e}"})
+        except ValueError as e:
+            failed.append({"version": v, "error": str(e)})
+
+    _audit(request).log(
+        action="model.bulk_delete",
+        actor=user.username,
+        target=name,
+        details={
+            "requested":  len(body.versions),
+            "deleted":    len(deleted),
+            "failed":     len(failed),
+            "versions":   body.versions[:20],   # cap for audit log size
+        },
+    )
+    return {"deleted": deleted, "failed": failed,
+            "n_deleted": len(deleted), "n_failed": len(failed)}
+
+
 # ── Drift history (for the dashboard chart) ───────────────────────────────
 
 @router.get("/{name}/drift/history")
@@ -509,14 +615,30 @@ def _run_evaluation(name, body, job_id, job_path, actor, app):
     ]
     env = dict(os.environ)
     started = _time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    # 10-minute ceiling so a runaway eval (e.g. someone passes hours=720 with
+    # a huge boost-round override) doesn't pin a worker indefinitely. The
+    # current observed duration is ~75s for the default 48h synthetic eval.
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
+        timed_out = False
+    except subprocess.TimeoutExpired as te:
+        proc = te  # carries .stdout/.stderr (possibly None) + .cmd
+        timed_out = True
     duration = _time.time() - started
+    if timed_out:
+        status = "failed"
+        exit_code = -15  # mirror SIGTERM convention
+        stderr_tail = "evaluation timed out after 600s — child killed (SIGTERM)"
+    else:
+        status = "ok" if proc.returncode == 0 else "failed"
+        exit_code = proc.returncode
+        stderr_tail = (proc.stderr or "")[-2000:]
     summary = {
         "job_id": job_id, "model": name,
-        "status": "ok" if proc.returncode == 0 else "failed",
-        "exit_code": proc.returncode,
+        "status": status,
+        "exit_code": exit_code,
         "duration_sec": round(duration, 2),
-        "stderr_tail": (proc.stderr or "")[-2000:],
+        "stderr_tail": stderr_tail,
         "started_at": started,
         "params": body.model_dump(),
     }

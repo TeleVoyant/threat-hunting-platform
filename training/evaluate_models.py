@@ -145,6 +145,114 @@ def threshold_sweep(y_true: np.ndarray, y_score: np.ndarray,
     return rows
 
 
+# ── Dense curves for the dashboard ───────────────────────────────────────
+
+def roc_curve_points(y_true: np.ndarray, y_score: np.ndarray, n_points: int = 50) -> list[dict]:
+    """ROC curve as {fpr, tpr, threshold} samples across uniformly-spaced thresholds.
+
+    The dashboard renders a line chart with area fill from these points; 50 is
+    enough to look smooth without bloating the JSON manifest."""
+    if len(np.unique(y_true)) < 2:
+        return []
+    thresholds = np.linspace(0.0, 1.0, n_points)
+    out = []
+    for t in thresholds:
+        y_pred = (y_score >= t).astype(int)
+        cm = confusion_matrix(y_true, y_pred)
+        tpr = cm["tp"] / (cm["tp"] + cm["fn"]) if (cm["tp"] + cm["fn"]) else 0.0
+        out.append({
+            "threshold": float(t),
+            "fpr": round(fpr(cm), 6),
+            "tpr": round(tpr, 6),
+        })
+    return out
+
+
+def pr_curve_points(y_true: np.ndarray, y_score: np.ndarray, n_points: int = 50) -> list[dict]:
+    """Precision/recall pairs at uniformly-spaced thresholds (mirror of ROC)."""
+    if y_true.sum() == 0:
+        return []
+    thresholds = np.linspace(0.0, 1.0, n_points)
+    out = []
+    for t in thresholds:
+        y_pred = (y_score >= t).astype(int)
+        cm = confusion_matrix(y_true, y_pred)
+        prf = precision_recall_f1(cm)
+        out.append({
+            "threshold": float(t),
+            "precision": round(prf["precision"], 6),
+            "recall":    round(prf["recall"],    6),
+        })
+    return out
+
+
+def score_distribution(y_true: np.ndarray, y_score: np.ndarray, n_bins: int = 20) -> dict:
+    """Per-class histogram of model confidences.
+
+    The dashboard renders this as a paired bar chart so the analyst can see
+    class separability visually. Strong models show two tight peaks at 0 and 1
+    with little overlap; weak models show overlapping distributions."""
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    pos_mask = y_true == 1
+    pos_counts, _ = np.histogram(y_score[pos_mask], bins=edges)
+    neg_counts, _ = np.histogram(y_score[~pos_mask], bins=edges)
+    midpoints = ((edges[:-1] + edges[1:]) / 2).round(4).tolist()
+    return {
+        "bin_midpoints":   midpoints,
+        "positive_counts": [int(c) for c in pos_counts.tolist()],
+        "negative_counts": [int(c) for c in neg_counts.tolist()],
+    }
+
+
+def calibration_bins(y_true: np.ndarray, y_score: np.ndarray, n_bins: int = 10) -> list[dict]:
+    """Reliability diagram bins: predicted_prob vs observed positive fraction.
+
+    A perfectly-calibrated model places all bins on the y=x diagonal. Wide
+    departures mean the model's confidence numbers can't be read as
+    probabilities — useful context when deciding the operating threshold."""
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    out = []
+    for i in range(n_bins):
+        lo, hi = edges[i], edges[i + 1]
+        # Include hi only in the last bin so [0,1] is fully covered without overlap
+        if i == n_bins - 1:
+            mask = (y_score >= lo) & (y_score <= hi)
+        else:
+            mask = (y_score >= lo) & (y_score < hi)
+        n = int(mask.sum())
+        if n == 0:
+            continue
+        predicted_mean = float(y_score[mask].mean())
+        actual_frac = float(y_true[mask].mean())
+        out.append({
+            "bin_midpoint":    float(round((lo + hi) / 2, 4)),
+            "predicted_mean":  float(round(predicted_mean, 4)),
+            "actual_positive": float(round(actual_frac, 4)),
+            "n": n,
+        })
+    return out
+
+
+def alerts_per_day(sweep: list[dict], hours: int) -> list[dict]:
+    """Project alerts/day at each threshold from the sweep table.
+
+    'Alerts' = TP + FP (everything the operator would see). Useful to translate
+    a precision/recall tradeoff into operator burden ('200 alerts/day' lands
+    differently than 'precision 0.4')."""
+    if hours <= 0:
+        return []
+    days = hours / 24.0
+    return [
+        {
+            "threshold":     row["threshold"],
+            "alerts_per_day":   round((row["tp"] + row["fp"]) / days, 2),
+            "true_alerts_per_day":  round(row["tp"] / days, 2),
+            "false_alerts_per_day": round(row["fp"] / days, 2),
+        }
+        for row in sweep
+    ]
+
+
 # ── NFR-02 grading ─────────────────────────────────────────────────────────
 
 NFR_02_TARGETS = {
@@ -297,9 +405,19 @@ def main() -> int:
         "roc_auc":             roc_auc(y, y_score),
         "pr_auc":              pr_auc(y, y_score),
         "threshold_sweep":     threshold_sweep(y, y_score),
+        # Dense curves for the /dashboard/evaluations page. Legacy run JSONs
+        # that pre-date these keys still render — the page falls back to
+        # threshold_sweep for ROC/PR if these are absent.
+        "roc_curve":           roc_curve_points(y, y_score),
+        "pr_curve":            pr_curve_points(y, y_score),
+        "score_distribution":  score_distribution(y, y_score),
+        "calibration":         calibration_bins(y, y_score),
         "grouping":            grouping,
         "window_minutes":      args.window_minutes,
     }
+    metrics["alerts_per_day_at_threshold"] = alerts_per_day(
+        metrics["threshold_sweep"], args.hours,
+    )
     metrics["nfr_02_grade"] = grade(metrics)
 
     # ── Console report ───────────────────────────────────────────────────────

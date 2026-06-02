@@ -12,6 +12,7 @@ Every model file is:
 import hashlib
 import hmac as _hmac
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -51,7 +52,7 @@ class ModelStore:
         here) or "staged" (awaits admin promotion via promote() before being
         used by detectors). Auto-retrain writes "staged"; CLI writes "active".
         """
-        if status not in ("staged", "active", "archived"):
+        if status not in ("staged", "active", "archived", "discarded"):
             raise ValueError(f"Invalid status: {status!r}")
         version = f"v{int(time.time())}"
         model_dir = self.base_dir / name / version
@@ -199,13 +200,38 @@ class ModelStore:
                 f"Model signature verification failed for {name}/{version}"
             )
 
+        # Anonymizer state must match training (gg). Mismatch silently changes
+        # per-user feature values at inference.
+        meta = manifest.get("metadata", {}) or {}
+        trained_anon = meta.get("anonymize")
+        runtime_anon = os.environ.get("APT_ANONYMIZE", "1") == "1"
+        if trained_anon is not None and bool(trained_anon) != runtime_anon:
+            raise SecurityError(
+                f"Anonymizer mismatch for {name}/{version}: "
+                f"trained={trained_anon} runtime={runtime_anon}"
+            )
+
         model = xgb.Booster()
         model.load_model(str(model_path))
+
+        # Schema pin (t): when feature_names is present in the manifest,
+        # the booster's own feature_names must match exactly — otherwise
+        # the inference pipeline would silently zero-fill / permute columns.
+        trained_feats = meta.get("feature_names")
+        if trained_feats:
+            booster_feats = model.feature_names or []
+            if list(booster_feats) != list(trained_feats):
+                raise SecurityError(
+                    f"Feature schema drift for {name}/{version}: "
+                    f"trained={len(trained_feats)} live={len(booster_feats)}"
+                )
+
         logger.info(
             "Model loaded and verified",
             name=name,
             version=version,
             hash=actual_hash[:16],
+            features=len(model.feature_names or []),
         )
         return model
 
@@ -241,7 +267,7 @@ class ModelStore:
         return new_manifest
 
     def _update_status(self, name: str, version: str, status: str) -> dict:
-        if status not in ("staged", "active", "archived"):
+        if status not in ("staged", "active", "archived", "discarded"):
             raise ValueError(f"Invalid status: {status!r}")
         manifest_path = self.base_dir / name / version / "manifest.json"
         if not manifest_path.exists():
@@ -250,6 +276,64 @@ class ModelStore:
         manifest["status"] = status
         manifest_path.write_text(json.dumps(manifest, indent=2))
         return manifest
+
+    def discard(self, name: str, version: str) -> dict:
+        """Flip a staged version's status to 'discarded'.
+
+        Operator-driven action: the staged model was reviewed and rejected
+        (eval metrics didn't pass NFR-02, looked overfit, drift wasn't
+        meaningful, etc.). Files stay on disk so the operator can still
+        inspect them or undo via a future un-discard; permanent removal
+        is a separate `delete()` call.
+
+        Refuses to discard an active or archived version (those have a
+        deliberate lifecycle path: rollback for archived, promote a
+        replacement before archiving an active). Only `staged` can be
+        discarded; trying anything else raises ValueError.
+        """
+        current = self._load_manifest(name, version)
+        if current.get("status") != "staged":
+            raise ValueError(
+                f"Cannot discard {name}/{version}: status is "
+                f"{current.get('status', 'unknown')!r}, only 'staged' can be discarded"
+            )
+        new_manifest = self._update_status(name, version, "discarded")
+        logger.info("Model discarded", name=name, version=version)
+        return new_manifest
+
+    def delete(self, name: str, version: str) -> None:
+        """Permanently remove a version's directory from disk.
+
+        Only allowed for 'discarded' or 'archived' versions. NEVER for
+        'active' (would brick detection) or 'staged' (operator hasn't
+        decided yet -- discard first, then delete from the discarded list).
+        Raises ValueError if status doesn't permit deletion, FileNotFoundError
+        if the directory's already gone.
+        """
+        import shutil
+
+        current = self._load_manifest(name, version)
+        status = current.get("status", "unknown")
+        if status not in ("discarded", "archived"):
+            raise ValueError(
+                f"Cannot delete {name}/{version}: status is {status!r}, "
+                f"only 'discarded' or 'archived' versions can be permanently deleted"
+            )
+        version_dir = self.base_dir / name / version
+        if not version_dir.exists():
+            raise FileNotFoundError(f"{name}/{version} directory already gone")
+        # rmtree the version dir. The "latest" symlink shouldn't point here
+        # because that would mean status=active, which we already rejected.
+        shutil.rmtree(version_dir)
+        logger.warning("Model version permanently deleted",
+                       name=name, version=version, was_status=status)
+
+    def _load_manifest(self, name: str, version: str) -> dict:
+        """Helper: load + return a version's manifest dict, or raise."""
+        manifest_path = self.base_dir / name / version / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Manifest missing for {name}/{version}")
+        return json.loads(manifest_path.read_text())
 
     def list_versions(self, name: str) -> list[dict]:
         """List all versions of a model with metadata.
@@ -290,8 +374,12 @@ class ModelStore:
         return versions
 
     def list_staged(self, name: str) -> list[dict]:
-        """Staged versions only — the admin promotion queue."""
+        """Staged versions only -- the admin promotion queue."""
         return [v for v in self.list_versions(name) if v.get("status") == "staged"]
+
+    def list_discarded(self, name: str) -> list[dict]:
+        """Discarded versions only -- the admin permanently-delete queue."""
+        return [v for v in self.list_versions(name) if v.get("status") == "discarded"]
 
     def _sign(self, content_hash: str) -> str:
         """HMAC signature of the content hash."""

@@ -65,6 +65,7 @@ class Detection(BaseModel):
     mitre_techniques: list[str] = []  # ["T1003.001", "T1021.002"]
     timestamp: datetime
     event_window_id: str
+    correlation_id: Optional[str] = None  # ties detection back to the poll cycle
 
 
 class EnrichedAlert(BaseModel):
@@ -82,6 +83,7 @@ class EnrichedAlert(BaseModel):
     attack_path: Optional[dict] = None  # Graph data for visualization
     recommended_actions: list[str]
     timestamp: datetime
+    correlation_id: Optional[str] = None  # propagated through the pipeline
 
 
 

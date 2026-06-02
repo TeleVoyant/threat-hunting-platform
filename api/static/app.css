@@ -55,6 +55,29 @@
 /* ── Layout extensions ─────────────────────────────────────── */
 .app { font-feature-settings: "ss01","cv11"; }
 
+/* Alpine x-cloak — hide elements until Alpine has finished binding so
+   {{ }} and x-text placeholders never paint as raw markup. Without this
+   rule the attribute is inert (silent FOUC). */
+[x-cloak] { display: none !important; }
+
+/* Chart container: Chart.js with responsive:true + maintainAspectRatio:false
+   samples parent.clientWidth at init time. Inside a CSS grid, each child's
+   computed min-width is min-content, which collapses to 0 for canvas elements
+   until layout settles — so the chart builds at 0×0 and "disappears" once
+   layout completes. Setting min-width:0 on cards used as grid items lets
+   Chart.js measure correctly. The .chart-box class tags the inner container
+   that holds the canvas, also forcing min-* to 0 for the same reason. */
+.card { min-width: 0; }
+.chart-box { position: relative; min-width: 0; min-height: 0; }
+
+/* Sidebar toggle: nuke pointer-events on every descendant so Lucide's SVG
+   swap can never steal the click target from the button. Inline style on
+   the original <i data-lucide> doesn't survive the swap; a class-scoped
+   CSS rule does. */
+.sidebar-toggle > *,
+.sidebar-toggle svg,
+.sidebar-toggle path { pointer-events: none; }
+
 /* Sidebar collapse — driven by <html data-sidebar="collapsed|expanded"> so the
    first paint matches the user's stored preference; no flash of expanded
    content. The toggle in app.js writes both localStorage AND this attribute. */

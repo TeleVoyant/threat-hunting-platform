@@ -1,20 +1,31 @@
-# detection/detectors/ransomware.py   ← New file, that's it
+# detection/detectors/ransomware.py
+# ─────────────────────────────────────────────────────────────────────────────
+# Pattern reference, NOT a working detector. Documents how a new detector
+# plugs into the registry; auto-discovery imports this file but the class is
+# never instantiated (no registry.register() call) so it can't error on
+# startup. To enable, fill in the BaseDetector abstract methods, register
+# below, and add an entry in config/detectors.yml.
+# ─────────────────────────────────────────────────────────────────────────────
+
 from shared.interfaces import BaseDetector
-from detection.registry import registry
 
 
-class RansomwareDetector(BaseDetector):
-    def name(self) -> str:
-        return "ransomware"
-
+class RansomwareDetector(BaseDetector):  # noqa: ABC — intentional skeleton
+    """
+    To make this real:
+      1. Implement name() / detection_type() / required_features()
+      2. Implement load_model() / predict() (or subclass XGBoostDetectorBase)
+      3. Implement get_mitre_techniques()
+      4. Uncomment registry.register(RansomwareDetector()) below.
+      5. Add to config/detectors.yml:
+            ransomware:
+              enabled: true
+              model_path: "detection/models/ransomware/latest"
+              threshold: 0.6
+    """
     # ... implement the interface ...
 
 
-registry.register(RansomwareDetector())
-
-# Then in detectors.yaml, enable it:
-# detectors:
-#   ransomware:
-#     enabled: true
-#     model_path: "models/ransomware_v1.json"
-#     threshold: 0.6
+# Intentionally NOT registered — uncomment to activate the detector.
+# from detection.registry import registry
+# registry.register(RansomwareDetector())

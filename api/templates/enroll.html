@@ -2,73 +2,242 @@
 {% block title %}Enroll endpoint — APT THP{% endblock %}
 {% block content %}
 
-<div x-data="enrollPage()">
+<div x-data="enrollPage()" x-init="load()">
 
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
   <div>
     <h1 class="apt-h1">Enroll endpoint</h1>
-    <div class="eyebrow" style="margin-top:4px;">Generate a PowerShell one-liner to deploy on a Windows laptop</div>
+    <div class="eyebrow" style="margin-top:4px;">
+      Generate a one-line installer URL. Single-use, expires in 30 min.
+    </div>
   </div>
 </div>
 
 {% if not bootstrap_token_set %}
-<div class="card card-pad" style="border-left:3px solid var(--critical); margin-bottom:14px;">
-  <strong style="color:var(--critical);">FLEET_BOOTSTRAP_TOKEN is not set on the server.</strong>
-  Set it in <code>.env</code> and restart the API before enrolling endpoints.
+<div class="card card-pad" style="border-left:3px solid var(--warning); margin-bottom:14px;">
+  <strong style="color:var(--warning);">Note:</strong> the legacy
+  <code>FLEET_BOOTSTRAP_TOKEN</code> is not set on the server. The new URL-served
+  installer below works without it (it uses single-use enrollment tokens instead)
+  but any scripts that hit <code>/fleet/agents/enroll</code> with
+  <code>X-Bootstrap-Token</code> will fail.
 </div>
 {% endif %}
 
 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+
+  {# ── 1. Generate ─────────────────────────────────────────────────────── #}
   <div class="card card-pad">
-    <h2 class="apt-h3" style="margin-bottom:14px;">1. Generate command</h2>
+    <h2 class="apt-h3" style="margin-bottom:14px;">1. Generate installer URL</h2>
+
     <div class="field" style="margin-bottom:14px;">
-      <label class="field-label">Server IP / hostname</label>
-      <input class="input" type="text" x-model="serverIp" placeholder="e.g. 192.168.1.100 or threats.example.com">
-      <span class="apt-small" style="color:var(--fg-3);">The address Windows endpoints will reach for Wazuh + Platform API.</span>
+      <label class="field-label">Server IP / hostname <span style="color:var(--fg-3);">(optional)</span></label>
+      <input class="input" type="text" x-model="form.server_ip"
+             placeholder="auto: uses the address you opened this page on">
+      <span class="apt-small" style="color:var(--fg-3);">
+        Override only if endpoints reach the platform on a different address than this dashboard.
+      </span>
     </div>
-    <div class="field" style="margin-bottom:18px;">
+
+    <div class="field" style="margin-bottom:14px;">
       <label class="field-label">Profile</label>
-      <select class="input" x-model="profile">
-        <option value="Lean">Lean — low CPU / RAM, minimal Sysmon coverage</option>
-        <option value="Balanced" selected>Balanced — corporate-laptop default</option>
-        <option value="Full">Full — dedicated SOC endpoint</option>
+      <select class="input" x-model="form.profile">
+        <option value="Full">Full — full telemetry (recommended; matches trained detectors)</option>
+        <option value="Balanced">Balanced — corporate-laptop default</option>
+        <option value="Lean">Lean — low-spec endpoints only</option>
       </select>
+      <span class="apt-small" style="color:var(--fg-3);">
+        Full streams every Sysmon EID + Security + DNS-Client channel — required for the
+        credential-lateral-movement and DNS-exfil detectors to perform at trained accuracy.
+      </span>
     </div>
-    <button class="btn btn-primary" x-on:click="generate()" :disabled="!serverIp || loading">
-      <i data-lucide="sparkles"></i> Generate one-liner
+
+    <div class="field" style="margin-bottom:14px;">
+      <label class="field-label">Capacity <span style="color:var(--fg-3);">(endpoints this token can enrol)</span></label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="number" min="1" max="1000" class="input"
+               style="width:100px;" :disabled="form.unlimited"
+               x-model.number="form.max_uses">
+        <label class="apt-small" style="display:flex; align-items:center; gap:6px; color:var(--fg-2);">
+          <input type="checkbox" x-model="form.unlimited">
+          Unlimited (TTL still applies)
+        </label>
+      </div>
+      <span class="apt-small" style="color:var(--fg-3);">
+        Same laptop running the one-liner twice counts as one use.
+        A leaked link can enrol at most this many rogue endpoints before exhausting.
+      </span>
+    </div>
+
+    <div class="field" style="margin-bottom:18px;">
+      <label class="field-label">Expires in</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="range" min="5" max="240" step="5"
+               x-model.number="form.expires_in_minutes" style="flex:1;">
+        <span class="mono tabnum" style="min-width:50px;"
+              x-text="form.expires_in_minutes + ' min'"></span>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" x-on:click="generate()" :disabled="loading">
+      <i data-lucide="sparkles" style="pointer-events:none;"></i> Generate installer URL
     </button>
   </div>
 
-  <div class="card card-pad" x-show="powershell" x-cloak>
+  {# ── 2. Run ──────────────────────────────────────────────────────────── #}
+  <div class="card card-pad" x-show="latest" x-cloak>
     <h2 class="apt-h3" style="margin-bottom:14px;">2. Run on the Windows endpoint</h2>
+
     <ol style="padding-left:20px; margin:0 0 14px 0; line-height:1.7;">
       <li>Open <strong>PowerShell as Administrator</strong> on the laptop.</li>
-      <li><code>cd</code> to the folder containing <code>deploy_endpoint.ps1</code>.</li>
-      <li>Set the Wazuh registration password as an env var:<br>
-        <code class="apt-small">$env:WAZUH_REGISTRATION_PASSWORD = "your-password"</code></li>
-      <li>Paste the command below.</li>
+      <li>Paste &amp; run the one-liner below.</li>
     </ol>
-    <div style="position:relative;">
-      <pre style="background:var(--bg-0); color:var(--apt-teal-bright); padding:14px 16px; border-radius:var(--r-3); overflow-x:auto; font:500 12px var(--font-mono); border:1px solid var(--border-1); white-space:pre-wrap;" x-text="powershell"></pre>
+
+    <div class="apt-small" style="margin-bottom:10px; color:var(--fg-2);">
+      This installer URL is <strong>reusable</strong> until it expires or its capacity is reached.
+      Share with endpoint owners directly (chat, email, printed QR).
+      <span x-show="latest && latest.max_uses === 0" style="color:var(--warning);">
+        Unlimited — anyone holding the link can enrol an agent within the TTL.
+      </span>
+    </div>
+
+    <div style="position:relative; margin-bottom:10px;">
+      <pre style="background:var(--bg-0); color:var(--apt-teal-bright); padding:14px 16px; border-radius:var(--r-3); overflow-x:auto; font:500 12px var(--font-mono); border:1px solid var(--border-1); white-space:pre-wrap; word-break:break-all;"
+           x-text="latest && latest.one_liner"></pre>
       <button class="btn btn-secondary" style="position:absolute; top:8px; right:8px;"
-              x-on:click="aptCopy(powershell, 'PowerShell copied')">
-        <i data-lucide="copy"></i> Copy
+              x-on:click="aptCopy(latest.one_liner, 'One-liner copied')">
+        <i data-lucide="copy" style="pointer-events:none;"></i> Copy
       </button>
     </div>
-    <div class="apt-small" style="color:var(--fg-3); margin-top:10px;">
-      <span x-text="'Profile: ' + profile"></span> ·
-      <span x-text="'Server: ' + serverIp"></span>
+
+    {# Standalone ZIP — for air-gapped endpoints / USB seeding. The token is
+       baked into launch.ps1; bundle expires when the token does. #}
+    <div style="margin:10px 0; padding:10px 12px; border:1px solid var(--border-1); border-radius:var(--r-2); background:var(--bg-2);">
+      <div class="apt-small" style="color:var(--fg-2); margin-bottom:6px;">
+        <strong>Air-gapped / standalone install?</strong>
+        Download a self-contained ZIP (scripts + configs + Wazuh MSI + Sysmon ZIP, ~15&nbsp;MB)
+        and copy it to the endpoint via USB. Extract, run <code>launch.ps1</code>
+        as Administrator. No network access needed during install.
+      </div>
+      <a class="btn btn-secondary" :href="'/install/bundle.zip?token=' + (latest && latest.token)"
+         download>
+        <i data-lucide="download" style="pointer-events:none;"></i> Download bundle.zip
+      </a>
+    </div>
+
+    <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+      <div style="flex:0 0 auto;">
+        <img :src="latest && latest.qr_data_url" alt="QR for installer URL"
+             style="width:144px; height:144px; border:1px solid var(--border-1); border-radius:var(--r-2); background:#fff; padding:6px;"
+             x-show="latest && latest.qr_data_url">
+        <div class="apt-small" style="text-align:center; color:var(--fg-3); margin-top:4px;">
+          Scan from phone, open URL
+        </div>
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <div class="apt-small" style="color:var(--fg-3);">URL</div>
+        <div class="mono apt-small" style="word-break:break-all; margin-bottom:8px;"
+             x-text="latest && latest.url"></div>
+        <div class="apt-small" style="color:var(--fg-3);">Profile</div>
+        <div class="mono apt-small" style="margin-bottom:8px;" x-text="latest && latest.profile"></div>
+        <div class="apt-small" style="color:var(--fg-3);">Expires</div>
+        <div class="mono tabnum apt-small"
+             :style="ttlSeconds <= 0 ? 'color:var(--critical);' : ''"
+             x-text="ttlLabel()"></div>
+      </div>
     </div>
   </div>
+
 </div>
 
-<div class="card card-pad" style="margin-top:14px;">
-  <h2 class="apt-h3" style="margin-bottom:10px;">Bulk rollout (PowerShell Remoting)</h2>
-  <div class="apt-small" style="color:var(--fg-2); margin-bottom:10px;">
-    To push to many laptops at once, copy <code>scripts/</code> to each machine via PSRemoting and invoke
-    <code>deploy_endpoint.ps1</code> with the same parameters. See <code>platformusage.md §6.2</code> for the loop.
+{# ── 3. Active tokens table ────────────────────────────────────────────── #}
+<div class="card" style="margin-top:14px;">
+  <div style="padding:14px 18px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border-1);">
+    <h2 class="apt-h3">Active tokens</h2>
+    <span class="apt-small" style="color:var(--fg-3);"
+          x-text="(active.length || 0) + ' outstanding'"></span>
   </div>
+  <table class="tbl">
+    <thead><tr>
+      <th>id</th><th>profile</th><th>used</th><th>created</th><th>expires</th>
+      <th>created by</th><th></th>
+    </tr></thead>
+    {# Multiple <tbody> children of <table> are valid HTML. We use one tbody
+       per token so each iteration can emit two <tr>s (row + expand). #}
+    <template x-for="t in active" :key="t.id">
+      <tbody>
+        <tr>
+          <td class="mono tabnum">
+            <button class="btn btn-ghost btn-icon" title="Show enrolled endpoints"
+                    style="vertical-align:middle;"
+                    x-on:click="toggleExpand(t.id)">
+              <i :data-lucide="isExpanded(t.id) ? 'chevron-down' : 'chevron-right'"
+                 style="pointer-events:none;"></i>
+            </button>
+            <span x-text="t.id"></span>
+          </td>
+          <td><span class="pill" style="background:var(--bg-3); color:var(--fg-1);" x-text="t.profile"></span></td>
+          <td class="mono apt-small">
+            <span x-text="t.use_count"></span>
+            / <span x-text="t.max_uses === 0 ? '∞' : t.max_uses"></span>
+          </td>
+          <td class="mono apt-small" x-text="(new Date(t.created_at*1000)).toISOString().slice(11,19)"></td>
+          <td class="mono apt-small"
+              :style="(t.expires_at*1000 - Date.now()) < 60000 ? 'color:var(--warning);' : ''"
+              x-text="remaining(t.expires_at)"></td>
+          <td class="mono apt-small" x-text="t.created_by"></td>
+          <td>
+            <button class="btn btn-ghost btn-icon" title="Revoke"
+                    x-on:click="revoke(t.id)">
+              <i data-lucide="x" style="pointer-events:none;"></i>
+            </button>
+          </td>
+        </tr>
+        <tr x-show="isExpanded(t.id)" x-cloak>
+          <td colspan="7" style="padding:8px 18px 14px 48px; background:var(--bg-1);">
+            <div class="apt-small" x-show="!t.uses || t.uses.length === 0" style="color:var(--fg-3);">
+              No endpoints enrolled with this token yet.
+            </div>
+            <template x-for="u in (t.uses || [])" :key="u.agent_id">
+              <div class="apt-small mono" style="padding:2px 0;">
+                <span style="color:var(--apt-teal-bright);" x-text="u.agent_id"></span>
+                <span style="color:var(--fg-3);"> · </span>
+                <span x-text="(new Date(u.used_at*1000)).toLocaleString()"></span>
+                <template x-if="u.client_ip">
+                  <span><span style="color:var(--fg-3);"> · </span><span x-text="u.client_ip"></span></span>
+                </template>
+              </div>
+            </template>
+          </td>
+        </tr>
+      </tbody>
+    </template>
+    <tbody x-show="active.length === 0">
+      <tr>
+        <td colspan="7" style="text-align:center; padding:20px; color:var(--fg-3);">
+          No active tokens. Generate one above to enrol a new endpoint.
+        </td>
+      </tr>
+    </tbody>
+  </table>
 </div>
+
+<details class="card" style="margin-top:14px;">
+  <summary style="padding:12px 18px; cursor:pointer; color:var(--fg-2);">
+    <i data-lucide="chevron-right" style="pointer-events:none;"></i> Bulk rollout tips
+  </summary>
+  <div style="padding:0 18px 18px;">
+    <div class="apt-small" style="color:var(--fg-2);">
+      For 20–100 personal laptops on a flat LAN (no AD, no remote-exec), the practical patterns are:
+    </div>
+    <ul style="margin:8px 0 0 20px; color:var(--fg-2); line-height:1.7;">
+      <li><strong>One multi-use token, share the link</strong> — set Capacity to your endpoint count (or Unlimited for a rollout day), paste the one-liner into a group chat / email, each laptop owner runs it. Revoke the moment the rollout window closes.</li>
+      <li><strong>QR for in-person</strong> — print the QR or project on screen; each owner scans on their phone, copies the URL, pastes into elevated PowerShell.</li>
+      <li><strong>One token per endpoint</strong> — Capacity = 1 (default in earlier versions). Tightest blast radius if a link leaks. Walk over (or RDP in) to each machine.</li>
+      <li><strong>Standalone bundle.zip</strong> — air-gapped seeding via USB. The bundle has the same single/multi-use semantics as the URL.</li>
+      <li><strong>Air-gapped serving</strong> — the Wazuh MSI + Sysmon ZIP are cached on the platform; endpoints only reach the platform API, never the public internet.</li>
+    </ul>
+  </div>
+</details>
 
 </div>
 
@@ -78,30 +247,104 @@
 <script>
 function enrollPage() {
   return {
-    serverIp: '{{ default_server_ip|e }}',
-    profile: 'Balanced',
-    powershell: '',
+    form: {
+      server_ip: '{{ default_server_ip|e }}',
+      profile: 'Full',
+      expires_in_minutes: 30,
+      max_uses: 10,
+      unlimited: false,
+    },
+    latest: null,        // most recent {id, token, url, one_liner, expires_at, profile}
+    active: [],          // active-token list from GET /install/tokens
+    expanded: {},        // token_id → bool; per-row expand state for uses list
     loading: false,
+    ttlSeconds: 0,
+    _ttlTimer: null,
+    _activeTimer: null,
+
+    async load() {
+      await this.refreshActive();
+      this._activeTimer = setInterval(() => this.refreshActive(), 15000);
+    },
+
     async generate() {
       this.loading = true;
       try {
-        const r = await fetch('/fleet/enrollment-helper', {
+        const r = await fetch('/install/tokens', {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profile: this.profile, server_ip: this.serverIp }),
+          body: JSON.stringify({
+            profile: this.form.profile,
+            server_ip: this.form.server_ip || null,
+            expires_in_minutes: this.form.expires_in_minutes,
+            // 0 ⇒ unlimited on the server side
+            max_uses: this.form.unlimited ? 0 : this.form.max_uses,
+          }),
         });
-        if (r.ok) {
-          const j = await r.json();
-          this.powershell = j.powershell;
-          Alpine.store('toast').push('One-liner generated.', 'ok');
-        } else {
+        if (!r.ok) {
           const t = await r.text();
-          Alpine.store('toast').push('Failed: ' + t, 'error');
+          Alpine.store('toast').push('Generate failed: ' + t, 'error');
+          return;
         }
+        this.latest = await r.json();
+        this.ttlSeconds = Math.max(0, this.latest.expires_at - (Date.now() / 1000));
+        if (this._ttlTimer) clearInterval(this._ttlTimer);
+        this._ttlTimer = setInterval(() => {
+          this.ttlSeconds = Math.max(0, this.latest.expires_at - (Date.now() / 1000));
+        }, 1000);
+        await this.refreshActive();
+        Alpine.store('toast').push('Token generated.', 'ok');
       } finally {
         this.loading = false;
       }
     },
+
+    async refreshActive() {
+      try {
+        const r = await fetch('/install/tokens', { credentials: 'same-origin' });
+        if (r.ok) {
+          const d = await r.json();
+          this.active = d.active || [];
+          // Chevron icons depend on per-row state; redraw after the DOM
+          // updates so the new <i data-lucide> nodes render.
+          this.$nextTick(() => window.lucide && window.lucide.createIcons());
+        }
+      } catch (_) {}
+    },
+
+    toggleExpand(id) {
+      this.expanded[id] = !this.expanded[id];
+      this.$nextTick(() => window.lucide && window.lucide.createIcons());
+    },
+    isExpanded(id) { return !!this.expanded[id]; },
+
+    async revoke(id) {
+      const r = await fetch('/install/tokens/' + id, {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      if (r.ok || r.status === 204) {
+        Alpine.store('toast').push('Token revoked.', 'ok');
+        if (this.latest && this.latest.id === id) this.latest = null;
+        this.refreshActive();
+      } else {
+        Alpine.store('toast').push('Revoke failed.', 'error');
+      }
+    },
+
+    ttlLabel() {
+      const s = Math.floor(this.ttlSeconds);
+      if (s <= 0) return 'expired';
+      const m = Math.floor(s / 60), r = s % 60;
+      return m + ':' + (r < 10 ? '0' : '') + r;
+    },
+
+    remaining(epoch) {
+      const s = Math.max(0, Math.floor(epoch - Date.now()/1000));
+      if (s <= 0) return 'expired';
+      const m = Math.floor(s / 60);
+      return m + ' min';
+    },
+
   };
 }
 </script>

@@ -175,6 +175,10 @@ services:
       # are still verified via HMAC signatures on load, so a tampered file
       # would fail the integrity check at registry.hot_reload() time.
       - ./detection/models:/app/detection/models
+      # Mount the compose file read-only so /admin/hardening (which runs
+      # scripts/audit_compose_hardening.py inside the container) can audit
+      # it. Without this the script fails with "docker-compose.yml not found".
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
       - platform-data:/app/data # writable model/audit/alert state
     tmpfs:
       - /tmp:size=64M,mode=1777 # scratch (read_only rootfs forbids /tmp writes)

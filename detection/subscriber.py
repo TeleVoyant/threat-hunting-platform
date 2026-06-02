@@ -27,6 +27,7 @@ from collections import defaultdict
 from typing import Optional
 
 from detection.drift_monitor import DriftMonitor
+from detection.model_store import SecurityError
 from detection.registry import registry
 from features.pipeline import FeaturePipeline
 from shared.events import bus, DETECTION_MADE, EVENT_INGESTED, MODEL_DRIFT_DETECTED
@@ -67,6 +68,10 @@ class DetectionSubscriber:
         # (clean → drift). Without this we'd fire on every batch while drift
         # persists, swamping subscribers.
         self._drift_state: dict[str, bool] = {}
+        # Per-detector load errors, surfaced to /diag/services so an analyst
+        # sees the real reason a detector is dark (h). Keyed by detector name,
+        # value is a short string ("missing model", "TAMPERED:hash-mismatch", …).
+        self._load_errors: dict[str, str] = {}
 
         for name, cfg in detector_config.items():
             if not cfg.get("enabled"):
@@ -83,17 +88,37 @@ class DetectionSubscriber:
                     )
                     logger.info("Detector model loaded", name=name, path=model_path)
                 else:
+                    self._load_errors[name] = "no model_path configured"
                     logger.warning("Detector enabled but no model_path", name=name)
             except KeyError:
+                self._load_errors[name] = "detector not registered"
                 logger.warning("Detector enabled but not registered", name=name)
             except FileNotFoundError:
+                self._load_errors[name] = f"model file missing at {model_path}"
                 logger.warning(
                     "Detector model file missing — detector skipped",
                     name=name, path=model_path,
                 )
+            except SecurityError as e:
+                # Integrity failure — operators must see this prominently.
+                self._load_errors[name] = f"INTEGRITY:{e}"
+                logger.critical("Detector model failed integrity check",
+                                name=name, error=str(e))
             except Exception as e:
+                self._load_errors[name] = f"{type(e).__name__}: {e}"
                 logger.error("Failed to load detector model",
                              name=name, error=str(e))
+
+    def load_errors(self) -> dict[str, str]:
+        """Snapshot of per-detector load failures for /diag/services."""
+        return dict(self._load_errors)
+
+    @property
+    def drift_monitors(self) -> dict:
+        """Public alias for `_monitors`. The dashboard's drift-history route
+        (api/routes/models.py) and a couple of older callsites read the
+        public name — keep both working."""
+        return self._monitors
 
     # ── Bus wiring ──────────────────────────────────────────────────────────
 
@@ -130,30 +155,79 @@ class DetectionSubscriber:
             # Nothing to do until at least one model is loaded
             return
 
-        groups = self._group_by_entity(events)
+        correlation_id = data.get("correlation_id")
+        # Per-detector grouping (b): lateral_movement wants (hostname, user) so
+        # one credential is followed across hosts; dns_exfiltration wants
+        # hostname-only because DNS rarely has user attribution. Without this
+        # split, dns features fragment across users on the same host.
+        host_user_groups = self._group_by_entity(events, mode="hostname_user")
+        host_groups      = self._group_by_entity(events, mode="hostname")
         logger.info("Processing batch",
-                    groups=len(groups), total_events=len(events))
+                    host_user_groups=len(host_user_groups),
+                    host_groups=len(host_groups),
+                    total_events=len(events))
 
-        for source_entity, group_events in groups.items():
-            try:
-                features = self.pipeline.extract_all(group_events, source_entity)
-            except Exception as e:
-                logger.error("Feature extraction failed",
-                             source_entity=source_entity, error=str(e))
+        # Map detector → its declared grouping (matches trainer scheduler).
+        # Unknown detectors fall back to hostname_user (the historical default).
+        _DETECTOR_GROUPING = {
+            "lateral_movement": "hostname_user",
+            "dns_exfiltration": "hostname",
+        }
+
+        for name, cfg in self.detector_config.items():
+            if name not in self._loaded:
+                continue
+            threshold = float(cfg.get("threshold", 0.5))
+            detector = registry.get(name)
+            grouping = _DETECTOR_GROUPING.get(name, "hostname_user")
+            groups = host_user_groups if grouping == "hostname_user" else host_groups
+
+            # Batched DMatrix path (s) — collect all groups' feature vectors
+            # and run one predict call when the detector supports it.
+            batch_rows: list[tuple[str, list[NormalizedEvent], "FeatureVector"]] = []
+            for source_entity, group_events in groups.items():
+                try:
+                    features = self.pipeline.extract_all(group_events, source_entity)
+                except Exception as e:
+                    logger.error("Feature extraction failed",
+                                 source_entity=source_entity, error=str(e))
+                    continue
+                batch_rows.append((source_entity, group_events, features))
+
+            if not batch_rows:
                 continue
 
-            for name, cfg in self.detector_config.items():
-                if name not in self._loaded:
-                    continue
-                threshold = float(cfg.get("threshold", 0.5))
-                detector = registry.get(name)
-
+            # Single batched call (s) — predict_batch internally decides
+            # which rows need SHAP based on threshold (u). Falls back to
+            # per-row predict() for legacy detectors that don't subclass
+            # XGBoostDetectorBase.
+            predictions: list = []
+            if hasattr(detector, "predict_batch"):
                 try:
-                    detection = detector.predict(features)
+                    predictions = detector.predict_batch(
+                        [fv for _, _, fv in batch_rows],
+                        threshold=threshold,
+                    )
                 except Exception as e:
-                    logger.error("Detector predict failed",
+                    logger.error("Detector predict_batch failed",
                                  detector=name, error=str(e))
+                    predictions = [None] * len(batch_rows)
+            else:
+                for _, _, fv in batch_rows:
+                    try:
+                        predictions.append(detector.predict(fv))
+                    except Exception as e:
+                        logger.error("Detector predict failed",
+                                     detector=name, error=str(e))
+                        predictions.append(None)
+
+            for (source_entity, group_events, features), detection in zip(
+                batch_rows, predictions
+            ):
+                if detection is None:
                     continue
+                if correlation_id and not detection.correlation_id:
+                    detection.correlation_id = correlation_id
 
                 # Drift monitor sees EVERY prediction (above OR below threshold)
                 # — that's how it tracks confidence distribution shifts.
@@ -169,12 +243,14 @@ class DetectionSubscriber:
                     severity=detection.severity.value,
                     source_entity=source_entity,
                     window_id=features.event_window_id,
+                    correlation_id=correlation_id,
                 )
 
                 await bus.emit(DETECTION_MADE, {
-                    "detection": detection,
-                    "features":  features,
-                    "events":    group_events,
+                    "detection":      detection,
+                    "features":       features,
+                    "events":         group_events,
+                    "correlation_id": correlation_id,
                 })
 
         # ── Per-batch drift check (cheap — just compares rolling stats) ──────
@@ -201,13 +277,24 @@ class DetectionSubscriber:
     @staticmethod
     def _group_by_entity(
         events: list[NormalizedEvent],
+        mode: str = "hostname_user",
     ) -> dict[str, list[NormalizedEvent]]:
         """
-        Group by (hostname, user). Events without a user (e.g., DNS queries)
-        fall back to hostname-only — they still aggregate per laptop.
+        Group events for feature extraction.
+
+        mode="hostname_user": key = "host:user" (fallback "host") — matches the
+            lateral_movement trainer grouping, so one credential's activity is
+            aggregated even when it touches many hosts.
+
+        mode="hostname": key = host — matches the dns_exfiltration trainer
+            grouping; DNS events rarely have user attribution so per-user
+            splitting just fragments the signal.
         """
         groups: dict[str, list[NormalizedEvent]] = defaultdict(list)
         for e in events:
-            key = f"{e.hostname}:{e.user}" if e.user else e.hostname
+            if mode == "hostname_user":
+                key = f"{e.hostname}:{e.user}" if e.user else e.hostname
+            else:
+                key = e.hostname
             groups[key].append(e)
         return groups

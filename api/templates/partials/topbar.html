@@ -1,6 +1,11 @@
 <header class="topbar" style="display:flex; align-items:center; gap:14px; padding:0 20px;">
-  <button class="btn btn-ghost btn-icon" title="Toggle sidebar"
-          x-on:click="$store.sidebar.toggle()">
+  {# Vanilla onclick — Alpine's x-on:click on this button never fired in
+     production despite the store + handler being correctly wired. Direct
+     handler bypass eliminates every Alpine-timing failure mode. CSS rule
+     in app.css forces pointer-events:none on every descendant (covers
+     Lucide's SVG swap). #}
+  <button type="button" class="btn btn-ghost btn-icon sidebar-toggle"
+          title="Toggle sidebar" onclick="aptToggleSidebar()">
     <i data-lucide="panel-left"></i>
   </button>
 
@@ -14,11 +19,15 @@
 
   <div class="spacer"></div>
 
-  <span x-data="uptimePill" x-init="start()"
+  {# Mounted by aptStartUptimePill() in app.js (DOMContentLoaded). The id
+     is the contract — fetches /diag/uptime and writes the label here every
+     1s with a 30s resync. Vanilla because the prior Alpine x-data/x-init
+     pair silently failed to fire in production. #}
+  <span id="uptime-pill"
         title="Time since the platform process started"
         style="display:inline-flex; align-items:center; gap:6px; font:500 12px var(--font-sans); color:var(--fg-2); white-space:nowrap;">
     <span class="heartbeat" style="width:7px; height:7px; border-radius:50%; background:var(--apt-teal); box-shadow:0 0 6px var(--apt-teal); flex:0 0 auto;"></span>
-    <span x-text="'Up ' + (label || '…')">Up …</span>
+    <span id="uptime-pill-text">Up …</span>
   </span>
 
   <a class="btn btn-ghost btn-icon" title="Pair phone (companion app)"

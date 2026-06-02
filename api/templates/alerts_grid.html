@@ -110,4 +110,172 @@
 
 </div>
 
+{# Isolate-from-detection modal. Self-contained Alpine component; opened by
+   window.aptOpenIsolate(sourceEntity, alertId, detectorName) which the
+   investigation panel's per-detection shield button calls. Splits the
+   source_entity on ':' so lateral_movement's "host:user" reduces to "host"
+   for the fleet command. #}
+<template x-teleport="body">
+  <div x-data="alertIsolateModal()" x-init="bind()">
+    <div class="scrim" x-show="open" x-on:click="open = false" x-transition.opacity></div>
+    <div x-show="open" x-transition style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:65;">
+      <div class="modal">
+        <div style="padding:18px 20px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="apt-h3">
+            <i data-lucide="shield-off"></i>
+            Isolate <span class="mono" x-text="agentId"></span>
+          </h2>
+          <button class="btn btn-ghost btn-icon" x-on:click="open = false"><i data-lucide="x"></i></button>
+        </div>
+        <div style="padding:18px 20px; display:flex; flex-direction:column; gap:12px;">
+          <div class="apt-small" style="color:var(--fg-3);">
+            Triggered from
+            <span class="mono" x-text="detectorName"></span>
+            on alert
+            <span class="mono" x-text="(alertId || '').slice(0,14) + '…'"></span>.
+            Source: <span class="mono" x-text="sourceEntity"></span>
+            <span x-show="agentId !== sourceEntity"> →&nbsp;agent_id&nbsp;<span class="mono" x-text="agentId"></span></span>
+          </div>
+          <div class="field">
+            <label class="field-label">Level</label>
+            <div style="display:flex; gap:8px;">
+              <label class="chip" :class="level === 'light' ? 'active' : ''" style="cursor:pointer;">
+                <input type="radio" value="light" x-model="level" style="display:none;"> Light · pivot block
+              </label>
+              <label class="chip" :class="level === 'standard' ? 'active' : ''" style="cursor:pointer;">
+                <input type="radio" value="standard" x-model="level" style="display:none;"> Standard · LAN-only
+              </label>
+              <label class="chip" :class="level === 'full' ? 'active' : ''" style="cursor:pointer;">
+                <input type="radio" value="full" x-model="level" style="display:none;"> Full · lifeline-only
+              </label>
+            </div>
+            <span class="apt-small" style="color:var(--fg-3); display:block; margin-top:4px;" x-text="levelHint()"></span>
+          </div>
+          <div class="field">
+            <label class="field-label">Auto-unisolate after</label>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <input type="range" min="0" max="7" step="1" x-model.number="ttlIdx" style="flex:1;">
+              <span class="mono" style="min-width:80px; text-align:right;" x-text="ttlLabel()"></span>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Reason (audit-logged)</label>
+            <input class="input" type="text" maxlength="200" x-model="reason"
+                   :placeholder="defaultReason()">
+          </div>
+        </div>
+        <div style="padding:14px 20px; border-top:1px solid var(--border-1); display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn btn-secondary" x-on:click="open = false">Cancel</button>
+          <button class="btn btn-primary" :disabled="busy" x-on:click="submit()">
+            <i data-lucide="shield-off"></i>
+            <span x-text="busy ? 'Sending…' : 'Isolate ' + level"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+// TTL slider stops (minutes). Index 4 = 240 = operator default.
+const ALERT_ISO_TTL_STOPS = [15, 30, 60, 120, 240, 480, 960, 1440];
+
+function alertIsolateModal() {
+  return {
+    open: false, busy: false,
+    sourceEntity: '', agentId: '', alertId: '', detectorName: '',
+    level: 'standard', ttlIdx: 4, reason: '',
+
+    // Wire the global window.aptOpenIsolate trigger that the investigation
+    // panel's shield-off button invokes. Defining it inside Alpine init so
+    // the function closes over the component's reactive state.
+    bind() {
+      window.aptOpenIsolate = (sourceEntity, alertId, detectorName) => {
+        // Strip ":<user>" from lateral_movement's "host:user" entity so the
+        // agent_id matches the fleet store (which keys on COMPUTERNAME).
+        const host = (sourceEntity || '').split(':')[0];
+        this.sourceEntity = sourceEntity || '';
+        this.agentId      = host;
+        this.alertId      = alertId || '';
+        this.detectorName = detectorName || '';
+        this.level        = 'standard';
+        this.ttlIdx       = 4;
+        this.reason       = '';
+        this.busy         = false;
+        this.open         = true;
+        // Lucide icons in the freshly-shown modal need to render.
+        if (window.lucide) { setTimeout(() => window.lucide.createIcons(), 30); }
+      };
+    },
+
+    ttlMinutes() {
+      const i = Math.min(Math.max(0, this.ttlIdx | 0), ALERT_ISO_TTL_STOPS.length - 1);
+      return ALERT_ISO_TTL_STOPS[i];
+    },
+    ttlLabel() {
+      const m = this.ttlMinutes();
+      if (m < 60)   return m + ' min';
+      if (m < 1440) return (m / 60) + ' h';
+      return (m / 60) + ' h (24h cap)';
+    },
+    levelHint() {
+      if (this.level === 'light')    return 'Blocks SMB/RDP/WinRM/Kerberos out + non-corp DNS. User keeps browsing.';
+      if (this.level === 'standard') return 'Cuts public internet, keeps RFC1918 LAN. User sees a notification.';
+      if (this.level === 'full')     return 'Blocks everything except platform lifeline; disables VPN/virtual adapters; toast.';
+      return '';
+    },
+    defaultReason() {
+      // Pre-suggest a reason tied to the originating detection so the audit
+      // trail stays linked even if the operator hits "Isolate" without typing.
+      return this.alertId
+        ? `Detection ${this.alertId.slice(0,14)} (${this.detectorName})`
+        : 'Detection-triggered isolation';
+    },
+
+    async submit() {
+      if (!this.agentId) return;
+      this.busy = true;
+      const body = {
+        command_type: 'isolate',
+        params: {
+          level:       this.level,
+          ttl_minutes: this.ttlMinutes(),
+          reason:      this.reason || this.defaultReason(),
+        },
+      };
+      try {
+        const r = await fetch(`/fleet/agents/${encodeURIComponent(this.agentId)}/commands`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (r.ok) {
+          if (window.Alpine && Alpine.store('toast')) {
+            Alpine.store('toast').push(
+              `Isolate (${this.level}) queued for ${this.agentId} · agent applies on next poll.`,
+              'ok', 5000);
+          }
+          this.open = false;
+        } else {
+          const t = await r.text();
+          if (window.Alpine && Alpine.store('toast')) {
+            Alpine.store('toast').push('Isolate failed: ' + t, 'error', 7000);
+          } else {
+            alert('Isolate failed: ' + t);
+          }
+        }
+      } catch (e) {
+        if (window.Alpine && Alpine.store('toast')) {
+          Alpine.store('toast').push('Isolate network error: ' + e, 'error', 7000);
+        }
+      } finally {
+        this.busy = false;
+      }
+    },
+  };
+}
+</script>
 {% endblock %}

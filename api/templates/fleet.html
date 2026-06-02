@@ -76,6 +76,7 @@
         <th>Agent</th>
         <th>Profile</th>
         <th>Last status</th>
+        <th title="Installed agent_command_handler.ps1 version">Handler</th>
         <th>Last seen</th>
         <th>Seq</th>
         <th>Pending</th>
@@ -92,9 +93,57 @@
         </td>
         <td>
           {% if a.last_status %}
-            <span class="status-{{ 'active' if a.last_status == 'ok' else 'open' }}">●</span> {{ a.last_status }}
+            {% set ls = a.last_status|lower %}
+            {% if ls.startswith('isolated:') %}
+              {% set lvl = ls.split(':',2)[1]|upper %}
+              {% if lvl == 'LIGHT' %}
+                <span class="pill" style="background:var(--warning-bg); color:var(--warning);">ISOLATED · {{ lvl }}</span>
+              {% else %}
+                <span class="pill" style="background:var(--danger-bg); color:var(--danger);">ISOLATED · {{ lvl }}</span>
+              {% endif %}
+            {% elif ls.startswith('panic-unisolated:') %}
+              {% set rest = ls.split(':',2) %}
+              {% set lvl = rest[1]|upper if rest|length > 1 else '?' %}
+              <span class="pill" style="background:var(--warning-bg); color:var(--warning);"
+                    title="Panic-recovered from {{ lvl }} (deadman or local panic)">PANIC RECOVERED · {{ lvl }}</span>
+            {% elif ls == 'ok' %}
+              <span class="status-active">●</span> ok
+            {% else %}
+              <span class="status-open">●</span> {{ a.last_status }}
+            {% endif %}
           {% else %}
             <span style="color:var(--fg-3);">never seen</span>
+          {% endif %}
+        </td>
+        <td>
+          {# Handler-version pill. Four states (decided in order):
+             1. handler_update_status set AND != 'ok'  → RED "UPDATE FAILED · <code>"
+                (overrides version-match logic — the LAST push failed even if
+                this agent is still happily running an old-but-working ver)
+             2. on latest live version                  → green LATEST
+             3. on some other reported version          → amber version label
+             4. never reported a version yet            → grey "—"  #}
+          {% if a.handler_update_status and a.handler_update_status != 'ok' %}
+            <span class="pill apt-small"
+                  style="background:var(--danger-bg); color:var(--danger); cursor:pointer; font-weight:600;"
+                  title="Click for details. Last OTA: {{ a.handler_update_status }}"
+                  x-on:click="openUpdateFailedModal('{{ a.agent_id }}')">
+              UPDATE FAILED · {{ a.handler_update_status }}
+            </span>
+          {% elif a.handler_version %}
+            {% if live_handler_version and a.handler_version == live_handler_version %}
+              <span class="pill" style="background:var(--success-bg); color:var(--success);"
+                    title="On {{ a.handler_version }} (the live version)">LATEST</span>
+            {% else %}
+              <span class="pill mono apt-small"
+                    style="background:var(--warning-bg); color:var(--warning); cursor:pointer;"
+                    title="Click to push live version. On {{ a.handler_version }}; live is {{ live_handler_version or '— none —' }}."
+                    x-on:click="pushLatestHandler('{{ a.agent_id }}')">
+                {{ a.handler_version }}
+              </span>
+            {% endif %}
+          {% else %}
+            <span style="color:var(--fg-3);" title="No version reported yet">—</span>
           {% endif %}
         </td>
         <td class="mono apt-small" style="color:var(--fg-3);">
@@ -113,6 +162,18 @@
                   x-on:click="openCmdModal('{{ a.agent_id }}')">
             <i data-lucide="terminal"></i> Send command
           </button>
+          {% if a.last_status and a.last_status.lower().startswith('isolated:') %}
+          <button class="btn btn-secondary" title="Lift isolation"
+                  x-on:click="quickUnisolate('{{ a.agent_id }}')"
+                  style="background:var(--warning-bg); color:var(--warning);">
+            <i data-lucide="unlock"></i> Unisolate
+          </button>
+          {% else %}
+          <button class="btn btn-ghost btn-icon" title="Isolate"
+                  x-on:click="openIsolateModal('{{ a.agent_id }}')">
+            <i data-lucide="shield-off"></i>
+          </button>
+          {% endif %}
           <button class="btn btn-ghost btn-icon" title="Rotate secret"
                   x-on:click="rotateSecret('{{ a.agent_id }}')">
             <i data-lucide="key-round"></i>
@@ -120,7 +181,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" style="text-align:center; color:var(--fg-3); padding:32px;">
+      <tr><td colspan="9" style="text-align:center; color:var(--fg-3); padding:32px;">
         No endpoints enrolled. Go to <a class="linkish" href="/dashboard/enroll">Enroll endpoint</a> to add one.
       </td></tr>
       {% endfor %}
@@ -141,6 +202,26 @@
           </button>
         </div>
         <div style="padding:18px 20px; display:flex; flex-direction:column; gap:12px;">
+          {# Prominent CTA: only renders when this agent is NOT on the live
+             handler version. One-tap push of the live version to this
+             specific agent, no command-type picker needed. Sits above the
+             generic dropdown so it's impossible to miss during an out-of-
+             date incident. #}
+          <div x-show="cmdModal.handlerOutOfDate"
+               style="padding:12px; background:var(--warning-bg); border-radius:8px;
+                      display:flex; align-items:center; gap:10px;">
+            <i data-lucide="alert-circle" style="color:var(--warning);"></i>
+            <div style="flex:1;">
+              <div style="font-weight:600; color:var(--warning);">Handler out of date</div>
+              <div class="apt-small" style="color:var(--fg-2);">
+                On <span class="mono" x-text="cmdModal.handlerVersion || '—'"></span> ·
+                live is <span class="mono" x-text="cmdModal.liveHandlerVersion"></span>
+              </div>
+            </div>
+            <button class="btn btn-primary" x-on:click="pushLatestHandler(cmdModal.agentId)">
+              <i data-lucide="package"></i> Push latest handler
+            </button>
+          </div>
           <div class="field">
             <label class="field-label">Command</label>
             <select class="input" x-model="cmdModal.type">
@@ -148,7 +229,24 @@
               <option value="toggle_telemetry">Toggle telemetry</option>
               <option value="restart_services">Restart services</option>
               <option value="get_status">Get status</option>
+              <option value="isolate">Isolate (containment)</option>
+              <option value="unisolate">Unisolate</option>
+              <option value="update_handler">Update handler (specific version)</option>
+              <option value="rollback_handler">Rollback handler (live ↔ .bak)</option>
             </select>
+          </div>
+          <div class="field" x-show="cmdModal.type === 'update_handler'">
+            <label class="field-label">Version label</label>
+            <input class="input mono" type="text" x-model="cmdModal.handlerPushVersion"
+                   :placeholder="cmdModal.liveHandlerVersion || 'e.g. v2026.05.30-1428'">
+            <span class="apt-small" style="color:var(--fg-3); display:block; margin-top:4px;">
+              Leave blank to push the current live version.
+            </span>
+          </div>
+          <div class="field" x-show="cmdModal.type === 'rollback_handler'">
+            <label class="field-label">Reason (audit-logged)</label>
+            <input class="input" type="text" maxlength="200" x-model="cmdModal.reason"
+                   placeholder="e.g. v2026.05.30-1428 broke isolation self-heal">
           </div>
           <div class="field" x-show="cmdModal.type === 'set_profile'">
             <label class="field-label">Profile</label>
@@ -186,10 +284,122 @@
               <option value="all">all</option>
             </select>
           </div>
+          <div x-show="cmdModal.type === 'isolate'" style="display:flex; flex-direction:column; gap:10px;">
+            <div class="field">
+              <label class="field-label">Level</label>
+              <div style="display:flex; gap:8px;">
+                <label class="chip" :class="cmdModal.level === 'light' ? 'active' : ''" style="cursor:pointer;">
+                  <input type="radio" value="light" x-model="cmdModal.level" style="display:none;">
+                  Light · pivot block
+                </label>
+                <label class="chip" :class="cmdModal.level === 'standard' ? 'active' : ''" style="cursor:pointer;">
+                  <input type="radio" value="standard" x-model="cmdModal.level" style="display:none;">
+                  Standard · LAN-only
+                </label>
+                <label class="chip" :class="cmdModal.level === 'full' ? 'active' : ''" style="cursor:pointer;">
+                  <input type="radio" value="full" x-model="cmdModal.level" style="display:none;">
+                  Full · lifeline-only
+                </label>
+              </div>
+              <span class="apt-small" style="color:var(--fg-3); display:block; margin-top:4px;"
+                    x-text="levelHint()"></span>
+            </div>
+            <div class="field">
+              <label class="field-label">Auto-unisolate after</label>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <input type="range" min="0" max="7" step="1" x-model.number="cmdModal.ttlIdx" style="flex:1;">
+                <span class="mono" style="min-width:80px; text-align:right;" x-text="ttlLabel()"></span>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Reason (audit-logged)</label>
+              <input class="input" type="text" maxlength="200" x-model="cmdModal.reason"
+                     placeholder="e.g. T1110 brute-force on DC replica probe">
+            </div>
+          </div>
+          <div class="field" x-show="cmdModal.type === 'unisolate'">
+            <label class="field-label">Reason (optional, audit-logged)</label>
+            <input class="input" type="text" maxlength="200" x-model="cmdModal.reason"
+                   placeholder="e.g. confirmed false positive">
+          </div>
         </div>
         <div style="padding:14px 20px; border-top:1px solid var(--border-1); display:flex; justify-content:flex-end; gap:8px;">
           <button class="btn btn-secondary" x-on:click="cmdModal.open = false">Cancel</button>
           <button class="btn btn-primary" x-on:click="sendCmd()">Enqueue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+{# UPDATE FAILED detail modal — opened from the red pill on the Handler col. #}
+<template x-teleport="body">
+  <div>
+    <div class="scrim" x-show="updateFailModal.open" x-on:click="updateFailModal.open = false" x-transition.opacity></div>
+    <div x-show="updateFailModal.open" x-transition
+         style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:55;">
+      <div class="modal" style="max-width:560px;">
+        <div style="padding:18px 20px; border-bottom:1px solid var(--border-1);
+                    display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="apt-h3">
+            <i data-lucide="alert-octagon" style="color:var(--danger);"></i>
+            OTA update failed
+          </h2>
+          <button class="btn btn-ghost btn-icon" x-on:click="updateFailModal.open = false">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div style="padding:18px 20px; display:flex; flex-direction:column; gap:14px;">
+          <div class="apt-small" style="color:var(--fg-2);">
+            Agent <span class="mono" x-text="updateFailModal.agentId"></span> reported a failed
+            post-write verification on its last OTA self-update. The agent's
+            auto-rollback restored the previous working version, so polling
+            and isolation paths still work — but the new handler bytes are
+            NOT live until you re-push.
+          </div>
+
+          <div style="display:grid; grid-template-columns: 130px 1fr; gap:8px 14px;
+                      padding:14px; background:var(--bg-1); border-radius:8px;">
+            <div class="apt-small" style="color:var(--fg-3);">Failure code</div>
+            <div>
+              <span class="pill apt-small"
+                    style="background:var(--danger-bg); color:var(--danger); font-weight:600;"
+                    x-text="updateFailModal.status"></span>
+            </div>
+
+            <div class="apt-small" style="color:var(--fg-3);">Failed version</div>
+            <div class="mono apt-small" x-text="updateFailModal.badVersion || '—'"></div>
+
+            <div class="apt-small" style="color:var(--fg-3);">Now running</div>
+            <div class="mono apt-small" x-text="updateFailModal.onVersion || '—'"></div>
+
+            <div class="apt-small" style="color:var(--fg-3);">Reported</div>
+            <div class="apt-small" x-text="fmtRelTime(updateFailModal.at)"></div>
+
+            <div class="apt-small" style="color:var(--fg-3); align-self:start;">Detail</div>
+            <div class="mono apt-small" style="word-break:break-word;"
+                 x-text="updateFailModal.detail"></div>
+          </div>
+
+          <div class="apt-small" style="color:var(--fg-3);">
+            <strong>What each code means:</strong><br>
+            <span class="mono">sha_mismatch</span> — on-disk bytes don't match the manifest sha (write corruption).<br>
+            <span class="mono">parse_failed</span> — the written file fails a PS-parse read-back test.<br>
+            <span class="mono">invoke_failed</span> — the written file can't be invoked with switch args (this is what
+            broke the deadman before the 2026-06-02 fix).<br>
+            <span class="mono">rolled_back</span> — generic failure; agent reverted to .bak.
+          </div>
+        </div>
+
+        <div style="padding:14px 20px; border-top:1px solid var(--border-1);
+                    display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn btn-ghost" x-on:click="updateFailModal.open = false">Close</button>
+          <button class="btn btn-primary"
+                  x-on:click="retryFailedUpdate()"
+                  :disabled="updateFailModal.busy">
+            <i data-lucide="rotate-cw"></i>
+            <span x-text="updateFailModal.busy ? 'Pushing…' : 'Retry push'"></span>
+          </button>
         </div>
       </div>
     </div>
@@ -202,12 +412,57 @@
 
 {% block extra_body %}
 <script>
+// TTL slider stops — minutes. Index 4 = 240 (the operator default).
+const ISO_TTL_STOPS = [15, 30, 60, 120, 240, 480, 960, 1440];
+
+// Fleet-wide live handler version, baked in at page render. Used by the
+// modal to decide whether to show the "Push latest handler" CTA per agent.
+const LIVE_HANDLER_VERSION = {{ live_handler_version|tojson if live_handler_version else 'null' }};
+// Map of agent_id → installed handler_version, for the modal's per-agent
+// out-of-date decision. Re-rendered on each fleet-page load.
+const AGENT_HANDLER_VERSIONS = {
+{% for a in agents %}
+  {{ a.agent_id|tojson }}: {{ a.handler_version|tojson if a.handler_version else 'null' }}{% if not loop.last %},{% endif %}
+{% endfor %}
+};
+
+// Map of agent_id → { status, detail, bad_version, at } for the UPDATE FAILED
+// detail modal. Populated from each agent's heartbeat-reported handler_update_*
+// fields. Null/absent entries mean the agent is healthy or hasn't reported.
+const AGENT_HANDLER_UPDATE = {
+{% for a in agents %}
+  {{ a.agent_id|tojson }}: {
+    status:      {{ a.handler_update_status|tojson if a.handler_update_status else 'null' }},
+    detail:      {{ a.handler_update_detail|tojson if a.handler_update_detail else 'null' }},
+    bad_version: {{ a.handler_update_bad_version|tojson if a.handler_update_bad_version else 'null' }},
+    at:          {{ a.handler_update_at|tojson if a.handler_update_at else 'null' }},
+    on_version:  {{ a.handler_version|tojson if a.handler_version else 'null' }}
+  }{% if not loop.last %},{% endif %}
+{% endfor %}
+};
+
 function fleetPage() {
   return {
     selected: [],
     filterProfile: null,
-    cmdModal: { open: false, agentId: '', type: 'get_status',
-                 profile: 'Balanced', source: 'sysmon', enabled: true, service: 'wazuh' },
+    cmdModal: {
+      open: false, agentId: '', type: 'get_status',
+      profile: 'Balanced', source: 'sysmon', enabled: true, service: 'wazuh',
+      // Isolation fields
+      level: 'standard', ttlIdx: 4, reason: '',
+      // Handler push fields
+      handlerVersion: null,           // this agent's current installed version
+      liveHandlerVersion: LIVE_HANDLER_VERSION,
+      handlerOutOfDate: false,
+      handlerPushVersion: '',         // operator-entered specific version (blank = live)
+    },
+    // OTA update-failure detail modal. Opened from the RED "UPDATE FAILED"
+    // pill in the Handler column; carries the agent's last reported
+    // handler_update_* fields so the operator can diagnose + retry.
+    updateFailModal: {
+      open: false, agentId: '', status: '', detail: '', badVersion: '',
+      at: null, onVersion: '', busy: false,
+    },
     toggleAll(checked) {
       this.selected = checked
         ? Array.from(document.querySelectorAll('tbody input[type=checkbox]')).map(c => c.value)
@@ -216,14 +471,141 @@ function fleetPage() {
     },
     openCmdModal(agentId) {
       this.cmdModal.agentId = agentId;
+      // Populate handler context for the modal's CTA + dropdown.
+      const installed = AGENT_HANDLER_VERSIONS[agentId] || null;
+      this.cmdModal.handlerVersion       = installed;
+      this.cmdModal.handlerOutOfDate     = !!(LIVE_HANDLER_VERSION && installed && installed !== LIVE_HANDLER_VERSION);
+      this.cmdModal.handlerPushVersion   = '';
       this.cmdModal.open = true;
+    },
+    openIsolateModal(agentId) {
+      // Same modal, pre-set to Isolate with sane defaults so the operator
+      // can confirm in two clicks during an active incident.
+      this.openCmdModal(agentId);  // populate handler context too
+      this.cmdModal.type = 'isolate';
+      this.cmdModal.level = 'standard';
+      this.cmdModal.ttlIdx = 4;     // 240 minutes
+      this.cmdModal.reason = '';
+    },
+
+    // Open the UPDATE FAILED detail modal for the given agent. Reads from
+    // the AGENT_HANDLER_UPDATE map baked into the page at render time.
+    openUpdateFailedModal(agentId) {
+      const u = AGENT_HANDLER_UPDATE[agentId] || {};
+      this.updateFailModal = {
+        open: true,
+        agentId,
+        status:     u.status || 'unknown',
+        detail:     u.detail || '(no detail reported)',
+        badVersion: u.bad_version || '',
+        at:         u.at,
+        onVersion:  u.on_version || '',
+        busy: false,
+      };
+    },
+
+    // Retry the OTA push for an agent whose last update failed. Calls the
+    // new admin endpoint which re-issues the LIVE version (not the failed
+    // version) to that single agent. Useful for transient failures.
+    async retryFailedUpdate() {
+      if (!this.updateFailModal.agentId || this.updateFailModal.busy) return;
+      if (!confirm(`Re-push the live handler version to ${this.updateFailModal.agentId}?\n\nApplied on the agent's next poll (~60 s). The agent's post-write verification will re-run.`)) return;
+      this.updateFailModal.busy = true;
+      try {
+        const r = await fetch(`/admin/agents/${encodeURIComponent(this.updateFailModal.agentId)}/handler-retry`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        if (r.ok) {
+          const j = await r.json();
+          Alpine.store('toast').push(`Retry queued for ${this.updateFailModal.agentId} (${j.version_label}).`, 'ok');
+          this.updateFailModal.open = false;
+        } else {
+          const t = await r.text();
+          Alpine.store('toast').push('Retry failed: ' + t, 'error', 7000);
+        }
+      } catch (e) {
+        Alpine.store('toast').push('Retry network error: ' + e, 'error');
+      } finally {
+        this.updateFailModal.busy = false;
+      }
+    },
+
+    fmtRelTime(unixSec) {
+      if (!unixSec) return '—';
+      const ms = Date.now() - (unixSec * 1000);
+      if (ms < 60_000)        return Math.floor(ms / 1000) + 's ago';
+      if (ms < 3_600_000)     return Math.floor(ms / 60_000) + 'm ago';
+      if (ms < 86_400_000)    return Math.floor(ms / 3_600_000) + 'h ago';
+      return Math.floor(ms / 86_400_000) + 'd ago';
+    },
+
+    // One-tap helper for the prominent CTA inside the modal AND for the
+    // out-of-date pill on the Handler column. Pushes the live version
+    // straight to this single agent — operator doesn't need to pick a
+    // command type or version manually.
+    async pushLatestHandler(agentId) {
+      if (!LIVE_HANDLER_VERSION) {
+        Alpine.store('toast').push('No live handler version exists yet — upload one first.', 'error');
+        return;
+      }
+      if (!confirm(`Push handler version ${LIVE_HANDLER_VERSION} to ${agentId}?\n\nApplied on the agent's next poll (~60 s).`)) return;
+      const r = await fetch('/admin/handler/push', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version_label: LIVE_HANDLER_VERSION, agent_ids: [agentId] }),
+      });
+      if (r.ok) {
+        Alpine.store('toast').push(`Queued ${LIVE_HANDLER_VERSION} for ${agentId}.`, 'ok');
+        this.cmdModal.open = false;
+      } else {
+        const t = await r.text();
+        Alpine.store('toast').push('Push failed: ' + t, 'error', 7000);
+      }
+    },
+    ttlMinutes() {
+      const i = Math.min(Math.max(0, this.cmdModal.ttlIdx | 0), ISO_TTL_STOPS.length - 1);
+      return ISO_TTL_STOPS[i];
+    },
+    ttlLabel() {
+      const m = this.ttlMinutes();
+      if (m < 60)   return m + ' min';
+      if (m < 1440) return (m / 60) + ' h';
+      return (m / 60) + ' h (24h cap)';
+    },
+    levelHint() {
+      if (this.cmdModal.level === 'light')    return 'Blocks SMB/RDP/WinRM/Kerberos out + non-corp DNS. User keeps browsing.';
+      if (this.cmdModal.level === 'standard') return 'Cuts public internet, keeps RFC1918 LAN. User sees a notification.';
+      if (this.cmdModal.level === 'full')     return 'Blocks everything except platform lifeline; disables VPN/virtual adapters; toast.';
+      return '';
     },
     paramsForType() {
       const t = this.cmdModal.type;
       if (t === 'set_profile')      return { profile: this.cmdModal.profile };
       if (t === 'toggle_telemetry') return { source: this.cmdModal.source, enabled: this.cmdModal.enabled };
       if (t === 'restart_services') return { service: this.cmdModal.service };
+      if (t === 'update_handler') return {
+        // Blank input → push current live version. Operator can also type
+        // a specific staged/archived label to push that one instead.
+        version: this.cmdModal.handlerPushVersion || LIVE_HANDLER_VERSION,
+      };
+      if (t === 'rollback_handler') return { reason: this.cmdModal.reason };
+      if (t === 'isolate') return {
+        level: this.cmdModal.level,
+        ttl_minutes: this.ttlMinutes(),
+        reason: this.cmdModal.reason,
+      };
+      if (t === 'unisolate') return { reason: this.cmdModal.reason };
       return {};
+    },
+    async quickUnisolate(agentId) {
+      if (!confirm(`Lift isolation on ${agentId}?`)) return;
+      const r = await fetch(`/fleet/agents/${agentId}/commands`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command_type: 'unisolate', params: { reason: 'dashboard quick-unisolate' } }),
+      });
+      if (r.ok) Alpine.store('toast').push('Unisolate queued; agent will apply on next poll.', 'ok');
+      else      Alpine.store('toast').push('Unisolate failed.', 'error');
     },
     async sendCmd() {
       const body = { command_type: this.cmdModal.type, params: this.paramsForType() };

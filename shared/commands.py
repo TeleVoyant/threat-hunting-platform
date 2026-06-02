@@ -8,18 +8,18 @@ Both directions use HMAC-SHA256 over a JSON payload. The signed bytes are
 transmitted alongside the signature so the verifier never needs to reproduce
 canonical serialization (which is fragile across language stacks).
 
-  Server → Agent (poll response):
+  Server -> Agent (poll response):
     { "commands": [ { "signed_payload": "<json>", "signature": "<hex>" }, ... ] }
 
-  Agent → Server (result post):
+  Agent -> Server (result post):
     { "signed_payload": "<json>", "signature": "<hex>" }
 
 Auth header
 -----------
-Agent → API requests carry:
+Agent -> API requests carry:
     Authorization: APT-HMAC agent_id=<id>,ts=<unix>,sig=<hex>
 where sig = HMAC_SHA256(agent_secret, "<id>:<ts>") and ts must be within
-±MAX_AUTH_AGE_SEC of the server's clock.
++/-MAX_AUTH_AGE_SEC of the server's clock.
 """
 
 import base64
@@ -35,23 +35,54 @@ from typing import Callable, Optional
 from pydantic import BaseModel, Field
 
 
-# ── Constants ───────────────────────────────────────────────────────────────
+# -- Constants ---------------------------------------------------------------
 
-MAX_AUTH_AGE_SEC      = 300   # ±5 min on auth header timestamps
+# +-------------------------------------------------------------------------+
+# | CLOCK-SKEW NOTE -- do not widen MAX_AUTH_AGE_SEC as a fix for 401s.     |
+# |                                                                         |
+# | This window is the platform's primary replay-protection on the agent    |
+# | command channel; widening it weakens that guarantee. If an endpoint is  |
+# | consistently 401ing on /agents/{id}/poll with reason "Timestamp out of |
+# | range", the FIX is to sync the endpoint's clock, not enlarge this      |
+# | tolerance.                                                              |
+# |                                                                         |
+# | The clock-sync fix is implemented in three coordinated places:          |
+# |   1. scripts/deploy_endpoint.ps1 Step 6 -- forces NTP sync at install   |
+# |   2. scripts/agent_command_handler.ps1 _TimeSyncForce/_TimeSyncIfStale |
+# |      -- periodic resync + reactive resync on 401                        |
+# |   3. This comment (the temptation site for "just bump the constant")   |
+# |                                                                         |
+# | See the full LOUD comment block in deploy_endpoint.ps1 Step 6 for       |
+# | history (this has bitten us twice) and rationale.                       |
+# +-------------------------------------------------------------------------+
+MAX_AUTH_AGE_SEC      = 300   # +/-5 min on auth header timestamps
 DEFAULT_COMMAND_TTL   = 600   # commands expire 10 min after issuance
 SECRET_BYTE_LENGTH    = 32    # 256-bit HMAC key per agent
 
 
-# ── Enums ───────────────────────────────────────────────────────────────────
+# -- Enums -------------------------------------------------------------------
 
 class CommandType(str, Enum):
     """Whitelist of operations the agent will execute. ANY value not here
-    is rejected by the agent handler — no arbitrary command execution."""
+    is rejected by the agent handler -- no arbitrary command execution."""
     SET_PROFILE       = "set_profile"        # params: {"profile": "Lean|Balanced|Full"}
     TOGGLE_TELEMETRY  = "toggle_telemetry"   # params: {"source": <TelemetrySource>, "enabled": bool}
     RESTART_SERVICES  = "restart_services"   # params: {"service": "wazuh|sysmon|all"}
     GET_STATUS        = "get_status"         # params: {}
     UPDATE_SYSMON     = "update_sysmon"      # params: {"config_b64": "<base64 sysmon xml>"}
+    # Network containment. Reversible at three independent paths (remote
+    # UNISOLATE, deadman scheduled task, panic-local script switch). See
+    # scripts/agent_command_handler.ps1 :: Invoke-Isolate for the level
+    # semantics and lifeline rules.
+    ISOLATE           = "isolate"            # params: {"level": "light|standard|full", "ttl_minutes": int, "reason": str?, "toast": bool?}
+    UNISOLATE         = "unisolate"          # params: {"reason": str?}
+    # OTA update of agent_command_handler.ps1 itself. UPDATE_HANDLER:
+    # agent fetches the named version via /agents/{id}/handler/content,
+    # SHA-256 verifies, atomic .new -> live + .bak swap. ROLLBACK_HANDLER:
+    # swaps live <-> .bak. See scripts/agent_command_handler.ps1 ::
+    # Invoke-UpdateHandler / Invoke-RollbackHandler for the apply flow.
+    UPDATE_HANDLER    = "update_handler"     # params: {"version": "<label>", "force": bool?}
+    ROLLBACK_HANDLER  = "rollback_handler"   # params: {"reason": str?}
 
 
 class TelemetrySource(str, Enum):
@@ -84,7 +115,7 @@ class ResultStatus(str, Enum):
     REJECTED = "rejected"
 
 
-# ── Wire models ─────────────────────────────────────────────────────────────
+# -- Wire models -------------------------------------------------------------
 
 class Command(BaseModel):
     """One command targeted at one agent."""
@@ -95,7 +126,7 @@ class Command(BaseModel):
     issued_by:    str            # admin username (audit trail)
     issued_at:    str            # ISO 8601 UTC
     expires_at:   str            # ISO 8601 UTC
-    sequence:     int            # per-agent monotonic — replay protection
+    sequence:     int            # per-agent monotonic -- replay protection
 
 
 class SignedEnvelope(BaseModel):
@@ -113,7 +144,7 @@ class CommandResult(BaseModel):
     executed_at: str             # ISO 8601 UTC
 
 
-# ── Crypto primitives ───────────────────────────────────────────────────────
+# -- Crypto primitives -------------------------------------------------------
 
 def sign(secret: bytes, payload: str) -> str:
     """HMAC-SHA256 over UTF-8 bytes of payload. Returns lowercase hex."""
@@ -139,7 +170,7 @@ def parse_signed_command(secret: bytes, env: SignedEnvelope) -> Command:
     return Command(**json.loads(env.signed_payload))
 
 
-# ── Agent secret encoding ───────────────────────────────────────────────────
+# -- Agent secret encoding ---------------------------------------------------
 
 def generate_agent_secret() -> bytes:
     """256-bit cryptographically-secure random key."""
@@ -156,7 +187,7 @@ def decode_secret(s: str) -> bytes:
     return base64.urlsafe_b64decode((s + pad).encode("ascii"))
 
 
-# ── Auth header ─────────────────────────────────────────────────────────────
+# -- Auth header -------------------------------------------------------------
 
 def make_auth_header(secret: bytes, agent_id: str, ts: Optional[int] = None) -> str:
     """Build an Authorization: APT-HMAC ... value for an agent request."""
@@ -213,7 +244,7 @@ def parse_and_verify_auth_header(
     return agent_id
 
 
-# ── Convenience: ISO-8601 helpers ───────────────────────────────────────────
+# -- Convenience: ISO-8601 helpers -------------------------------------------
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

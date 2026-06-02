@@ -319,6 +319,23 @@ async def lifespan(app: FastAPI):
         bootstrap_token_set=bool(os.environ.get("FLEET_BOOTSTRAP_TOKEN")),
     )
 
+    # Single-use enrollment-token store for the URL-served installer.
+    from api.enrollment_tokens import EnrollmentTokenStore
+    enrollment_tokens = EnrollmentTokenStore(
+        db_path=f"{data_dir}/fleet/enrollment_tokens.db",
+    )
+    logger.info("Enrollment token store initialized")
+
+    # Handler-script version store for OTA updates of
+    # scripts/agent_command_handler.ps1. Exposed on app.state so
+    # api/routes/agent.py's manifest + content endpoints and
+    # api/routes/admin.py's operator routes can reach it.
+    from api.handler_store import HandlerVersionStore
+    app.state.handler_store = HandlerVersionStore(
+        db_path=f"{data_dir}/notifications/handler_versions.db",
+    )
+    logger.info("Handler version store initialized")
+
     # ── Jinja2 templates for dashboard ──
     from fastapi.templating import Jinja2Templates
     import time as _t_setup
@@ -336,6 +353,7 @@ async def lifespan(app: FastAPI):
     app.state.audit_trail = audit_trail
     app.state.auth_manager = auth_manager
     app.state.command_queue = command_queue
+    app.state.enrollment_tokens = enrollment_tokens
     app.state.templates = templates
     # Platform start time — surfaced as uptime on the topbar via /diag/uptime.
     import time as _time
@@ -345,6 +363,7 @@ async def lifespan(app: FastAPI):
     # Expose preprocessor + feature pipeline so the retrain scheduler can
     # reuse them (avoids double-wiring the same extractors).
     app.state._preprocessor = _preprocessor
+    app.state.preprocessor = _preprocessor  # public name for /diag routes
     app.state._feature_pipeline = _feature_pipeline
 
     # ── Start background detection loop ──
@@ -367,7 +386,13 @@ async def lifespan(app: FastAPI):
         from training.scheduler import AutoRetrainScheduler
         retrain_scheduler = AutoRetrainScheduler(
             app,
-            interval_seconds=int(os.environ.get("RETRAIN_INTERVAL_SECONDS", "1800")),
+            # Default cadence: 24 h. Older 30-min default OOM-killed the api
+            # container on tight memory budgets; tighten via the env var or
+            # the dashboard at runtime when actively iterating.
+            interval_seconds=int(os.environ.get("RETRAIN_INTERVAL_SECONDS", "86400")),
+            # Default first-cycle delay: 1 h. Keeps the api responsive
+            # through cold-start and avoids competing for RAM during boot.
+            initial_delay_seconds=int(os.environ.get("RETRAIN_INITIAL_DELAY_SECONDS", "3600")),
             benign_window_hours=int(os.environ.get("RETRAIN_BENIGN_WINDOW_HOURS", "24")),
             lateral_attacks_per_day=int(os.environ.get("RETRAIN_LATERAL_ATTACKS_PER_DAY", "10")),
             dns_attacks_per_day=int(os.environ.get("RETRAIN_DNS_ATTACKS_PER_DAY", "8")),
@@ -375,6 +400,28 @@ async def lifespan(app: FastAPI):
         )
         retrain_scheduler.start()
     app.state.retrain_scheduler = retrain_scheduler
+
+    # Drift → retrain wiring (x). When a detector emits MODEL_DRIFT_DETECTED
+    # we ask the scheduler to fire a retrain on the next tick. Without this
+    # subscriber the drift event is a log-only signal that nobody acts on.
+    if retrain_scheduler:
+        from shared.events import bus as _bus, MODEL_DRIFT_DETECTED as _MDD
+
+        async def _on_drift(payload: dict) -> None:
+            det = (payload or {}).get("detector")
+            logger.warning("Drift event → triggering retrain", detector=det)
+            try:
+                retrain_scheduler.trigger_now()
+                app.state.audit_trail.log(
+                    action="drift.auto_trigger_retrain", actor="platform",
+                    target=det or "unknown",
+                    details={"issues": (payload or {}).get("drift", {}).get("issues", [])},
+                )
+            except Exception as e:
+                logger.error("Failed to trigger retrain from drift",
+                             detector=det, error=str(e))
+
+        _bus.subscribe(_MDD, _on_drift)
 
     yield  # ── App is running ──
 
@@ -392,39 +439,47 @@ async def lifespan(app: FastAPI):
 
 async def _detection_loop():
     """
-    Background task: polls Wazuh → extracts features → runs detectors → publishes alerts.
-    Runs continuously until the server shuts down.
+    Background task: polls Wazuh → buffers into a sliding window keyed by
+    event_id → flushes window-aligned snapshots into the bus (a). Subscribers
+    handle feature extraction + detection downstream.
     """
+    from ingestion.sliding_window import SlidingWindowBuffer
+
+    window_minutes = _config.platform.event_window_minutes
+    buffer = SlidingWindowBuffer(window_minutes=window_minutes)
+    # Expose for /diag so the operator can see buffer depth + last flush.
+    app.state.sliding_window = buffer
+
     while True:
         try:
             cid = set_correlation_id()
 
-            # Step 1: Fetch events from Wazuh
+            # Pull fresh events from Wazuh. We ask for `window_minutes` of
+            # history every poll so the buffer dedupes overlap by event_id.
             raw_events = await _wazuh.fetch_recent_events(
-                window_minutes=_config.platform.event_window_minutes,
+                window_minutes=window_minutes,
             )
+            if raw_events:
+                events = _preprocessor.normalize_batch(raw_events)
+                added = buffer.add_batch(events) if events else 0
+                if added:
+                    logger.info("Events buffered",
+                                added=added, retained=buffer.size(),
+                                correlation_id=cid)
 
-            if not raw_events:
-                await asyncio.sleep(_config.platform.poll_interval_seconds)
-                continue
-
-            # Step 2: Preprocess and validate
-            events = _preprocessor.normalize_batch(raw_events)
-
-            if not events:
-                await asyncio.sleep(_config.platform.poll_interval_seconds)
-                continue
-
-            logger.info("Events ingested", count=len(events), correlation_id=cid)
-
-            # Step 3: Publish to event bus (subscribers handle the rest)
-            await bus.emit(
-                EVENT_INGESTED,
-                {
-                    "events": events,
-                    "correlation_id": cid,
-                },
-            )
+            # Flush once per analytic window so feature extractors see the
+            # full window's events at once. A poll-cadence flush would make
+            # rate/CV features track polling, not the window.
+            if buffer.due_to_flush():
+                snapshot = buffer.snapshot()
+                if snapshot:
+                    logger.info("Flushing sliding window",
+                                events=len(snapshot), correlation_id=cid)
+                    await bus.emit(EVENT_INGESTED, {
+                        "events": snapshot,
+                        "correlation_id": cid,
+                    })
+                buffer.mark_flushed()
 
         except asyncio.CancelledError:
             logger.info("Detection loop cancelled")
@@ -487,6 +542,7 @@ from api.routes.diagnostics import router as diagnostics_router
 from api.routes.notifications import router as notifications_router
 from api.routes.me import router as me_router
 from api.routes.downloads import router as downloads_router
+from api.routes.install import router as install_router
 from api.routes.auth import router as auth_router
 from api.routes.dashboard import router as dashboard_router
 
@@ -507,6 +563,7 @@ app.include_router(diagnostics_router)  # /diag/* (read_detections)
 app.include_router(notifications_router)  # /notifications/* (per-user)
 app.include_router(me_router)  # /me/* (self-service contact info)
 app.include_router(downloads_router)  # /downloads/* (companion .apk + QR)
+app.include_router(install_router)  # /install/* (URL-served endpoint installer + tokens)
 app.include_router(auth_router)  # /auth/login + /auth/logout (HTML + cookie)
 app.include_router(dashboard_router)  # /dashboard/* (HTML, cookie auth)
 

@@ -124,7 +124,11 @@ async def alert_panel(
     return _templates(request).TemplateResponse(
         request, "partials/investigation_panel.html",
         {"user": user, "alert": alert,
-         "can_ack": _has_perm(request, user, "acknowledge_alerts")},
+         "can_ack": _has_perm(request, user, "acknowledge_alerts"),
+         # `manage_fleet` gates the per-detection "Isolate source host" button.
+         # The button is only useful (and only authorized) when the operator
+         # could actually issue the fleet command afterwards.
+         "can_manage_fleet": _has_perm(request, user, "manage_fleet")},
     )
 
 
@@ -171,9 +175,19 @@ async def ack_alert(
 async def fleet(request: Request, user: User = Depends(require_user_cookie)):
     _require_perm(request, user, "manage_fleet")
     store = request.app.state.command_queue
+    # Resolve the current LIVE handler version so the table can render
+    # green "LATEST" vs amber "out of date" per agent. None if no handler
+    # has ever been promoted (fresh install).
+    handler_store = getattr(request.app.state, "handler_store", None)
+    live_handler  = handler_store.get_live() if handler_store else None
+    live_handler_version = live_handler["version_label"] if live_handler else None
     return _templates(request).TemplateResponse(
         request, "fleet.html",
-        {"user": user, "active": "fleet", "agents": store.list_agents()},
+        {
+            "user": user, "active": "fleet",
+            "agents":               store.list_agents(),
+            "live_handler_version": live_handler_version,
+        },
     )
 
 
@@ -240,6 +254,38 @@ async def retrain_page(request: Request,
     return _templates(request).TemplateResponse(
         request, "retrain.html",
         {"user": user, "active": "retrain"},
+    )
+
+
+@router.get("/handler", response_class=HTMLResponse)
+async def handler_page(request: Request,
+                       user: User = Depends(require_user_cookie)):
+    """Operator-facing handler-script version manager.
+    Upload, stage, promote, archive, push, rollback — all live here.
+    Read also allowed for analysts so they can see fleet-wide version state."""
+    _require_perm(request, user, "read_detections")
+    return _templates(request).TemplateResponse(
+        request, "handler.html",
+        {"user": user, "active": "handler",
+         "can_manage_versions": _has_perm(request, user, "retrain_models"),
+         "can_push_fleet":      _has_perm(request, user, "manage_fleet")},
+    )
+
+
+@router.get("/evaluations", response_class=HTMLResponse)
+async def evaluations_page(request: Request,
+                            user: User = Depends(require_user_cookie)):
+    """Chart-rich, stakeholder-grade evaluation reporting page.
+
+    Operator actions (retrain / promote / rollback / threshold-write) stay on
+    /dashboard/models; this page is read-mostly: review reports, scrub a
+    non-destructive threshold preview, kick off a new evaluation run."""
+    _require_perm(request, user, "read_detections")
+    return _templates(request).TemplateResponse(
+        request, "evaluations.html",
+        {"user": user, "active": "evaluations",
+         "can_evaluate":         _has_perm(request, user, "retrain_models"),
+         "can_manage_detectors": _has_perm(request, user, "manage_detectors")},
     )
 
 

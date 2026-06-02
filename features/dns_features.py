@@ -26,24 +26,54 @@ import statistics
 from collections import Counter, defaultdict
 from typing import Optional
 
+from features.allowlist_loader import get_list
 from shared.interfaces import BaseFeatureExtractor
 from shared.schemas import NormalizedEvent
 
-# Browser and OS processes that legitimately generate high DNS volume.
-# Non-browser, non-system processes making many DNS queries is suspicious.
-_BENIGN_DNS_PROCESSES = frozenset({
+# Default browser/OS processes that legitimately generate high DNS volume.
+# Real list is loaded from config/allowlists.yml on each window (q) — this
+# constant is the fall-back when the file is missing or malformed.
+_DEFAULT_BENIGN_DNS_PROCESSES = (
     "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe",
     "iexplore.exe", "svchost.exe", "backgroundtaskhost.exe",
     "searchindexer.exe", "onedrive.exe", "teams.exe", "slack.exe",
     "outlook.exe", "msiexec.exe", "wuauclt.exe", "windowsupdate.exe",
     "runtimebroker.exe",
-})
+)
+
+# Public DoH / DoT resolvers that legitimately accept queries on non-port-53.
+# Excluded from `non_standard_dns_ratio` (p).
+_DEFAULT_PUBLIC_RESOLVERS = (
+    "1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4",
+    "9.9.9.9", "149.112.112.112", "208.67.222.222", "208.67.220.220",
+)
 
 # Record types associated with DNS tunneling protocols
 _TUNNELING_RECORD_TYPES = frozenset({"TXT", "NULL", "MX", "CNAME", "ANY"})
 
 
+def _is_consonant(c: str) -> bool:
+    return c.isalpha() and c.lower() not in "aeiouy"
+
+
+def _max_run(text: str, predicate) -> int:
+    """Longest contiguous run in `text` where `predicate(char)` is true."""
+    best = cur = 0
+    for c in text:
+        if predicate(c):
+            cur += 1
+            if cur > best:
+                best = cur
+        else:
+            cur = 0
+    return best
+
+
 class DnsFeatureExtractor(BaseFeatureExtractor):
+
+    # Same fixed-window principle as AuthFeatureExtractor: rate denominator
+    # is the configured analytic window, not the event span (d).
+    WINDOW_SECONDS = 5 * 60
 
     def name(self) -> str:
         return "dns"
@@ -52,35 +82,43 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
         return ["dns_query"]
 
     def extract(self, events: list[NormalizedEvent]) -> dict[str, float]:
+        # Always start from the canonical empty schema and overlay computed
+        # values. This guarantees a single key order across every code path
+        # — without it, the empty-fallback path and the full-extract path
+        # can produce dicts with the same keys in different order, which
+        # makes the trainer's strict `list(keys) != feature_names` check
+        # explode mid-run.
+        result = self._empty_features()
+
         queries = [e.dns_query for e in events if e.dns_query]
         if not queries:
-            return self._empty_features()
+            # No queryName at all (DNS replies, Sysmon EID 22 with empty
+            # queryName). We can still compute the event-level features (g).
+            if events:
+                result.update(self._response_features(events))
+                result.update(self._process_features(events))
+                result.update(self._network_features(events))
+            return result
 
-        return {
-            **self._volume_features(events, queries),
-            **self._encoding_features(events, queries),
-            **self._domain_features(queries),
-            **self._record_type_features(events),
-            **self._response_features(events),
-            **self._temporal_features(events, queries),
-            **self._process_features(events),
-            **self._network_features(events),
-        }
+        result.update(self._volume_features(events, queries))
+        result.update(self._encoding_features(events, queries))
+        result.update(self._domain_features(queries))
+        result.update(self._record_type_features(events))
+        result.update(self._response_features(events))
+        result.update(self._temporal_features(events, queries))
+        result.update(self._process_features(events))
+        result.update(self._network_features(events))
+        result.update(self._dga_features(queries))
+        result.update(self._nx_funnel_features(events))
+        return result
 
     # ── 1. Volume ─────────────────────────────────────────────────────────────
 
     def _volume_features(self, events: list[NormalizedEvent], queries: list[str]) -> dict:
         n = len(queries)
-        # Queries per minute over the event window
-        if len(events) >= 2:
-            ts_sorted = sorted(e.timestamp for e in events)
-            window_seconds = max(
-                (ts_sorted[-1] - ts_sorted[0]).total_seconds(), 1.0
-            )
-            rate = (n / window_seconds) * 60.0
-        else:
-            rate = 0.0
-
+        # Queries per minute, computed against the fixed analytic window
+        # (not the empirical event span which gave 180/min for 3 events in 1s).
+        rate = (n / self.WINDOW_SECONDS) * 60.0
         return {
             "query_count":          float(n),
             "query_rate_per_minute": rate,
@@ -162,6 +200,73 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
             "max_unique_subdomains_per_domain": float(unique_subs_for_top),
         }
 
+    # ── DGA / encoding likelihood (n) ─────────────────────────────────────────
+
+    def _dga_features(self, queries: list[str]) -> dict:
+        """
+        Cheap DGA proxies without shipping a 4-gram English corpus:
+          * consonant_run_max  — random-looking labels have long consonant
+            sprints (DGA "kx7d9zlmwp"); English words rarely exceed 4.
+          * vowel_ratio_min    — DGA / hex-encoded labels skew low on vowels;
+            English averages ~0.38.
+          * digit_letter_run   — alternating digit/letter runs (base32-ish
+            encoding) are common in tunneling protocols.
+        """
+        if not queries:
+            return {
+                "consonant_run_max": 0.0,
+                "vowel_ratio_min":   1.0,
+                "digit_letter_run_max": 0.0,
+            }
+        consonant_runs = []
+        vowel_ratios = []
+        dl_runs = []
+        for q in queries:
+            sub = self._subdomain(q) or q.split(".")[0]
+            # Per-label, not per-query, so leetspeak doesn't get drowned out
+            for label in sub.split(".") if sub else [q.split(".")[0]]:
+                low = label.lower()
+                if not low:
+                    continue
+                consonant_runs.append(_max_run(low, _is_consonant))
+                vowels = sum(1 for c in low if c in "aeiouy")
+                letters = sum(1 for c in low if c.isalpha())
+                vowel_ratios.append(vowels / letters if letters else 1.0)
+                dl_runs.append(_max_run(low, lambda c: c.isalnum()))
+        return {
+            "consonant_run_max":     float(max(consonant_runs) if consonant_runs else 0),
+            "vowel_ratio_min":       float(min(vowel_ratios) if vowel_ratios else 1.0),
+            "digit_letter_run_max":  float(max(dl_runs) if dl_runs else 0),
+        }
+
+    # ── NXDOMAIN-subdomain funnel (m) ─────────────────────────────────────────
+
+    def _nx_funnel_features(self, events: list[NormalizedEvent]) -> dict:
+        """
+        Iodine / dnscat2 generate bursts of NXDOMAINs across distinct
+        subdomains of one base — the single highest-signal tunneling feature.
+        We compute it for the most-targeted base domain in the window.
+        """
+        coded = [e for e in events if e.dns_query and e.dns_response_code]
+        if not coded:
+            return {"nx_subdomains_per_top_domain": 0.0,
+                    "nx_top_domain_query_ratio":    0.0}
+        by_base: dict[str, list] = {}
+        for e in coded:
+            by_base.setdefault(self._base_domain(e.dns_query), []).append(e)
+        top_base = max(by_base, key=lambda d: len(by_base[d]))
+        top_events = by_base[top_base]
+        nx_subs = {
+            self._subdomain(e.dns_query)
+            for e in top_events
+            if e.dns_response_code == "NXDOMAIN"
+        }
+        nx_subs.discard("")
+        return {
+            "nx_subdomains_per_top_domain": float(len(nx_subs)),
+            "nx_top_domain_query_ratio":    len(top_events) / len(coded),
+        }
+
     # ── 4. Record type ────────────────────────────────────────────────────────
 
     def _record_type_features(self, events: list[NormalizedEvent]) -> dict:
@@ -194,19 +299,20 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
 
         # Response sizes
         sizes = [e.bytes_received for e in events]
-        nonzero_sizes = [s for s in sizes if s > 0]
+        avg_size = sum(sizes) / n if n else 0.0
+        max_size = float(max(sizes)) if sizes else 0.0
+        size_var = statistics.variance(sizes) if len(sizes) >= 2 else 0.0
 
-        avg_size = sum(sizes) / n
-        max_size = float(max(sizes))
-        size_var = (
-            statistics.variance(sizes) if len(sizes) >= 2 else 0.0
-        )
-
-        # NXDOMAIN ratio — probe queries return NXDOMAIN; some tunneling protocols
-        # use NXDOMAIN as a signal that the chunk was received by the C2 server
-        nxdomain_count = sum(
-            1 for e in events if e.dns_response_code == "NXDOMAIN"
-        )
+        # NXDOMAIN ratio — only count over events that *have* a response code
+        # (e). Sysmon-only telemetry mixed with DNS-Client telemetry would
+        # otherwise dilute the ratio because Sysmon EID 22 often arrives with
+        # response_code defaulted to NOERROR.
+        coded = [e for e in events if e.dns_response_code]
+        if coded:
+            nxdomain_count = sum(1 for e in coded if e.dns_response_code == "NXDOMAIN")
+            nx_ratio = nxdomain_count / len(coded)
+        else:
+            nx_ratio = 0.0
 
         # TTL analysis
         ttls = [e.dns_ttl for e in events if e.dns_ttl is not None]
@@ -219,9 +325,8 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
             "avg_response_size":   avg_size,
             "max_response_size":   max_size,
             "response_variance":   float(size_var),
-            "nxdomain_ratio":      nxdomain_count / n,
-            # Fast-flux ratio: fraction of responses with TTL < 60s
-            "fast_flux_ratio":     (fast_flux_count / max(len(ttls), 1)) if ttls else 0.0,
+            "nxdomain_ratio":      nx_ratio,
+            "fast_flux_ratio":     (fast_flux_count / len(ttls)) if ttls else 0.0,
             "min_ttl":             min_ttl,
             "ttl_variance":        float(ttl_var),
         }
@@ -272,7 +377,10 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
         if not proc_names:
             return {"unique_process_count": 0.0, "non_browser_dns_ratio": 0.0}
 
-        non_browser = sum(1 for p in proc_names if p not in _BENIGN_DNS_PROCESSES)
+        benign = frozenset(
+            get_list("dns_benign_processes", list(_DEFAULT_BENIGN_DNS_PROCESSES))
+        )
+        non_browser = sum(1 for p in proc_names if p not in benign)
 
         return {
             # 1 non-browser process making all DNS queries = suspicious
@@ -285,10 +393,16 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
 
     def _network_features(self, events: list[NormalizedEvent]) -> dict:
         n = len(events)
-        # DNS over ports other than 53: DoT (853), DoH (443), or covert channels
+        # DNS over ports other than 53: DoT (853), DoH (443), or covert
+        # channels. Exclude public DoH/DoT resolvers (p) so Firefox-DoH and
+        # Cloudflare 1.1.1.1/853 don't count as "covert".
+        resolvers = frozenset(
+            get_list("public_resolvers", list(_DEFAULT_PUBLIC_RESOLVERS))
+        )
         non_std = sum(
             1 for e in events
             if e.dest_port is not None and e.dest_port != 53
+            and (e.dest_ip or "") not in resolvers
         )
         return {
             "non_standard_dns_ratio": non_std / n,
@@ -315,7 +429,17 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
         return ".".join(parts[-2:]) if len(parts) >= 2 else query
 
     def _has_base64(self, text: str) -> bool:
-        return bool(re.search(r"[A-Za-z0-9+/]{20,}={0,2}", text))
+        # Old regex matched any alphanumeric run ≥20 chars — flagged S3 keys,
+        # CDN hashes, googleapis shards. Require a high-entropy span AND
+        # either real padding or +/ chars (which legitimate alphanumeric
+        # subdomains will not contain) (f).
+        m = re.search(r"[A-Za-z0-9+/]{20,}={0,2}", text)
+        if not m:
+            return False
+        span = m.group(0)
+        if "+" in span or "/" in span or span.endswith("=") or span.endswith("=="):
+            return True
+        return self._entropy(span) > 4.0
 
     def _has_hex(self, text: str) -> bool:
         return bool(re.search(r"[0-9a-f]{16,}", text.lower()))
@@ -334,7 +458,7 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
     # ── Empty feature vector ──────────────────────────────────────────────────
 
     def _empty_features(self) -> dict[str, float]:
-        return {k: 0.0 for k in [
+        base = {k: 0.0 for k in [
             # Volume
             "query_count", "query_rate_per_minute",
             # Encoding
@@ -361,4 +485,11 @@ class DnsFeatureExtractor(BaseFeatureExtractor):
             "unique_process_count", "non_browser_dns_ratio",
             # Network
             "non_standard_dns_ratio",
+            # NX-funnel (m)
+            "nx_subdomains_per_top_domain", "nx_top_domain_query_ratio",
+            # DGA (n)
+            "consonant_run_max", "digit_letter_run_max",
         ]}
+        # vowel_ratio_min defaults to 1.0 (full vowels = least DGA-like)
+        base["vowel_ratio_min"] = 1.0
+        return base
