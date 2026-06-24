@@ -46,10 +46,12 @@ CREATE TABLE IF NOT EXISTS coordinator_config (
 -- rest with FL_LOCAL_FERNET_KEY. NEVER leaves the org's host.
 CREATE TABLE IF NOT EXISTS keypair (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
-    private_key_enc TEXT NOT NULL,                       -- base64 Fernet ciphertext of PEM
+    private_key_enc TEXT NOT NULL,                       -- base64 Fernet ciphertext of Ed25519 PEM (signing)
     public_key_pem  TEXT NOT NULL,                       -- non-sensitive
     generated_at    REAL NOT NULL,
-    generated_by    TEXT NOT NULL
+    generated_by    TEXT NOT NULL,
+    x25519_private_enc TEXT,                             -- base64 Fernet ciphertext of X25519 PEM (sealed-box decrypt)
+    x25519_public_pem  TEXT                              -- non-sensitive
 );
 
 CREATE TABLE IF NOT EXISTS opt_in (
@@ -100,6 +102,13 @@ class LocalFLState:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
+        # Defensive migration: add X25519 columns to a keypair table created by
+        # an older single-key schema.
+        kpc = {r[1] for r in self.conn.execute("PRAGMA table_info(keypair)")}
+        if "x25519_private_enc" not in kpc:
+            self.conn.execute("ALTER TABLE keypair ADD COLUMN x25519_private_enc TEXT")
+        if "x25519_public_pem" not in kpc:
+            self.conn.execute("ALTER TABLE keypair ADD COLUMN x25519_public_pem TEXT")
         self.conn.commit()
         self._lock = Lock()
 
@@ -110,10 +119,14 @@ class LocalFLState:
         private_key_enc: str,
         public_key_pem: str,
         generated_by: str,
+        *,
+        x25519_private_enc: Optional[str] = None,
+        x25519_public_pem: Optional[str] = None,
     ) -> None:
-        """Stores a freshly-generated keypair. Refuses if one already exists
-        (rotation must explicitly delete first to avoid losing the old key
-        while orgs still have certs signed against it)."""
+        """Stores a freshly-generated keypair (Ed25519 signing key + optional
+        X25519 sealed-box key). Refuses if one already exists (rotation must
+        explicitly delete first to avoid losing the old key while the coordinator
+        still has a cert signed against it)."""
         with self._lock:
             existing = self.conn.execute(
                 "SELECT 1 FROM keypair WHERE id = 1"
@@ -125,8 +138,10 @@ class LocalFLState:
                 )
             self.conn.execute(
                 "INSERT INTO keypair(id, private_key_enc, public_key_pem, "
-                "generated_at, generated_by) VALUES (1, ?, ?, ?, ?)",
-                (private_key_enc, public_key_pem, time.time(), generated_by),
+                "generated_at, generated_by, x25519_private_enc, x25519_public_pem) "
+                "VALUES (1, ?, ?, ?, ?, ?, ?)",
+                (private_key_enc, public_key_pem, time.time(), generated_by,
+                 x25519_private_enc, x25519_public_pem),
             )
             self.conn.commit()
 
@@ -145,6 +160,31 @@ class LocalFLState:
 
     def has_keypair(self) -> bool:
         return self.get_public_key_pem() is not None
+
+    def get_x25519_public_pem(self) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT x25519_public_pem FROM keypair WHERE id = 1").fetchone()
+        return row["x25519_public_pem"] if row and row["x25519_public_pem"] else None
+
+    def get_x25519_private_enc(self) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT x25519_private_enc FROM keypair WHERE id = 1").fetchone()
+        return row["x25519_private_enc"] if row and row["x25519_private_enc"] else None
+
+    def get_x25519_private_pem(self) -> Optional[str]:
+        """Decrypted X25519 private key PEM — for unsealing the enrollment
+        package. In-process use only."""
+        enc = self.get_x25519_private_enc()
+        if not enc:
+            return None
+        return self._fernet().decrypt(base64.b64decode(enc)).decode()
+
+    def delete_keypair(self) -> None:
+        """Remove the org's keypair (for rotation). The org must re-enroll with
+        the new public key afterwards — the old cert is no longer usable."""
+        with self._lock:
+            self.conn.execute("DELETE FROM keypair WHERE id = 1")
+            self.conn.commit()
 
     # ── Signing + verification helpers (used by the FL client process) ─────
 

@@ -42,23 +42,29 @@
   <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px;">
     <div>
       <div class="eyebrow" style="margin-bottom:6px;">Step 1 · keypair</div>
-      <button class="btn btn-primary" x-on:click="initKeypair()" :disabled="status.public_key">
+      <button class="btn btn-primary" x-show="!status.public_key" x-on:click="initKeypair()" :disabled="busy">
         <i data-lucide="key"></i> Generate keypair
       </button>
-      <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">Private key stays on this server. Public key goes to the FL coordinator.</div>
-      <div x-show="status.public_key" style="margin-top:10px;">
-        <button class="btn btn-secondary" x-on:click="copyPub()">
-          <i data-lucide="copy"></i> Copy public key
-        </button>
+      <div x-show="!status.public_key" class="apt-small" style="color:var(--fg-3); margin-top:6px;">Ed25519 (signing) + X25519 (sealed-box). Private keys stay on this server.</div>
+      <div x-show="status.public_key">
+        <div style="font:600 13px var(--font-sans); color:var(--success);"><i data-lucide="check-circle"></i> Initialised</div>
+        <div class="mono apt-small" style="color:var(--fg-3); margin-top:4px; word-break:break-all;" x-text="keyFingerprint ? ('fp ' + keyFingerprint.slice(0,40)) : ''"></div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn btn-secondary" x-on:click="copyPub()"><i data-lucide="copy"></i> Copy public key</button>
+          <button class="btn" style="color:var(--danger);" x-on:click="rotateKeypair()" :disabled="busy"><i data-lucide="refresh-cw"></i> Rotate</button>
+        </div>
       </div>
     </div>
 
     <div>
-      <div class="eyebrow" style="margin-bottom:6px;">Step 2 · paste enrollment package</div>
-      <textarea class="input" rows="6" x-model="enrollJson" placeholder='{"coordinator_url":"https://fl.example.com:8889","org_id":"udom","api_key":"…","client_cert_pem":"…","ca_cert_pem":"…","coordinator_pub_pem":"…"}' style="font-family:var(--font-mono); font-size:11px;"></textarea>
-      <button class="btn btn-primary" x-on:click="configure()" :disabled="!enrollJson" style="margin-top:8px;">
-        <i data-lucide="check"></i> Configure
+      <div class="eyebrow" style="margin-bottom:6px;">Step 2 · self-enroll (recommended)</div>
+      <input class="input" x-model="enrollUrl" placeholder="https://fl.example.com:8889" style="margin-bottom:6px;">
+      <input class="input" x-model="enrollToken" placeholder="enrollment token (from operator)" style="margin-bottom:6px;">
+      <input class="input mono" x-model="enrollCaFp" placeholder="expected CA SHA-256 (64 hex)" style="font-size:11px; margin-bottom:6px;">
+      <button class="btn btn-primary" x-on:click="selfEnroll()" :disabled="busy || !status.public_key || !enrollUrl || !enrollToken || enrollCaFp.length!==64">
+        <i data-lucide="shield-check"></i> Enroll securely
       </button>
+      <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">Generate the keypair first. Redeems the token, decrypts the sealed package, verifies the CA fingerprint.</div>
     </div>
 
     <div>
@@ -70,6 +76,13 @@
       <div class="apt-small" style="color:var(--fg-3); margin-top:6px;">Toggle anytime; takes effect at the next round start.</div>
     </div>
   </div>
+  <details style="margin-top:14px;">
+    <summary class="apt-small" style="cursor:pointer; color:var(--fg-3);">Manual enrollment (advanced) - paste a package</summary>
+    <div style="margin-top:10px;">
+      <textarea class="input" rows="5" x-model="enrollJson" placeholder='paste the enrollment package JSON (org_id, api_key, client_cert_pem, ca_cert_pem, coordinator_pub_pem, coordinator_url)' style="font-family:var(--font-mono); font-size:11px;"></textarea>
+      <button class="btn btn-secondary" x-on:click="configure()" :disabled="!enrollJson" style="margin-top:8px;"><i data-lucide="check"></i> Configure from package</button>
+    </div>
+  </details>
 </div>
 {% endif %}
 
@@ -199,6 +212,7 @@ function flPage() {
     contributions: [],
     publicKey: '',
     enrollJson: '',
+    enrollUrl: '', enrollToken: '', enrollCaFp: '', keyFingerprint: '',
     optedIn: false,
     settings: { mode: 'manual', detector: 'lateral_movement', epsilon: 1.0, global_model_verify_hours: 24 },
     busy: false,
@@ -216,6 +230,7 @@ function flPage() {
         if (pk.ok) {
           const d = await pk.json();
           this.publicKey = d.public_key_pem || '';
+          this.keyFingerprint = d.fingerprint_sha256 || '';
           this.status.public_key = !!this.publicKey;
         }
       } catch (_) {}
@@ -252,6 +267,33 @@ function flPage() {
         const t = await r.text();
         Alpine.store('toast').push('Failed: ' + t, 'error');
       }
+    },
+
+    async selfEnroll() {
+      this.busy = true;
+      try {
+        const d = await this._post('/fl/local/enroll', {
+          coordinator_url: this.enrollUrl.trim(),
+          token: this.enrollToken.trim(),
+          expected_ca_sha256: this.enrollCaFp.trim() });
+        Alpine.store('toast').push('Self-enrolled as ' + d.org_id + ' (CA fingerprint verified).', 'ok');
+        this.enrollToken = ''; this.enrollCaFp = '';
+        this.load();
+      } catch (e) { Alpine.store('toast').push('Self-enroll: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async rotateKeypair() {
+      if (prompt('Rotate the keypair? This invalidates the current cert; you must RE-ENROLL afterwards.\nType "rotate" to confirm:') !== 'rotate') {
+        Alpine.store('toast').push('Rotation cancelled.', 'error'); return;
+      }
+      this.busy = true;
+      try {
+        await this._post('/fl/local/keypair/rotate', { confirm: 'rotate' });
+        Alpine.store('toast').push('Keypair rotated — re-enroll with the new key.', 'ok');
+        this.load();
+      } catch (e) { Alpine.store('toast').push('Rotate: ' + e.message, 'error'); }
+      finally { this.busy = false; }
     },
 
     copyPub() { aptCopy(this.publicKey, 'Public key copied'); },

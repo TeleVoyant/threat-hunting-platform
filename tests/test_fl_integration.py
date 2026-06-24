@@ -223,9 +223,63 @@ def test_fl_removal():
     print("PASS test_fl_removal")
 
 
+def test_fl_self_enroll():
+    """Org-side SECURE self-enrollment against the REAL coordinator: org generates
+    Ed25519 + X25519 keys, the operator mints a token, the org PoP-signs + redeems
+    it, UNSEALS the package with its X25519 key, verifies the CA fingerprint, and
+    configures. Proves the cross-repo sealed-box + PoP crypto interop."""
+    import json as _json, hashlib as _hl
+    from federated.attestation import build_enroll_pop
+    from federated.seal_box import (
+        generate_x25519_keypair, x25519_private_to_pem, x25519_public_to_pem, unseal)
+    state = LocalFLState(db_path=f"{_TMP}/orgse/state.db")
+    fernet = Fernet(os.environ["FL_LOCAL_FERNET_KEY"].encode())
+    ep, epub = generate_keypair()
+    xp, xpub = generate_x25519_keypair()
+    state.store_keypair(
+        private_key_enc=base64.b64encode(fernet.encrypt(private_key_to_pem(ep))).decode(),
+        public_key_pem=public_key_to_pem(epub).decode(), generated_by="admin",
+        x25519_private_enc=base64.b64encode(fernet.encrypt(x25519_private_to_pem(xp))).decode(),
+        x25519_public_pem=x25519_public_to_pem(xpub).decode())
+
+    mint = coord.post("/fl/orgs/enroll-token",
+                      json={"org_id": "udom3", "display_name": "UDOM3", "ttl_minutes": 60},
+                      headers=OP)
+    assert mint.status_code == 201, mint.text
+    token, ca_sha256 = mint.json()["token"], mint.json()["ca_sha256"]
+
+    org_id = _json.loads(base64.urlsafe_b64decode(token.encode()).rsplit(b".", 1)[0])["org_id"]
+    pop = build_enroll_pop(token_b64=token, x25519_pub_pem=state.get_x25519_public_pem())
+    r = coord.post("/fl/orgs/enroll-with-token", json={
+        "token": token, "org_id": org_id,
+        "ed25519_pub_pem": state.get_public_key_pem(),
+        "x25519_pub_pem": state.get_x25519_public_pem(),
+        "pop_signature": state.sign_attestation(pop).hex()})
+    assert r.status_code == 201, r.text
+
+    pkg = _json.loads(unseal(state.get_x25519_private_pem(), r.json()["sealed_package_b64"]))
+    assert _hl.sha256(pkg["ca_cert_pem"].encode()).hexdigest() == ca_sha256, "CA fingerprint mismatch"
+    state.configure_coordinator(
+        coordinator_url="http://testserver", org_id=org_id,
+        api_key_enc=base64.b64encode(fernet.encrypt(pkg["api_key"].encode())).decode(),
+        configured_by="admin", client_cert_pem=pkg["client_cert_pem"],
+        ca_cert_pem=pkg["ca_cert_pem"], coordinator_pub_pem=pkg["coordinator_pub_pem"])
+    assert state.get_config()["org_id"] == "udom3"
+
+    # the self-enrolled org can participate: operator opens a round, org discovers it
+    rid = coord.post("/fl/rounds/start", json={"min_clients": 1}, headers=OP).json()["round_id"]
+    cl = participation.make_client(state, session=coord)
+    try:
+        assert rid in [x["round_id"] for x in cl.list_active_rounds()], "self-enrolled org not invited"
+    finally:
+        cl.close()
+    print("PASS test_fl_self_enroll")
+
+
 if __name__ == "__main__":
     rid, ver = test_fl_integration()
     test_fl_removal()
+    test_fl_self_enroll()
     print("PASS test_fl_integration")
     print(f"  org contributed to coordinator round {rid}; global model staged "
           f"as {ver} and auto-promoted as the live detector")

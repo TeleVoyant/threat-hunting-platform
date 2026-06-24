@@ -76,6 +76,28 @@ def _fernet() -> Optional[Fernet]:
         return None
 
 
+def _generate_and_store_keypair(state, fernet: Fernet, username: str) -> dict:
+    """Generate the org's Ed25519 (contribution/attestation signing) key + X25519
+    (sealed-box enrollment-package decrypt) key, store both Fernet-encrypted, and
+    return the public material + the Ed25519 SHA-256 fingerprint."""
+    import hashlib as _hl
+    from federated.seal_box import (
+        generate_x25519_keypair, x25519_private_to_pem, x25519_public_to_pem)
+    priv, pub = generate_keypair()
+    pub_pem = public_key_to_pem(pub)
+    enc_priv = base64.b64encode(fernet.encrypt(private_key_to_pem(priv))).decode()
+    xpriv, xpub = generate_x25519_keypair()
+    xpub_pem = x25519_public_to_pem(xpub)
+    enc_xpriv = base64.b64encode(fernet.encrypt(x25519_private_to_pem(xpriv))).decode()
+    state.store_keypair(
+        private_key_enc=enc_priv, public_key_pem=pub_pem.decode(),
+        generated_by=username, x25519_private_enc=enc_xpriv,
+        x25519_public_pem=xpub_pem.decode())
+    return {"public_key_pem": pub_pem.decode(),
+            "x25519_public_pem": xpub_pem.decode(),
+            "fingerprint_sha256": _hl.sha256(pub_pem).hexdigest()}
+
+
 # ── Models ──────────────────────────────────────────────────────────────────
 
 class ConfigureRequest(BaseModel):
@@ -129,29 +151,50 @@ async def init_keypair(
             "+ re-enroll the org with the new public key.",
         )
 
-    priv, pub = generate_keypair()
-    priv_pem = private_key_to_pem(priv)
-    pub_pem  = public_key_to_pem(pub)
-    enc_priv = base64.b64encode(fernet.encrypt(priv_pem)).decode()
-
-    state.store_keypair(
-        private_key_enc=enc_priv,
-        public_key_pem=pub_pem.decode(),
-        generated_by=user.username,
-    )
+    out = _generate_and_store_keypair(state, fernet, user.username)
     _audit(request).log(
         action="fl_local.keypair.init",
         actor=user.username,
         target="self",
-        details={"public_key_sha256": __import__("hashlib").sha256(pub_pem).hexdigest()[:16]},
+        details={"public_key_sha256": out["fingerprint_sha256"][:16]},
     )
     return {
-        "public_key_pem": pub_pem.decode(),
-        "instructions":   "Send this public_key_pem to the FL coordinator admin "
-                            "for the /fl/orgs/enroll request. The coordinator will "
-                            "return: api_key, client_cert_pem, ca_cert_pem, "
-                            "coordinator_pub_pem — pass ALL of these to "
-                            "POST /fl/local/configure.",
+        **out,
+        "instructions": "Preferred: self-enroll via POST /fl/local/enroll with the "
+                        "coordinator URL + an enrollment token + CA fingerprint from "
+                        "the coordinator operator. (Manual fallback: send public_key_pem "
+                        "to the operator for /fl/orgs/enroll, then POST /fl/local/configure.)",
+    }
+
+
+class RotateKeypairRequest(BaseModel):
+    confirm: str = Field(..., description="Must be the literal string 'rotate' to confirm")
+
+
+@router.post("/keypair/rotate", status_code=201)
+async def rotate_keypair(
+    body: RotateKeypairRequest,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """Rotate the org's keypair: delete the existing key + generate a fresh one.
+    DESTRUCTIVE — the old cert/enrollment becomes unusable, so the org must
+    re-enroll with the new public key afterwards. Requires confirm='rotate'."""
+    if body.confirm != "rotate":
+        raise HTTPException(400, "Set confirm='rotate' to rotate the keypair")
+    fernet = _fernet()
+    if fernet is None:
+        raise HTTPException(500, "FL_LOCAL_FERNET_KEY not configured — cannot store keypair")
+    state = _state(request)
+    state.delete_keypair()
+    out = _generate_and_store_keypair(state, fernet, user.username)
+    _audit(request).log(
+        action="fl_local.keypair.rotate", actor=user.username, target="self",
+        details={"public_key_sha256": out["fingerprint_sha256"][:16]})
+    return {
+        **out,
+        "warning": "Keypair rotated. Re-enroll the org with the new public key "
+                   "(self-enroll or manual); the previous cert is no longer usable.",
     }
 
 
@@ -164,7 +207,10 @@ async def get_public_key(
     pem = _state(request).get_public_key_pem()
     if not pem:
         raise HTTPException(404, "No keypair generated yet — call /keypair/init first")
-    return {"public_key_pem": pem}
+    import hashlib as _hl
+    return {"public_key_pem": pem,
+            "fingerprint_sha256": _hl.sha256(pem.encode()).hexdigest(),
+            "has_x25519": _state(request).get_x25519_public_pem() is not None}
 
 
 # ── Configuration ───────────────────────────────────────────────────────────
@@ -240,6 +286,98 @@ async def configure_coordinator(
         "coordinator_url": body.coordinator_url,
         "mtls_ready": True,
     }
+
+
+# ── Secure self-enrollment (token + sealed package + CA-fingerprint verify) ──
+
+class SelfEnrollRequest(BaseModel):
+    coordinator_url:    str = Field(..., min_length=8, max_length=256)
+    token:              str = Field(..., min_length=8, description="Enrollment token from the coordinator operator")
+    expected_ca_sha256: str = Field(..., min_length=64, max_length=64,
+                                    description="SHA-256 of the federation CA cert, conveyed out-of-band with the token")
+
+
+@router.post("/enroll")
+async def self_enroll(
+    body: SelfEnrollRequest,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """One-step secure self-enrollment. Generates the org's keypairs if needed,
+    proves possession of the Ed25519 key, redeems the token at the coordinator,
+    UNSEALS the returned package with the org's X25519 key, verifies the CA
+    against the operator-supplied fingerprint, then configures. No secret leaves
+    the org in the clear; a rogue-CA MITM fails the fingerprint check."""
+    import base64, json as _json, hashlib as _hl
+    import httpx
+    from federated.attestation import build_enroll_pop
+    from federated.seal_box import unseal
+
+    if not body.coordinator_url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "coordinator_url must start with http:// or https://")
+    fernet = _fernet()
+    if fernet is None:
+        raise HTTPException(500, "FL_LOCAL_FERNET_KEY not configured — cannot store credentials")
+    state = _state(request)
+
+    # 1. Ensure keypairs exist (generate on first-time enroll)
+    if not state.has_keypair():
+        _generate_and_store_keypair(state, fernet, user.username)
+    ed_pub_pem = state.get_public_key_pem()
+    x_pub_pem  = state.get_x25519_public_pem()
+    x_priv_pem = state.get_x25519_private_pem()
+    if not (ed_pub_pem and x_pub_pem and x_priv_pem):
+        raise HTTPException(409, "Keypair is missing X25519 material — rotate the keypair "
+                                 "(POST /fl/local/keypair/rotate) to regenerate both keys, then retry")
+
+    # 2. Read org_id from the (opaque-to-us) token; the coordinator re-validates it
+    try:
+        raw = base64.urlsafe_b64decode(body.token.encode())
+        att_bytes, _ = raw.rsplit(b".", 1)
+        org_id = _json.loads(att_bytes)["org_id"]
+    except Exception:
+        raise HTTPException(400, "Malformed enrollment token")
+
+    # 3. Proof-of-possession: sign the PoP challenge with the org's Ed25519 key
+    pop_att = build_enroll_pop(token_b64=body.token, x25519_pub_pem=x_pub_pem)
+    pop_sig = state.sign_attestation(pop_att).hex()
+
+    # 4. Redeem at the coordinator (TLS verify OFF — the CA arrives in the sealed
+    #    package and is authenticated by the out-of-band fingerprint in step 5)
+    url = body.coordinator_url.rstrip("/") + "/fl/orgs/enroll-with-token"
+    try:
+        with httpx.Client(verify=False, timeout=30) as c:
+            r = c.post(url, json={"token": body.token, "org_id": org_id,
+                                  "ed25519_pub_pem": ed_pub_pem, "x25519_pub_pem": x_pub_pem,
+                                  "pop_signature": pop_sig})
+    except Exception as e:
+        raise HTTPException(502, f"Coordinator unreachable: {e}")
+    if r.status_code != 201:
+        raise HTTPException(502, f"Self-enroll rejected by coordinator ({r.status_code}): {r.text[:200]}")
+
+    # 5. Unseal + verify the CA fingerprint (the authenticity anchor)
+    try:
+        pkg = _json.loads(unseal(x_priv_pem, r.json()["sealed_package_b64"]))
+    except Exception as e:
+        raise HTTPException(502, f"Could not unseal enrollment package: {e}")
+    ca_pem = pkg.get("ca_cert_pem", "")
+    got = _hl.sha256(ca_pem.encode()).hexdigest()
+    if got.lower() != body.expected_ca_sha256.strip().lower():
+        raise HTTPException(403, "CA fingerprint MISMATCH — refusing to trust this coordinator "
+                                 f"(expected {body.expected_ca_sha256[:16]}..., got {got[:16]}...). "
+                                 "Possible MITM; not configured.")
+
+    # 6. Configure from the verified package
+    api_key_enc = base64.b64encode(fernet.encrypt(pkg["api_key"].encode())).decode()
+    state.configure_coordinator(
+        coordinator_url=body.coordinator_url, org_id=org_id, api_key_enc=api_key_enc,
+        configured_by=user.username, client_cert_pem=pkg["client_cert_pem"],
+        ca_cert_pem=ca_pem, coordinator_pub_pem=pkg["coordinator_pub_pem"])
+    _audit(request).log(action="fl_local.self_enrolled", actor=user.username, target=org_id,
+                        details={"coordinator_url": body.coordinator_url,
+                                 "cert_serial": pkg.get("cert_serial"), "ca_sha256": got[:16]})
+    return {"status": "enrolled", "org_id": org_id, "ca_sha256_verified": True,
+            "note": "Self-enrolled + configured. Opt in to participate in the next round."}
 
 
 @router.get("/status")
