@@ -7,7 +7,7 @@
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px;">
   <div>
     <h1 class="apt-h1">Federated learning</h1>
-    <div class="eyebrow" style="margin-top:4px;">Org-side onboarding · contributions · in-process demo</div>
+    <div class="eyebrow" style="margin-top:4px;">Org-side onboarding · participation · global models</div>
   </div>
 </div>
 
@@ -73,6 +73,81 @@
 </div>
 {% endif %}
 
+{% if can_manage %}
+<div class="card card-pad" style="margin-bottom:18px;">
+  <h2 class="apt-h3" style="margin-bottom:12px;">Participation</h2>
+  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:14px; align-items:end;">
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px;">Mode</div>
+      <select class="input" x-model="settings.mode">
+        <option value="manual">Manual — operator triggers</option>
+        <option value="auto">Automatic — background poller</option>
+      </select>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px;">Detector</div>
+      <select class="input" x-model="settings.detector">
+        <option value="lateral_movement">lateral_movement</option>
+        <option value="dns_exfiltration">dns_exfiltration</option>
+      </select>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px;">DP epsilon</div>
+      <input class="input" type="number" step="0.1" min="0.1" x-model.number="settings.epsilon">
+    </div>
+    <div>
+      <button class="btn btn-secondary" x-on:click="saveSettings()"><i data-lucide="save"></i> Save</button>
+    </div>
+  </div>
+  <div class="apt-small" style="color:var(--fg-3); margin-top:8px;">
+    Contributes the detector's <b>active</b> model (never unpromoted retrains), DP-noised. In automatic mode a
+    background poller contributes when opted in. Fetched global models soak for
+    <b x-text="settings.global_model_verify_hours"></b>h then auto-hot-reload as the live detector — promote, reject or roll back below.
+  </div>
+  <div style="display:flex; gap:10px; margin-top:14px;">
+    <button class="btn btn-primary" x-on:click="participate()" :disabled="busy || !status.opted_in">
+      <i data-lucide="upload"></i> Participate now</button>
+    <button class="btn btn-secondary" x-on:click="syncGlobal()" :disabled="busy">
+      <i data-lucide="download"></i> Sync global model</button>
+    <span x-show="!status.opted_in" class="apt-small" style="color:var(--fg-3); align-self:center;">Opt in to participate.</span>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:18px;">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
+    <h2 class="apt-h3">Federated global models</h2>
+    <button class="btn btn-secondary btn-sm" x-on:click="loadFedModels()"><i data-lucide="refresh-cw"></i></button>
+  </div>
+  <table class="tbl">
+    <thead><tr><th>Detector</th><th>Version</th><th>Status</th><th>From round</th><th>Auto-promote in</th><th></th></tr></thead>
+    <tbody>
+      <template x-for="m in fedModels" :key="m.detector + '/' + m.version">
+        <tr>
+          <td class="mono" x-text="m.detector"></td>
+          <td class="mono" x-text="m.version"></td>
+          <td><span class="pill" :style="fedPill(m.status)" x-text="m.status"></span></td>
+          <td class="mono tabnum" x-text="(m.fl_round_id ?? '—')"></td>
+          <td class="apt-small" style="color:var(--fg-3);" x-text="m.status==='staged' ? promoteIn(m.promote_after) : '—'"></td>
+          <td style="text-align:right; white-space:nowrap;">
+            {% if can_manage %}
+            <template x-if="m.status==='staged'">
+              <span>
+                <button class="btn btn-primary btn-sm" x-on:click="promoteVer(m)" :disabled="busy">Promote</button>
+                <button class="btn btn-secondary btn-sm" x-on:click="rejectVer(m)" :disabled="busy">Reject</button>
+              </span>
+            </template>
+            <button class="btn btn-secondary btn-sm" x-show="m.status==='archived'" x-on:click="rollbackVer(m)" :disabled="busy">Activate</button>
+            <span x-show="m.status==='active'" class="apt-small" style="color:var(--success);">live</span>
+            {% endif %}
+          </td>
+        </tr>
+      </template>
+      <tr x-show="fedModels.length === 0"><td colspan="6" style="text-align:center; color:var(--fg-3); padding:28px;">No federated models yet — sync after a round is published.</td></tr>
+    </tbody>
+  </table>
+</div>
+
 <div class="card" style="margin-bottom:18px;">
   <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
     <h2 class="apt-h3">Contributions</h2>
@@ -93,28 +168,24 @@
   </table>
 </div>
 
-{% if can_manage %}
-<div class="card card-pad">
-  <h2 class="apt-h3" style="margin-bottom:12px;">In-process FL demo</h2>
-  <div class="apt-small" style="color:var(--fg-2); margin-bottom:12px;">Simulates 3 orgs (UDoM + hospital + bank), poisons one client, and shows the trust manager dropping its score. Output: convergence chart + per-round metrics.</div>
-  <div class="form-grid">
-    <div class="field"><label class="field-label">Rounds</label><input class="input" type="number" x-model.number="demo.num_rounds" min="2" max="50"></div>
-    <div class="field"><label class="field-label">Hours / org</label><input class="input" type="number" x-model.number="demo.hours_per_org" min="1" max="72"></div>
-    <div class="field"><label class="field-label">Poison round</label><input class="input" type="number" x-model.number="demo.poison_round" min="2"></div>
-    <div class="field"><label class="field-label">DP epsilon</label><input class="input" type="number" step="0.1" x-model.number="demo.epsilon"></div>
+<div class="card" style="margin-bottom:18px;" x-show="status.configured">
+  <div style="padding:14px 18px; border-bottom:1px solid var(--border-1);">
+    <h2 class="apt-h3">Leave the federation</h2>
   </div>
-  <button class="btn btn-primary" x-on:click="runDemo()" :disabled="demoRunning" style="margin-top:10px;">
-    <i data-lucide="play"></i> Run demo
-  </button>
-  <div x-show="demoStatus" style="margin-top:14px;">
-    <div class="eyebrow">Status</div>
-    <pre class="mono apt-small" style="background:var(--bg-0); padding:12px; border-radius:var(--r-2); border:1px solid var(--border-1); overflow:auto; max-height:200px;" x-text="JSON.stringify(demoStatus, null, 2)"></pre>
-  </div>
-  <div x-show="convergencePoints.length > 0" style="margin-top:14px; height:240px; position:relative;">
-    <canvas id="chart-convergence"></canvas>
+  <div style="padding:16px 18px;">
+    <p class="apt-small" style="color:var(--fg-3); margin:0 0 12px;">
+      Two-step mutual handshake: send a <b>signed leave request</b> to the coordinator, an
+      operator <b>approves</b> it, then <b>finalize</b> to wipe this org's FL credentials
+      locally (your contribution history is kept). State:
+      <span class="mono" x-text="status.removal_state || 'none'"></span>.
+    </p>
+    <div class="row" style="gap:10px; flex-wrap:wrap;">
+      <button class="btn btn-sm" :disabled="busy || (status.removal_state && status.removal_state!=='none')" @click="requestLeave()">1. Request leave</button>
+      <button class="btn btn-sm" :disabled="busy || status.removal_state!=='requested'" @click="finalizeLeave()">2. Finalize (after approval)</button>
+      <button class="btn btn-sm btn-danger" :disabled="busy" @click="forcePurge()">Force-purge (coordinator unreachable)</button>
+    </div>
   </div>
 </div>
-{% endif %}
 
 </div>
 
@@ -129,10 +200,10 @@ function flPage() {
     publicKey: '',
     enrollJson: '',
     optedIn: false,
-    demo: { num_rounds: 10, hours_per_org: 12, poison_round: 5, epsilon: 1.0 },
-    demoRunning: false,
-    demoStatus: null,
-    convergencePoints: [],
+    settings: { mode: 'manual', detector: 'lateral_movement', epsilon: 1.0, global_model_verify_hours: 24 },
+    busy: false,
+    fedModels: [],
+    detectors: ['lateral_movement', 'dns_exfiltration'],
 
     async load() {
       const r = await fetch('/fl/local/status', { credentials: 'same-origin' });
@@ -155,6 +226,19 @@ function flPage() {
           this.contributions = d.contributions || [];
         }
       } catch (_) {}
+      this.loadSettings();
+      this.loadFedModels();
+    },
+
+    async _post(path, body) {
+      const r = await fetch(path, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? '{}' : JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((data && data.detail) || ('HTTP ' + r.status));
+      return data;
     },
 
     async initKeypair() {
@@ -204,52 +288,156 @@ function flPage() {
       }
     },
 
-    async runDemo() {
-      this.demoRunning = true;
-      this.convergencePoints = [];
-      const r = await fetch('/fl/local/demo/run', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.demo),
-      });
-      if (!r.ok) {
-        Alpine.store('toast').push('Demo could not start.', 'error');
-        this.demoRunning = false;
-        return;
-      }
-      const j = await r.json();
-      this.demoStatus = j;
-      Alpine.store('toast').push('Demo started — this can take a minute.', 'ok');
-      // Poll
-      const poll = async () => {
-        const pr = await fetch('/fl/local/demo/' + j.job_id, { credentials: 'same-origin' });
-        if (pr.ok) {
-          this.demoStatus = await pr.json();
-          if (this.demoStatus.status !== 'running') {
-            this.demoRunning = false;
-            if (this.demoStatus.convergence) {
-              this.renderConvergence(this.demoStatus.convergence);
-            }
-            return;
-          }
+    async loadSettings() {
+      try {
+        const r = await fetch('/fl/local/settings', { credentials: 'same-origin' });
+        if (r.ok) {
+          const s = await r.json();
+          this.settings = {
+            mode: s.mode || 'manual',
+            detector: s.detector || 'lateral_movement',
+            epsilon: s.epsilon || 1.0,
+            global_model_verify_hours: s.global_model_verify_hours ?? 24,
+          };
         }
-        setTimeout(poll, 2500);
-      };
-      setTimeout(poll, 2500);
+      } catch (_) {}
     },
 
-    async renderConvergence(c) {
-      // Expected shape: { rounds: [{round, global_auc, ...}], ... }
-      const pts = (c.rounds || []).map(r => ({ ts: '#' + r.round, auc: r.global_auc || 0 }));
-      this.convergencePoints = pts;
-      await this.$nextTick();
-      const canvas = document.getElementById('chart-convergence');
-      if (canvas && window.AptCharts) {
-        window.AptCharts.lineChart(canvas, pts, {
-          fill: true, series: [{ key: 'auc', label: 'Global AUC' }],
-        });
-      }
+    async saveSettings() {
+      try {
+        await this._post('/fl/local/settings', {
+          mode: this.settings.mode, detector: this.settings.detector, epsilon: this.settings.epsilon });
+        Alpine.store('toast').push('Participation settings saved.', 'ok');
+        this.loadSettings();
+      } catch (e) { Alpine.store('toast').push('Save failed: ' + e.message, 'error'); }
     },
+
+    async participate() {
+      this.busy = true;
+      try {
+        const res = await this._post('/fl/local/participate', {
+          detector: this.settings.detector, epsilon: this.settings.epsilon });
+        Alpine.store('toast').push('Contributed to round ' + res.round_id + '.', 'ok');
+        this.load();
+      } catch (e) { Alpine.store('toast').push('Participate: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async syncGlobal() {
+      this.busy = true;
+      try {
+        const res = await this._post('/fl/local/sync-global', { detector: this.settings.detector });
+        Alpine.store('toast').push(res.skipped ? 'Already have this global version.'
+          : ('Global model staged (' + res.version + ') — soaking.'), 'ok');
+        this.loadFedModels();
+      } catch (e) { Alpine.store('toast').push('Sync: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async requestLeave() {
+      const c = prompt('Send a SIGNED leave request to the coordinator?\nType your org_id ("' + (this.status.org_id || '') + '") to confirm:');
+      if (c !== this.status.org_id) { Alpine.store('toast').push('Leave cancelled.', 'error'); return; }
+      this.busy = true;
+      try {
+        await this._post('/fl/local/leave-request', { confirm_org_id: c, reason: '' });
+        Alpine.store('toast').push('Leave requested — awaiting operator approval.', 'ok');
+        this.load();
+      } catch (e) { Alpine.store('toast').push('Leave request: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async finalizeLeave() {
+      this.busy = true;
+      try {
+        const res = await this._post('/fl/local/finalize-leave', {});
+        if (res.finalized) Alpine.store('toast').push('Removed — local credentials wiped (contributions kept).', 'ok');
+        else Alpine.store('toast').push('Still awaiting operator approval.', 'error');
+        this.load();
+      } catch (e) { Alpine.store('toast').push('Finalize: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async forcePurge() {
+      const c = prompt('FORCE-purge local FL membership WITHOUT the coordinator?\nThe coordinator will still list this org until an operator revokes it.\nType your org_id ("' + (this.status.org_id || '') + '") to confirm:');
+      if (c !== this.status.org_id) { Alpine.store('toast').push('Cancelled.', 'error'); return; }
+      this.busy = true;
+      try {
+        await this._post('/fl/local/force-purge', { confirm_org_id: c, keep_contributions: true });
+        Alpine.store('toast').push('Local FL membership purged (contributions kept).', 'ok');
+        this.load();
+      } catch (e) { Alpine.store('toast').push('Force-purge: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async loadFedModels() {
+      const out = [];
+      for (const det of this.detectors) {
+        try {
+          const r = await fetch('/models/' + det + '/versions', { credentials: 'same-origin' });
+          if (!r.ok) continue;
+          const d = await r.json();
+          for (const v of (d.versions || [])) {
+            const meta = v.metadata || {};
+            if (meta.source === 'federated') {
+              out.push({ detector: det, version: v.version, status: v.status,
+                         fl_round_id: meta.fl_round_id, promote_after: meta.promote_after });
+            }
+          }
+        } catch (_) {}
+      }
+      const order = { staged: 0, active: 1, archived: 2, discarded: 3 };
+      out.sort((a, b) => (order[a.status] - order[b.status]) || b.version.localeCompare(a.version));
+      this.fedModels = out;
+    },
+
+    async promoteVer(m) {
+      this.busy = true;
+      try {
+        await this._post('/models/' + m.detector + '/versions/' + m.version + '/promote');
+        Alpine.store('toast').push(m.detector + ' ' + m.version + ' promoted (live).', 'ok');
+        this.loadFedModels();
+      } catch (e) { Alpine.store('toast').push('Promote: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async rejectVer(m) {
+      this.busy = true;
+      try {
+        await this._post('/models/' + m.detector + '/versions/' + m.version + '/discard');
+        Alpine.store('toast').push(m.version + ' rejected.', 'ok');
+        this.loadFedModels();
+      } catch (e) { Alpine.store('toast').push('Reject: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    async rollbackVer(m) {
+      if (!confirm('Roll the live ' + m.detector + ' detector back to ' + m.version + '?')) return;
+      this.busy = true;
+      try {
+        await this._post('/models/' + m.detector + '/rollback/' + m.version);
+        Alpine.store('toast').push('Rolled back to ' + m.version + '.', 'ok');
+        this.loadFedModels();
+      } catch (e) { Alpine.store('toast').push('Rollback: ' + e.message, 'error'); }
+      finally { this.busy = false; }
+    },
+
+    fedPill(status) {
+      const map = {
+        active: 'background:var(--success-bg);color:var(--success);',
+        staged: 'background:var(--warn-bg,rgba(224,179,65,.14));color:var(--warn,#e0b341);',
+      };
+      return map[status] || 'background:var(--bg-3);color:var(--fg-3);';
+    },
+
+    promoteIn(ts) {
+      if (!ts) return '—';
+      const s = ts - (Date.now() / 1000);
+      if (s <= 0) return 'due now';
+      if (s < 3600) return Math.ceil(s / 60) + 'm';
+      if (s < 86400) return Math.ceil(s / 3600) + 'h';
+      return Math.ceil(s / 86400) + 'd';
+    },
+
   };
 }
 </script>

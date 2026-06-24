@@ -87,7 +87,7 @@ def window_events(
     return [
         (entity, sorted(events, key=lambda e: e.timestamp), label_buckets[(entity, bucket)])
         for (entity, bucket), events in buckets.items()
-        if len(events) >= 2  # require at least 2 events for meaningful temporal features
+        if len(events) >= 1  # single-event windows are valid; extractors zero-fill temporal features
     ]
 
 
@@ -143,8 +143,14 @@ DEFAULT_PARAMS = {
     "max_depth":        6,
     "eta":              0.1,
     "subsample":        0.85,
-    "colsample_bytree": 0.85,
-    "min_child_weight": 1,
+    # Regularization (improvement #2): lower column sampling + higher
+    # min_child_weight + L2 stop XGBoost from leaning on a single artifact
+    # feature (the failure mode that made the DNS model rely on one
+    # non-DNS column). Combined with hardened synthetic data, this forces
+    # the model to spread across genuine signal features.
+    "colsample_bytree": 0.6,
+    "min_child_weight": 3,
+    "reg_lambda":       2.0,
     "verbosity":        0,
 }
 
@@ -174,10 +180,16 @@ def train_booster(
     dtrain = xgb.DMatrix(X[train_idx], label=y[train_idx], feature_names=feature_names)
     deval  = xgb.DMatrix(X[eval_idx],  label=y[eval_idx],  feature_names=feature_names)
 
-    # Auto-balance positive class weight if dataset is skewed
-    pos = int(y[train_idx].sum())
-    neg = int(len(train_idx) - pos)
-    scale_pos_weight = (neg / pos) if pos > 0 else 1.0
+    # Auto-balance positive class weight using the FULL dataset ratio, not the
+    # 80% training split. With very few positives a random split can put all
+    # of them in the eval set, making the train-split ratio 0/N and silently
+    # setting scale_pos_weight=1.0 — which disables imbalance correction entirely.
+    pos_total = int(y.sum())
+    neg_total = int(len(y) - pos_total)
+    scale_pos_weight = (neg_total / pos_total) if pos_total > 0 else 1.0
+
+    # Keep per-split counts for the metrics dict (diagnostic only).
+    n_pos_train = int(y[train_idx].sum())
 
     p = dict(DEFAULT_PARAMS)
     if params:
@@ -198,7 +210,7 @@ def train_booster(
     metrics = {
         "n_train":          int(len(train_idx)),
         "n_eval":           int(len(eval_idx)),
-        "n_pos_train":      pos,
+        "n_pos_train":      n_pos_train,
         "n_pos_eval":       int(y[eval_idx].sum()),
         "scale_pos_weight": float(scale_pos_weight),
         "best_iteration":   int(booster.best_iteration),
@@ -223,6 +235,7 @@ def train_model(
     num_boost_round: int = 200,
     extra_params: Optional[dict] = None,
     status: str = "active",
+    feature_groups: Optional[list[str]] = None,
 ) -> dict:
     """
     Train a model end-to-end and persist it.
@@ -250,11 +263,45 @@ def train_model(
     logger.info("Feature matrix built",
                 shape=tuple(X.shape), positives=int(y.sum()))
 
+    # Feature-domain restriction (i): keep only columns whose extractor
+    # namespace (the part before "__") is in feature_groups. This stops the
+    # model from learning cross-domain synthetic artifacts. When None, train on
+    # all features (legacy behaviour). Everything downstream keys off the
+    # filtered feature_names, so the manifest schema-pin, feature_min/max, and
+    # inference all follow automatically.
+    if feature_groups:
+        allowed = set(feature_groups)
+        keep = [i for i, n in enumerate(feature_names) if n.split("__")[0] in allowed]
+        if not keep:
+            raise ValueError(
+                f"feature_groups {sorted(allowed)} matched no feature columns; "
+                f"available namespaces: {sorted({n.split('__')[0] for n in feature_names})}"
+            )
+        X = X[:, keep]
+        feature_names = [feature_names[i] for i in keep]
+        logger.info("Feature domain restricted",
+                    groups=sorted(allowed), kept=len(feature_names))
+
     booster, metrics = train_booster(
         X, y, feature_names,
         num_boost_round=num_boost_round,
         params=extra_params,    # tuner-supplied overrides win over DEFAULT_PARAMS
     )
+
+    # Degenerate-model guard (improvement #3): a near-perfect eval AUC on the
+    # (usually synthetic) training data almost always means the classes are
+    # trivially separable on some artifact feature — not that the model is
+    # good. It masked the DNS model's reliance on a non-DNS column (real-data
+    # AUC was 0.057). Surface it loudly; never hard-fail.
+    auc = metrics.get("eval_auc")
+    if isinstance(auc, (int, float)) and not math.isnan(auc) and auc >= 0.999:
+        metrics["auc_warning"] = True
+        logger.warning(
+            "Near-perfect eval AUC — likely a degenerate/overfit shortcut on a "
+            "trivially-separable feature; validate on REAL data before trusting it",
+            model_name=model_name, eval_auc=round(float(auc), 6),
+        )
+
     metrics["window_minutes"] = window_minutes
     metrics["grouping"]       = grouping
     metrics["feature_names"]  = feature_names  # persisted in manifest

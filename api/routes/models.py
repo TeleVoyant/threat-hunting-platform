@@ -504,13 +504,30 @@ async def list_detectors(
     request: Request,
     user: User = Depends(require_permission("read_detections")),
 ):
-    """List loaded detectors with current threshold."""
+    """List loaded detectors with current threshold and feature-domain groups."""
+    # Per-detector feature_groups from config (improvement #1) — surfaced so the
+    # dashboard can show which feature namespaces each model is trained on.
+    feature_groups: dict = {}
+    try:
+        import yaml
+        cfg_path = Path(os.environ.get("CONFIG_DIR", "config")) / "detectors.yml"
+        if cfg_path.exists():
+            detectors_cfg = (yaml.safe_load(cfg_path.read_text()) or {}).get("detectors", {}) or {}
+            for n, c in detectors_cfg.items():
+                fg = (c or {}).get("feature_groups")
+                if isinstance(fg, list):
+                    feature_groups[n] = fg
+    except Exception:
+        feature_groups = {}
+
     out = []
     for name in registry.list_names():
         det = registry.get(name)
         out.append({
             "name": name,
             "threshold": getattr(det, "threshold", None),
+            # None means "all features" (no restriction configured).
+            "feature_groups": feature_groups.get(name),
         })
     return {"detectors": out}
 
@@ -559,13 +576,79 @@ async def set_detector_threshold(
 
 _EVAL_DIR = Path(os.environ.get("DATA_DIR", "data")) / "evaluations"
 _TUNE_DIR = Path(os.environ.get("DATA_DIR", "data")) / "tunings"
+# Canonical real-dataset directory (CIC JSONL, OTRF/Mordor dirs). Evaluations
+# against real data are restricted to datasets under this root.
+_DATASETS_DIR = Path(os.environ.get("DATASETS_DIR", "data/datasets"))
+
+# Default grouping per detector (mirrors detection.subscriber._DETECTOR_GROUPING).
+_DETECTOR_GROUPING = {"lateral_movement": "hostname_user", "dns_exfiltration": "hostname"}
+
+
+def _resolve_dataset(rel_id: str) -> Path:
+    """Resolve a dataset id (relative path under _DATASETS_DIR) to an absolute
+    path, guarding against traversal. Raises HTTPException(400) on escape/missing.
+    The id always comes from the server-curated /eval-datasets list, but we
+    re-validate here because it arrives back from the (untrusted) client."""
+    root = _DATASETS_DIR.resolve()
+    target = (root / rel_id).resolve()
+    if not (target == root or root in target.parents):
+        raise HTTPException(400, f"Dataset path escapes datasets dir: {rel_id!r}")
+    if not target.exists():
+        raise HTTPException(404, f"Dataset not found: {rel_id!r}")
+    return target
+
+
+@router.get("/eval-datasets")
+async def list_eval_datasets(
+    request: Request,
+    user: User = Depends(require_permission("read_detections")),
+):
+    """Curated real datasets available for evaluation, under _DATASETS_DIR.
+
+    - kind="jsonl": a labelled NormalizedEvent JSONL (e.g. cic_bell_dns.jsonl)
+      → fed via --from-jsonl. Also usable as a real-benign corpus.
+    - kind="mordor": a directory of Mordor/Sysmon JSON (e.g. OTRF apt29)
+      → fed via --mordor-dir (+ synthetic benign for negatives).
+    Ids are paths relative to the datasets root (re-validated on use)."""
+    root = _DATASETS_DIR
+    jsonl, mordor = [], []
+    if root.exists():
+        # JSONL files (rglob, capped). Skip anything inside a .git tree.
+        for p in sorted(root.rglob("*.jsonl"))[:200]:
+            if ".git" in p.parts:
+                continue
+            jsonl.append({"id": str(p.relative_to(root)), "label": str(p.relative_to(root)),
+                          "kind": "jsonl", "size_mb": round(p.stat().st_size / 1048576, 1)})
+        # Mordor dirs: directories that directly contain >=1 .json (bounded walk).
+        seen = 0
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d != ".git"]
+            if seen >= 80:
+                break
+            if any(f.endswith(".json") for f in filenames):
+                rel = os.path.relpath(dirpath, root)
+                mordor.append({"id": rel, "label": rel, "kind": "mordor"})
+                seen += 1
+    return {"jsonl": jsonl, "mordor": sorted(mordor, key=lambda d: d["label"])}
 
 
 class EvaluateRequest(BaseModel):
-    hours: int = Field(48, ge=1, le=720)
-    hosts: int = Field(10, ge=1, le=50)
-    lateral_attacks: int = Field(8, ge=0, le=200)
-    dns_attacks:     int = Field(8, ge=0, le=200)
+    # source: "synthetic" (default) | "jsonl" (real labelled events) |
+    #         "mordor" (real Sysmon dir + synthetic benign negatives)
+    source: str = "synthetic"
+    dataset_id: str | None = None          # required for jsonl/mordor (rel path under datasets dir)
+    benign_dataset_id: str | None = None   # optional real-benign JSONL (negatives)
+    grouping: str | None = None            # hostname | hostname_user (default per detector)
+    add_synthetic_benign_hours: int = Field(24, ge=0, le=168)  # mordor negatives
+    # NOTE: defaults kept within the stable synthetic-generation envelope.
+    # Larger volumes (e.g. 48h x 10 hosts ~= 500k events) reliably SIGSEGV the
+    # native OpenMP runtime during GC in some environments; 24h x 5 hosts is
+    # ~4x smaller and runs clean. Attack counts are raised to keep enough
+    # positive windows for stable precision/recall at the smaller window.
+    hours: int = Field(24, ge=1, le=720)
+    hosts: int = Field(5, ge=1, le=50)
+    lateral_attacks: int = Field(15, ge=0, le=200)
+    dns_attacks:     int = Field(15, ge=0, le=200)
     seed: int = Field(42, ge=0)
     threshold: float = Field(0.5, ge=0.0, le=1.0)
 
@@ -578,9 +661,26 @@ async def evaluate_model(
     request: Request,
     user: User = Depends(require_permission("retrain_models")),
 ):
-    """Run NFR-02 evaluation against synthetic data in a background task."""
+    """Run NFR-02 evaluation in a background task.
+
+    source=synthetic (default) evaluates against generated data; source=jsonl
+    or mordor evaluates against a real dataset under the datasets dir. Dataset
+    paths are validated here (sync → 400) before the job is queued."""
     if name not in _KNOWN_MODELS:
         raise HTTPException(404, f"Unknown model: {name}")
+
+    # Resolve + validate real-dataset paths up front (path-traversal guarded).
+    dataset_path = None
+    benign_path = None
+    if body.source in ("jsonl", "mordor"):
+        if not body.dataset_id:
+            raise HTTPException(400, f"source={body.source!r} requires dataset_id")
+        dataset_path = str(_resolve_dataset(body.dataset_id))
+    elif body.source != "synthetic":
+        raise HTTPException(400, f"Unknown eval source: {body.source!r}")
+    if body.benign_dataset_id:
+        benign_path = str(_resolve_dataset(body.benign_dataset_id))
+
     import uuid, time as _time
     job_id = f"eval_{int(_time.time())}_{uuid.uuid4().hex[:6]}"
     _EVAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -592,61 +692,109 @@ async def evaluate_model(
         actor=user.username, target=name,
         details={"job_id": job_id, **body.model_dump()},
     )
-    background.add_task(_run_evaluation, name, body, job_id, job_path, user.username, request.app)
+    background.add_task(_run_evaluation, name, body, job_id, job_path,
+                        user.username, request.app, dataset_path, benign_path)
     return {"job_id": job_id, "model": name, "status": "running"}
 
 
-def _run_evaluation(name, body, job_id, job_path, actor, app):
-    """Background task — calls `training.evaluate_models` as a subprocess."""
+def _run_evaluation(name, body, job_id, job_path, actor, app,
+                    dataset_path=None, benign_path=None):
+    """Background task — calls `training.evaluate_models` as a subprocess.
+
+    Builds the data-source flags from body.source: synthetic | jsonl | mordor.
+    dataset_path / benign_path are pre-validated absolute paths (or None)."""
     import subprocess, json, sys, time as _time
     out_json = _EVAL_DIR / f"{name}__{job_id}__result.json"
+    grouping = body.grouping or _DETECTOR_GROUPING.get(name, "hostname_user")
     cmd = [
         sys.executable, "-m", "training.evaluate_models",
         "--model-name", name,
         "--model-path", f"detection/models/{name}/latest",
-        "--synthetic",
-        "--hours", str(body.hours),
-        "--hosts", str(body.hosts),
-        "--lateral-attacks", str(body.lateral_attacks),
-        "--dns-attacks", str(body.dns_attacks),
-        "--seed", str(body.seed),
+        "--grouping", grouping,
         "--threshold", str(body.threshold),
         "--output-json", str(out_json),
     ]
+    if body.source == "jsonl":
+        cmd += ["--from-jsonl", dataset_path]
+    elif body.source == "mordor":
+        cmd += ["--mordor-dir", dataset_path,
+                "--add-synthetic-benign-hours", str(body.add_synthetic_benign_hours),
+                "--hosts", str(body.hosts), "--seed", str(body.seed)]
+    else:  # synthetic
+        cmd += ["--synthetic",
+                "--hours", str(body.hours), "--hosts", str(body.hosts),
+                "--lateral-attacks", str(body.lateral_attacks),
+                "--dns-attacks", str(body.dns_attacks), "--seed", str(body.seed)]
+    if benign_path:
+        cmd += ["--benign-jsonl", benign_path]
     env = dict(os.environ)
+    # xgboost/numpy can SIGSEGV under OpenMP during heavy synthetic generation;
+    # pin every native thread pool to 1. (The decisive guard is the bounded
+    # default data volume in EvaluateRequest — see note there.)
+    for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+               "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        env[_v] = "1"
     started = _time.time()
-    # 10-minute ceiling so a runaway eval (e.g. someone passes hours=720 with
-    # a huge boost-round override) doesn't pin a worker indefinitely. The
-    # current observed duration is ~75s for the default 48h synthetic eval.
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
-        timed_out = False
-    except subprocess.TimeoutExpired as te:
-        proc = te  # carries .stdout/.stderr (possibly None) + .cmd
-        timed_out = True
+    # The synthetic generator + xgboost/numpy intermittently SIGSEGV the native
+    # OpenMP runtime during a GC pass on some hosts — usually on interpreter
+    # *teardown*, AFTER a complete report has already been written to disk.
+    # So we (1) retry a few times and (2) treat a run that produced a parseable
+    # report as a success even if the process then died: evaluate_models writes
+    # the result file as its final action, so a file that exists is whole.
+    # 10-minute ceiling per attempt so a runaway eval can't pin a worker.
+    MAX_ATTEMPTS = 5
+    report = None
+    report_error = None
+    exit_code = None
+    stderr_tail = ""
+    timed_out = False
+    attempts = 0
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        attempts = attempt
+        try:
+            out_json.unlink()          # clear any stale/partial report first
+        except FileNotFoundError:
+            pass
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  env=env, timeout=600)
+            exit_code = proc.returncode
+            stderr_tail = (proc.stderr or "")[-2000:]
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            exit_code = -15           # mirror SIGTERM convention
+            stderr_tail = "evaluation timed out after 600s — child killed (SIGTERM)"
+            break                     # a real timeout is not worth retrying
+        if out_json.exists():
+            try:
+                report = json.loads(out_json.read_text())
+            except Exception as e:
+                report, report_error = None, str(e)
+        # Done when the child exited cleanly OR left a complete report behind.
+        if exit_code == 0 or report is not None:
+            break
     duration = _time.time() - started
-    if timed_out:
-        status = "failed"
-        exit_code = -15  # mirror SIGTERM convention
-        stderr_tail = "evaluation timed out after 600s — child killed (SIGTERM)"
-    else:
-        status = "ok" if proc.returncode == 0 else "failed"
-        exit_code = proc.returncode
-        stderr_tail = (proc.stderr or "")[-2000:]
+
+    recovered_after_crash = report is not None and exit_code not in (0, None)
+    status = "ok" if report is not None else "failed"
+    if recovered_after_crash:
+        stderr_tail = (f"recovered: report written but process exited "
+                       f"{exit_code} (native teardown crash). " + stderr_tail)[-2000:]
     summary = {
         "job_id": job_id, "model": name,
         "status": status,
         "exit_code": exit_code,
+        "attempts": attempts,
+        "recovered_after_crash": recovered_after_crash,
         "duration_sec": round(duration, 2),
         "stderr_tail": stderr_tail,
         "started_at": started,
         "params": body.model_dump(),
     }
-    if out_json.exists():
-        try:
-            summary["report"] = json.loads(out_json.read_text())
-        except Exception as e:
-            summary["report_error"] = str(e)
+    if report is not None:
+        summary["report"] = report
+    if report_error:
+        summary["report_error"] = report_error
     job_path.write_text(json.dumps(summary, indent=2))
 
     try:
@@ -684,10 +832,11 @@ async def list_evaluations(
 # ── Tuning (subprocess) ────────────────────────────────────────────────────
 
 class TuneRequest(BaseModel):
-    hours: int = Field(48, ge=1, le=720)
-    hosts: int = Field(10, ge=1, le=50)
-    lateral_attacks: int = Field(8, ge=0, le=200)
-    dns_attacks:     int = Field(8, ge=0, le=200)
+    # Bounded to the stable synthetic-generation envelope — see EvaluateRequest.
+    hours: int = Field(24, ge=1, le=720)
+    hosts: int = Field(5, ge=1, le=50)
+    lateral_attacks: int = Field(15, ge=0, le=200)
+    dns_attacks:     int = Field(15, ge=0, le=200)
     seed: int = Field(42, ge=0)
     n_splits: int = Field(3, ge=2, le=10)
 

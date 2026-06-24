@@ -20,13 +20,24 @@
   <div class="card" style="margin-bottom:18px;">
     <div style="padding:14px 18px; border-bottom:1px solid var(--border-1); display:flex; justify-content:space-between; align-items:center;">
       <div>
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <h2 class="apt-h2" x-text="m.name"></h2>
           <span class="pill" style="background:var(--bg-3); color:var(--fg-2);" x-text="m.current_version || 'no version'"></span>
           <span class="pill" :style="m.registered ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--warning-bg);color:var(--warning);'"
                 x-text="m.registered ? 'LOADED' : 'NOT LOADED'"></span>
+          <!-- Feature-domain restriction (#1): which feature namespaces this model trains on -->
+          <span class="pill" x-show="featureGroups[m.name] && featureGroups[m.name].length"
+                style="background:var(--bg-3); color:var(--fg-2);"
+                x-text="'domain: ' + (featureGroups[m.name]||[]).join('+')"
+                title="Feature-domain restriction (config/detectors.yml feature_groups)"></span>
+          <!-- Degenerate-model guard (#3): latest version tripped the near-perfect-AUC warning -->
+          <span class="pill" x-show="latestMeta[m.name] && latestMeta[m.name].auc_warning"
+                style="background:var(--warning-bg); color:var(--warning);"
+                title="Near-perfect eval AUC on (synthetic) training data — likely an overfit/degenerate shortcut. Validate on real data before trusting it.">
+            &#9888; AUC overfit risk</span>
         </div>
-        <div class="apt-small" style="color:var(--fg-3);" x-text="m.version_count + ' versions on disk'"></div>
+        <div class="apt-small" style="color:var(--fg-3);"
+             x-text="m.version_count + ' versions on disk' + (latestMeta[m.name] && latestMeta[m.name].eval_auc != null ? ' · latest eval AUC ' + Number(latestMeta[m.name].eval_auc).toFixed(3) : '')"></div>
       </div>
       <div style="display:flex; gap:8px;">
         {% if can_retrain %}
@@ -134,6 +145,8 @@ function modelsPage() {
     driftBaselines: {},
     driftCounts: {},
     thresholds: {},
+    featureGroups: {},   // detector -> [namespaces] (feature-domain restriction #1)
+    latestMeta: {},      // detector -> {eval_auc, auc_warning} for the latest version
     modal: { open: false, kind: '', title: '', model: '' },
     form: { hours: 48, hosts: 10, lateral_attacks: 8, dns_attacks: 8, seed: 42, num_boost_round: 200, threshold: 0.5, version: '' },
     rollbackVersions: [],
@@ -145,16 +158,38 @@ function modelsPage() {
       for (const m of this.models) {
         this.fetchDrift(m.name);
         this.fetchImportance(m.name);
+        this.fetchLatestMeta(m.name);
       }
-      // Detector thresholds
+      // Detector thresholds + feature-domain groups (#1)
       try {
         const dr = await fetch('/models/detectors', { credentials: 'same-origin' });
         if (dr.ok) {
           const dd = await dr.json();
           for (const det of dd.detectors || []) {
             this.thresholds[det.name] = det.threshold || 0.5;
+            this.featureGroups[det.name] = det.feature_groups || null;
           }
         }
+      } catch (_) {}
+    },
+
+    // Pull the latest version's metadata (eval AUC + degenerate-model guard
+    // flag) so the card can badge an overfit-risk model (#3).
+    async fetchLatestMeta(name) {
+      try {
+        const r = await fetch('/models/' + name + '/versions', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+        const vs = d.versions || [];
+        if (!vs.length) return;
+        // Prefer the active version; else the newest by created_at.
+        let v = vs.find(x => x.status === 'active');
+        if (!v) v = vs.slice().sort((a, b) => (b.created_at||0) - (a.created_at||0))[0];
+        const meta = (v && v.metadata) || {};
+        this.latestMeta[name] = {
+          eval_auc: meta.eval_auc,
+          auc_warning: !!meta.auc_warning,
+        };
       } catch (_) {}
     },
 

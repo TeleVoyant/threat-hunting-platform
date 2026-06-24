@@ -4,14 +4,14 @@ Platform health endpoint.
 Aggregates health from all components.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from shared.health import HealthStatus, ComponentHealth
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def platform_health(request):
+async def platform_health(request: Request):
     """
     Returns health of all platform components.
     Used by Docker healthcheck and monitoring.

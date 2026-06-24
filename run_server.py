@@ -7,7 +7,6 @@
 ║     python run_server.py                                     ║
 ║     python run_server.py --config-dir /path/to/config        ║
 ║     python run_server.py --mode api-only                     ║
-║     python run_server.py --mode fl-server                    ║
 ║                                                              ║
 ║   Or via Docker:                                             ║
 ║     docker compose up -d                                     ║
@@ -35,8 +34,6 @@ def parse_args():
 MODES:
   full        Run everything: API + detection loop + visualization (default)
   api-only    Run only the FastAPI server (no detection loop)
-  fl-server   Run only the Federated Learning server
-  fl-client   Run only the Federated Learning client
 
 EXAMPLES:
   # Run full platform (for production/demo):
@@ -47,17 +44,11 @@ EXAMPLES:
 
   # Run only the API (for development):
   python run_server.py --mode api-only --reload
-
-  # Run FL server separately:
-  python run_server.py --mode fl-server
-
-  # Run FL client pointed at FL server:
-  python run_server.py --mode fl-client --fl-server-address 192.168.1.100:8888
         """,
     )
     parser.add_argument(
         "--mode",
-        choices=["full", "api-only", "fl-server", "fl-client"],
+        choices=["full", "api-only"],
         default="full",
         help="What to run (default: full)",
     )
@@ -87,21 +78,6 @@ EXAMPLES:
         default=os.environ.get("LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level (default: INFO)",
-    )
-    parser.add_argument(
-        "--fl-server-address",
-        default="localhost:8888",
-        help="FL server address for fl-client mode",
-    )
-    parser.add_argument(
-        "--fl-client-name",
-        default=None,
-        help="FL client name (default: hostname)",
-    )
-    parser.add_argument(
-        "--fl-data-path",
-        default=None,
-        help="Path to local training data for FL client",
     )
     return parser.parse_args()
 
@@ -152,65 +128,6 @@ def run_api_only(args):
     )
 
 
-def run_fl_server(args):
-    """Run the Federated Learning server."""
-    from shared.logging import setup_logging, get_logger
-    from shared.config import load_config
-
-    setup_logging(args.log_level)
-    logger = get_logger("fl.server")
-
-    cfg = load_config(args.config_dir)
-    fl_port = cfg.federated.server.port
-
-    logger.info(
-        "Starting FL Server", port=fl_port, min_clients=cfg.federated.server.min_clients
-    )
-
-    from federated.server import start_fl_server
-
-    start_fl_server()
-
-
-def run_fl_client(args):
-    """Run a Federated Learning client."""
-    import socket
-    from shared.logging import setup_logging, get_logger
-
-    setup_logging(args.log_level)
-    logger = get_logger("fl.client")
-
-    client_name = args.fl_client_name or socket.gethostname()
-    data_path = args.fl_data_path
-
-    if not data_path:
-        logger.error("--fl-data-path is required for fl-client mode")
-        sys.exit(1)
-
-    logger.info(
-        "Starting FL Client",
-        name=client_name,
-        server=args.fl_server_address,
-        data_path=data_path,
-    )
-
-    import flwr as fl
-    from federated.client import XGBoostFLClient
-
-    xgb_params = {
-        "objective": "binary:logistic",
-        "eval_metric": "auc",
-        "max_depth": 8,
-        "learning_rate": 0.05,
-    }
-
-    client = XGBoostFLClient(local_data_path=data_path, params=xgb_params)
-    fl.client.start_client(
-        server_address=args.fl_server_address,
-        client=client,
-    )
-
-
 def main():
     args = parse_args()
 
@@ -232,8 +149,6 @@ def main():
     mode_handlers = {
         "full": run_full,
         "api-only": run_api_only,
-        "fl-server": run_fl_server,
-        "fl-client": run_fl_client,
     }
 
     handler = mode_handlers[args.mode]

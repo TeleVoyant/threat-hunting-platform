@@ -30,6 +30,7 @@ Coverage matches what the feature extractors look for:
     - DNS Client EID 3008 events with low TTL
 """
 
+import gc
 import random
 import string
 import uuid
@@ -54,6 +55,27 @@ _BENIGN_PROCESSES = [
     r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
 ]
 _BENIGN_USERS = ["alice", "bob", "carol", "dave", "eve.legit"]
+
+# Benign NON-browser tools that legitimately make DNS queries, sometimes in
+# high volume (sync clients, telemetry). Including these in benign traffic
+# stops the model from treating "non-browser process doing DNS" or "high DNS
+# volume" as an exclusive attack signal (improvement #2).
+_BENIGN_DNS_TOOLS = [
+    r"C:\Windows\System32\svchost.exe",
+    r"C:\Program Files\Microsoft OneDrive\OneDrive.exe",
+    r"C:\Program Files\Microsoft\Teams\current\Teams.exe",
+    r"C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe",
+    r"C:\Windows\System32\backgroundTaskHost.exe",
+]
+# DNS-exfil tooling varies per engagement — do NOT let one fixed process name
+# (the old always-dnstun.exe) become a perfect shortcut.
+_EXFIL_TOOLS = [
+    r"C:\Users\victim\AppData\Local\Temp\dnstun.exe",
+    r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+    r"C:\Windows\System32\svchost.exe",
+    r"C:\Users\victim\Downloads\update.exe",
+    r"C:\ProgramData\iodine.exe",
+]
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -155,6 +177,25 @@ def generate_normal_minute(
             process_name=proc, bytes_received=20,
         ), 0
 
+    # Occasionally (~12% of minutes) a benign non-browser tool makes a HIGH
+    # volume of DNS queries (sync client, telemetry burst). This deliberately
+    # overlaps with the exfil "high volume + non-browser process" signature so
+    # the model can't separate on those features alone (improvement #2).
+    if random.random() < 0.12:
+        tool = random.choice(_BENIGN_DNS_TOOLS)
+        base_domain = random.choice(_BENIGN_DOMAINS)
+        for _ in range(random.randint(20, 45)):
+            sub = random.choice(["cdn", "telemetry", "sync", "v10", "settings", "api"])
+            yield _make(
+                "dns_query", _now(base_ts, random.randint(0, 59)),
+                hostname=hostname, eid=22,
+                dns_query=f"{sub}{random.randint(1,40)}.{base_domain}",
+                dns_query_type=random.choice(["A", "AAAA"]),
+                dns_response_code="NOERROR",
+                dns_ttl=random.choice([60, 300, 600]),
+                process_name=tool, bytes_received=random.randint(40, 120),
+            ), 0
+
     # 1–3 normal HTTPS connections
     for _ in range(random.randint(1, 3)):
         yield _make(
@@ -183,18 +224,35 @@ def generate_normal_minute(
 def generate_lateral_movement_attack(
     start_ts: datetime, target_host: str
 ) -> Iterator[tuple[NormalizedEvent, int]]:
-    """One end-to-end PtH-style attack window (~3 minutes, ~20 events)."""
+    """One lateral-movement attack window, in one of several STYLES so that
+    no single signal (brute force, LSASS, encoded PowerShell) is present in
+    every positive — real actors like apt29 use valid credentials with no
+    brute force at all (improvement #2):
+
+      - "brute_force"    : 4625 burst -> 4624 success (the noisy classic)
+      - "stealthy_valid" : straight to 4624 success (valid/stolen creds, no 4625)
+      - "cred_dump"      : focus on LSASS + PtH, minimal lateral spread
+
+    Core auth (4624 success + 4672) is always present so the window is a valid
+    positive; the rest are probabilistic.
+    """
     attacker_ip = f"192.168.1.{random.randint(80, 99)}"
     victim_user = "compromised.user"
+    style = random.choices(
+        ["brute_force", "stealthy_valid", "cred_dump"],
+        weights=[40, 35, 25], k=1,
+    )[0]
 
-    # 1) Brute force: 4 failures, then 1 success
-    for i in range(4):
-        yield _make(
-            "authentication", _now(start_ts, i * 2),
-            hostname=target_host, eid=4625,
-            source_ip=attacker_ip, user=victim_user, logon_type=3,
-        ), 1
+    # 1) Brute force burst — only in the noisy style
+    if style == "brute_force":
+        for i in range(random.randint(3, 8)):
+            yield _make(
+                "authentication", _now(start_ts, i * 2),
+                hostname=target_host, eid=4625,
+                source_ip=attacker_ip, user=victim_user, logon_type=3,
+            ), 1
 
+    # 2) Successful network logon (always — defines the lateral foothold)
     yield _make(
         "authentication", _now(start_ts, 10),
         hostname=target_host, eid=4624,
@@ -202,52 +260,58 @@ def generate_lateral_movement_attack(
         user=victim_user, logon_type=3,
     ), 1
 
-    # 2) Special privileges granted
+    # 3) Special privileges (always)
     yield _make(
         "authentication", _now(start_ts, 12),
-        hostname=target_host, eid=4672,
-        user=victim_user,
+        hostname=target_host, eid=4672, user=victim_user,
     ), 1
 
-    # 3) NTLM auth (4776)
-    yield _make(
-        "authentication", _now(start_ts, 13),
-        hostname=target_host, eid=4776,
-        user=victim_user,
-    ), 1
+    # 4) NTLM (4776) — ~60%
+    if random.random() < 0.6:
+        yield _make(
+            "authentication", _now(start_ts, 13),
+            hostname=target_host, eid=4776, user=victim_user,
+        ), 1
 
-    # 4) Explicit credential (4648 — Pass-the-Hash)
-    yield _make(
-        "authentication", _now(start_ts, 15),
-        hostname=target_host, eid=4648,
-        source_ip=attacker_ip, user=victim_user,
-    ), 1
+    # 5) Explicit credential / PtH (4648) — common in cred_dump/brute, rarer in stealthy
+    if random.random() < (0.8 if style != "stealthy_valid" else 0.3):
+        yield _make(
+            "authentication", _now(start_ts, 15),
+            hostname=target_host, eid=4648,
+            source_ip=attacker_ip, user=victim_user,
+        ), 1
 
-    # 5) LSASS access (Sysmon EID 10) — mimikatz-like
-    yield _make(
-        "process_access", _now(start_ts, 18),
-        hostname=target_host, eid=10,
-        process_name=r"C:\Users\victim\AppData\Local\Temp\mimikatz.exe",
-        user=victim_user,
-    ), 1
+    # 6) LSASS access (Sysmon EID 10) — always in cred_dump, ~55% otherwise
+    if style == "cred_dump" or random.random() < 0.55:
+        yield _make(
+            "process_access", _now(start_ts, 18),
+            hostname=target_host, eid=10,
+            process_name=random.choice([
+                r"C:\Users\victim\AppData\Local\Temp\mimikatz.exe",
+                r"C:\Windows\System32\rundll32.exe",
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            ]),
+            user=victim_user,
+        ), 1
 
-    # 6) PowerShell with -EncodedCommand
-    yield _make(
-        "process", _now(start_ts, 22),
-        hostname=target_host, eid=1,
-        process_name=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-        parent_process=r"C:\Windows\System32\cmd.exe",
-        command_line="powershell.exe -NoP -W Hidden -Enc " + _rand_subdomain(60, string.ascii_letters + string.digits + "+/="),
-        user=victim_user,
-    ), 1
+    # 7) Encoded PowerShell — ~50%
+    if random.random() < 0.5:
+        yield _make(
+            "process", _now(start_ts, 22),
+            hostname=target_host, eid=1,
+            process_name=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            parent_process=r"C:\Windows\System32\cmd.exe",
+            command_line="powershell.exe -NoP -W Hidden -Enc " + _rand_subdomain(60, string.ascii_letters + string.digits + "+/="),
+            user=victim_user,
+        ), 1
 
-    # 7) Lateral connections to multiple internal hosts on lateral ports
-    for offset, port, internal_host in [
-        (28, 445,  "192.168.1.51"),  # SMB
-        (35, 3389, "192.168.1.52"),  # RDP
-        (42, 5985, "192.168.1.53"),  # WinRM
-        (48, 135,  "192.168.1.54"),  # WMI
-    ]:
+    # 8) Lateral connections — variable number of hosts (1..4), fewer in cred_dump
+    lateral_targets = [
+        (28, 445,  "192.168.1.51"), (35, 3389, "192.168.1.52"),
+        (42, 5985, "192.168.1.53"), (48, 135,  "192.168.1.54"),
+    ]
+    n_lat = 1 if style == "cred_dump" else random.randint(1, 4)
+    for offset, port, internal_host in lateral_targets[:n_lat]:
         yield _make(
             "network", _now(start_ts, offset),
             hostname=target_host, eid=3,
@@ -256,25 +320,17 @@ def generate_lateral_movement_attack(
             user=victim_user,
         ), 1
 
-    # 8) PsExec on victim
-    yield _make(
-        "process", _now(start_ts, 55),
-        hostname=target_host, eid=1,
-        process_name=r"C:\Tools\PsExec64.exe",
-        parent_process=r"C:\Windows\System32\cmd.exe",
-        command_line=r"PsExec64.exe \\192.168.1.51 -u admin -p Pass1 cmd.exe",
-        user=victim_user,
-    ), 1
-
-    # 9) WMIC reconnaissance
-    yield _make(
-        "process", _now(start_ts, 60),
-        hostname=target_host, eid=1,
-        process_name=r"C:\Windows\System32\wbem\WMIC.exe",
-        parent_process=r"C:\Windows\System32\cmd.exe",
-        command_line=r"wmic /node:192.168.1.51 process call create cmd.exe",
-        user=victim_user,
-    ), 1
+    # 9) Remote-exec tooling (PsExec / WMIC) — ~50%, not in stealthy_valid
+    if style != "stealthy_valid" and random.random() < 0.5:
+        yield _make(
+            "process", _now(start_ts, 55),
+            hostname=target_host, eid=1,
+            process_name=random.choice([r"C:\Tools\PsExec64.exe",
+                                        r"C:\Windows\System32\wbem\WMIC.exe"]),
+            parent_process=r"C:\Windows\System32\cmd.exe",
+            command_line=r"PsExec64.exe \\192.168.1.51 -u admin -p Pass1 cmd.exe",
+            user=victim_user,
+        ), 1
 
 
 # ── DNS exfiltration attack scenario ────────────────────────────────────────
@@ -282,28 +338,40 @@ def generate_lateral_movement_attack(
 def generate_dns_exfiltration_attack(
     start_ts: datetime, source_host: str
 ) -> Iterator[tuple[NormalizedEvent, int]]:
-    """One DNS tunneling burst (~1 minute, ~30 queries to one base domain)."""
+    """One DNS tunneling burst, deliberately VARIED so the model can't lock
+    onto a single artifact (improvement #2):
+      - tool process varies (not always dnstun.exe)
+      - query count varies widely (5..120, not fixed 30)
+      - some bursts use ONLY A records (no TXT/NULL tunneling-type tell)
+      - some bursts emit NO NXDOMAIN
+      - subdomain length varies (short-chunk vs long-chunk encodings)
+    """
     base_domain = random.choice([
-        "tunnel.attacker.com", "exfil.evil.net", "c2.malicious.io"
+        "tunnel.attacker.com", "exfil.evil.net", "c2.malicious.io",
+        "data.exfilcorp.org", "ns.darkdns.ru",
     ])
-    tool_path = r"C:\Users\victim\AppData\Local\Temp\dnstun.exe"
+    tool_path = random.choice(_EXFIL_TOOLS)
+    n_queries = random.randint(5, 120)
+    sub_len_lo, sub_len_hi = random.choice([(15, 30), (30, 50), (40, 63)])
+    # Some tunnels use only A records (no tunneling-type tell); others mix.
+    a_only = random.random() < 0.30
+    emit_nxdomain = random.random() < 0.6  # not every burst probes with NXDOMAIN
 
-    for i in range(30):
-        # Long random base32-ish subdomain (high entropy, looks encoded)
-        sub = _rand_subdomain(random.randint(40, 60))
-        # Mix record types — TXT mostly, some NULL, occasional A
-        qtype = random.choices(
-            ["TXT", "NULL", "A", "MX"],
-            weights=[55, 20, 15, 10], k=1,
-        )[0]
-        # ~10% NXDOMAIN (probe channels in tunneling)
-        rcode = "NXDOMAIN" if random.random() < 0.1 else "NOERROR"
+    for i in range(n_queries):
+        sub = _rand_subdomain(random.randint(sub_len_lo, sub_len_hi))
+        if a_only:
+            qtype = "A"
+        else:
+            qtype = random.choices(
+                ["TXT", "NULL", "A", "MX", "CNAME"],
+                weights=[45, 18, 18, 9, 10], k=1,
+            )[0]
+        rcode = "NXDOMAIN" if (emit_nxdomain and random.random() < 0.1) else "NOERROR"
 
         if rcode == "NXDOMAIN":
             results = "-"
-            type_num = "16" if qtype == "TXT" else "1"
         else:
-            type_num = {"A": "1", "TXT": "16", "NULL": "10", "MX": "15"}[qtype]
+            type_num = {"A": "1", "TXT": "16", "NULL": "10", "MX": "15", "CNAME": "5"}[qtype]
             payload = _rand_subdomain(random.randint(20, 80))
             results = f'type: {type_num} "{payload}";'
 
@@ -314,7 +382,7 @@ def generate_dns_exfiltration_attack(
             dns_query_type=qtype,
             dns_response_code=rcode,
             dns_query_results=results,
-            dns_ttl=random.choice([30, 60, 120]),  # low TTL = fast-flux signal
+            dns_ttl=random.choice([30, 60, 120, 300]),
             process_name=tool_path,
             bytes_received=len(results),
         ), 1
@@ -343,30 +411,43 @@ def generate_dataset(
 
     out: list[tuple[NormalizedEvent, int]] = []
 
-    # 1) Normal background traffic per host per minute
-    for host in hosts:
-        for minute in range(duration_hours * 60):
-            ts = base + timedelta(minutes=minute)
-            out.extend(generate_normal_minute(ts, host))
+    # Disable cyclic GC for the duration of this heavy pure-Python generation.
+    # Every object built here is retained in `out` until we return, so the
+    # cyclic collector has nothing to reclaim mid-run — it's pure overhead.
+    # More importantly, when xgboost/numpy are already imported in-process
+    # (e.g. the evaluation subprocess imports them before calling this), a GC
+    # pass during generation can SIGSEGV the native OpenMP runtime in some
+    # environments. Restore the caller's prior GC state on the way out.
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        # 1) Normal background traffic per host per minute
+        for host in hosts:
+            for minute in range(duration_hours * 60):
+                ts = base + timedelta(minutes=minute)
+                out.extend(generate_normal_minute(ts, host))
 
-    # 2) Lateral movement attacks scattered across days
-    total_lat = lateral_attacks_per_day * max(1, duration_hours // 24)
-    for _ in range(total_lat):
-        target = random.choice(hosts)
-        # Pick a random start time inside the duration window
-        offset_min = random.randint(0, duration_hours * 60 - 5)
-        out.extend(generate_lateral_movement_attack(
-            base + timedelta(minutes=offset_min), target
-        ))
+        # 2) Lateral movement attacks scattered across days
+        total_lat = lateral_attacks_per_day * max(1, duration_hours // 24)
+        for _ in range(total_lat):
+            target = random.choice(hosts)
+            # Pick a random start time inside the duration window
+            offset_min = random.randint(0, duration_hours * 60 - 5)
+            out.extend(generate_lateral_movement_attack(
+                base + timedelta(minutes=offset_min), target
+            ))
 
-    # 3) DNS exfiltration attacks scattered across days
-    total_dns = dns_attacks_per_day * max(1, duration_hours // 24)
-    for _ in range(total_dns):
-        source = random.choice(hosts)
-        offset_min = random.randint(0, duration_hours * 60 - 2)
-        out.extend(generate_dns_exfiltration_attack(
-            base + timedelta(minutes=offset_min), source
-        ))
+        # 3) DNS exfiltration attacks scattered across days
+        total_dns = dns_attacks_per_day * max(1, duration_hours // 24)
+        for _ in range(total_dns):
+            source = random.choice(hosts)
+            offset_min = random.randint(0, duration_hours * 60 - 2)
+            out.extend(generate_dns_exfiltration_attack(
+                base + timedelta(minutes=offset_min), source
+            ))
 
-    out.sort(key=lambda x: x[0].timestamp)
-    return out
+        out.sort(key=lambda x: x[0].timestamp)
+        return out
+    finally:
+        if _gc_was_enabled:
+            gc.enable()

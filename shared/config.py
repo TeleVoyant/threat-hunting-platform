@@ -73,14 +73,34 @@ class WazuhApiConfig:
 
 
 @dataclass
+class WazuhIndexerConfig:
+    # The platform pulls endpoint telemetry from the Wazuh Indexer (OpenSearch),
+    # NOT the Manager API (port 55000 has no /alerts endpoint). index_pattern
+    # selects the source: "wazuh-alerts-4.x-*" = rule-matched events only;
+    # "wazuh-archives-4.x-*" = full event stream (needs filebeat archives on).
+    host: str = "wazuh.indexer"
+    port: int = 9200
+    scheme: str = "https"
+    username: str = "admin"
+    password: str = ""
+    index_pattern: str = "wazuh-alerts-4.x-*"
+    time_field: str = "timestamp"
+
+
+@dataclass
 class WazuhConfig:
     manager: WazuhManagerConfig = field(default_factory=WazuhManagerConfig)
     credentials: WazuhCredentials = field(default_factory=WazuhCredentials)
     api: WazuhApiConfig = field(default_factory=WazuhApiConfig)
+    indexer: WazuhIndexerConfig = field(default_factory=WazuhIndexerConfig)
 
     @property
     def base_url(self) -> str:
         return f"{self.manager.api_protocol}://{self.manager.host}:{self.manager.api_port}"
+
+    @property
+    def indexer_url(self) -> str:
+        return f"{self.indexer.scheme}://{self.indexer.host}:{self.indexer.port}"
 
 
 @dataclass
@@ -172,10 +192,12 @@ def load_config(config_dir: str = "config") -> AppConfig:
         mgr = w.get("manager", {})
         cred = w.get("credentials", {})
         api = w.get("api", {})
+        idx = w.get("indexer", {})
         cfg.wazuh = WazuhConfig(
             manager=WazuhManagerConfig(**{k: v for k, v in mgr.items() if hasattr(WazuhManagerConfig, k)}),
             credentials=WazuhCredentials(**{k: v for k, v in cred.items() if hasattr(WazuhCredentials, k)}),
             api=WazuhApiConfig(**{k: v for k, v in api.items() if hasattr(WazuhApiConfig, k)}),
+            indexer=WazuhIndexerConfig(**{k: v for k, v in idx.items() if hasattr(WazuhIndexerConfig, k)}),
         )
 
     # Load federated.yaml

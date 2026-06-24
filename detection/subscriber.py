@@ -182,10 +182,35 @@ class DetectionSubscriber:
             grouping = _DETECTOR_GROUPING.get(name, "hostname_user")
             groups = host_user_groups if grouping == "hostname_user" else host_groups
 
+            # Build a lookup of extractor name → required event types once per
+            # detector so the group filter below doesn't re-scan the pipeline
+            # on every entity group.
+            extractor_event_types: dict[str, list[str]] = {
+                ex.name(): ex.required_event_types()
+                for ex in self.pipeline._extractors
+            }
+            det_required = detector.required_features()  # e.g. ["auth", "temporal"]
+
             # Batched DMatrix path (s) — collect all groups' feature vectors
             # and run one predict call when the detector supports it.
             batch_rows: list[tuple[str, list[NormalizedEvent], "FeatureVector"]] = []
             for source_entity, group_events in groups.items():
+                # Enforce required_features: skip groups that contain no events
+                # relevant to this detector's non-universal extractors.
+                # Without this check, a DNS-only group (user=None events) triggers
+                # the lateral movement detector via temporal burst features and
+                # produces 0.94-confidence false positives.
+                has_relevant = True
+                for req_name in det_required:
+                    req_types = extractor_event_types.get(req_name, ["*"])
+                    if req_types == ["*"]:
+                        continue  # temporal / behavioral — always satisfied
+                    if not any(e.event_type in req_types for e in group_events):
+                        has_relevant = False
+                        break
+                if not has_relevant:
+                    continue
+
                 try:
                     features = self.pipeline.extract_all(group_events, source_entity)
                 except Exception as e:

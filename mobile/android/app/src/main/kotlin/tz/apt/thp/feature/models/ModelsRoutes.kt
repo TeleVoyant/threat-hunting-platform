@@ -106,7 +106,13 @@ private fun DetectorCard(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "v${card.summary.current_version ?: "—"} · ${card.summary.version_count} saved",
+                        text = buildString {
+                            append("v${card.summary.current_version ?: "—"} · ${card.summary.version_count} saved")
+                            card.latestMeta?.let { m ->
+                                m.eval_auc?.let { append(" · AUC %.3f".format(it)) }
+                                m.feature_count?.let { append(" · $it feats") }
+                            }
+                        },
                         style = AptType.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -114,6 +120,14 @@ private fun DetectorCard(
                 StatusPill(
                     label = if (status == "ok") "ACTIVE" else "IDLE",
                     status = status,
+                )
+            }
+            // Degenerate-model guard (#3): latest version tripped the near-perfect-AUC warning.
+            if (card.latestMeta?.auc_warning == true) {
+                Text(
+                    text = "⚠ AUC overfit risk — validate on real data",
+                    style = AptType.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
             Text("Drift (mean confidence)", style = AptType.labelSmall,
@@ -159,6 +173,24 @@ fun ModelDetailRoute(detectorName: String, onClose: () -> Unit) {
                 Text(card?.summary?.current_version ?: "—", style = AptType.mono, color = MaterialTheme.colorScheme.onSurface)
                 Text("Versions saved", style = AptType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text((card?.summary?.version_count ?: 0).toString(), style = AptType.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                // Latest version manifest metadata (#1 feature_count, #3 auc_warning).
+                card?.latestMeta?.let { m ->
+                    m.eval_auc?.let {
+                        Text("Latest eval AUC", style = AptType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("%.3f".format(it), style = AptType.mono, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    m.feature_count?.let {
+                        Text("Feature count (domain-restricted)", style = AptType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(it.toString(), style = AptType.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    if (m.auc_warning) {
+                        Text(
+                            text = "⚠ Near-perfect training AUC — likely overfit/degenerate; validate on real data.",
+                            style = AptType.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             }
         }
 

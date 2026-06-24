@@ -43,21 +43,28 @@ async def lifespan(app: FastAPI):
 
     logger.info(
         "Platform starting",
-        wazuh_host=_config.wazuh.manager.host,
+        indexer=_config.wazuh.indexer_url,
+        index_pattern=_config.wazuh.indexer.index_pattern,
         poll_interval=_config.platform.poll_interval_seconds,
     )
 
     # ── Initialize Wazuh Connector ──
     from ingestion.wazuh_connector import WazuhConnector
 
+    # Ingestion reads endpoint telemetry from the Wazuh Indexer (OpenSearch),
+    # not the Manager API (which has no /alerts endpoint). See config/wazuh.yaml
+    # `indexer:` block -- switch index_pattern to wazuh-archives-* for the full
+    # event stream once filebeat archive shipping is enabled.
     _wazuh = WazuhConnector(
-        base_url=_config.wazuh.base_url,
-        username=_config.wazuh.credentials.username,
-        password=_config.wazuh.credentials.password,
+        base_url=_config.wazuh.indexer_url,
+        username=_config.wazuh.indexer.username,
+        password=_config.wazuh.indexer.password,
         max_retries=_config.wazuh.api.max_retries,
         timeout_seconds=_config.wazuh.api.timeout_seconds,
         circuit_breaker_threshold=_config.wazuh.api.circuit_breaker_threshold,
         circuit_breaker_reset_seconds=_config.wazuh.api.circuit_breaker_reset_seconds,
+        index_pattern=_config.wazuh.indexer.index_pattern,
+        time_field=_config.wazuh.indexer.time_field,
     )
 
     # ── Initialize Preprocessor ──
@@ -77,11 +84,12 @@ async def lifespan(app: FastAPI):
     from features.temporal_features import TemporalFeatureExtractor
     from features.behavioral_features import BehavioralFeatureExtractor
 
+    _win = _config.platform.event_window_minutes
     _feature_pipeline = FeaturePipeline()
     # DNS exfiltration detector consumes "dns" features only.
-    _feature_pipeline.register_extractor(DnsFeatureExtractor())
+    _feature_pipeline.register_extractor(DnsFeatureExtractor(window_minutes=_win))
     # Lateral movement detector consumes auth + process + network + temporal + behavioral.
-    _feature_pipeline.register_extractor(AuthFeatureExtractor())
+    _feature_pipeline.register_extractor(AuthFeatureExtractor(window_minutes=_win))
     _feature_pipeline.register_extractor(ProcessFeatureExtractor())
     _feature_pipeline.register_extractor(NetworkFeatureExtractor())
     _feature_pipeline.register_extractor(TemporalFeatureExtractor())
@@ -134,7 +142,8 @@ async def lifespan(app: FastAPI):
 
     audit_trail = AuditTrail(db_path=f"{data_dir}/audit/audit.db")
 
-    # ── Alert pipeline: DETECTION_MADE → enrich → store → publish ──
+    # ── Alert pipeline: DETECTION_MADE → enrich → engine gate → store → publish ──
+    from alert_manager.alert_engine import AlertEngine
     from alert_manager.store import AlertStore
     from alert_manager.subscriber import AlertSubscriber
     from alert_manager.wazuh_publisher import WazuhPublisher
@@ -173,11 +182,15 @@ async def lifespan(app: FastAPI):
     )
     publisher = WazuhPublisher(log_file_path=wazuh_alert_path)
     dedup_min = int(getattr(_config.platform, "alert_dedup_window_minutes", 30) or 30)
+    alert_engine = AlertEngine(config={
+        "min_confidence": float(os.environ.get("ALERT_MIN_CONFIDENCE", "0.45")),
+    })
     alert_subscriber = AlertSubscriber(
         enricher=enricher,
         store=alert_store,
         publisher=publisher,
         audit=audit_trail,
+        engine=alert_engine,
         dedup_window_minutes=dedup_min,
     )
     alert_subscriber.register()
@@ -195,9 +208,13 @@ async def lifespan(app: FastAPI):
     # both — without ever letting overrides clobber the dashboard credential
     # (decoupled in api/routes/auth.py + shared/security.py).
     from api.routes.admin import _read_security_yml
+    from shared.config import _resolve_env_vars
     sec_data = _read_security_yml()
+    # security.yml stores jwt_secret as the ${JWT_SECRET} placeholder so the real
+    # secret never lives in the tracked config file — resolve it from the env
+    # (genesis.py writes the value to .env). Unresolved/empty -> env -> hard default.
     jwt_secret = (
-        sec_data.get("authentication", {}).get("jwt_secret")
+        _resolve_env_vars(sec_data.get("authentication", {}).get("jwt_secret") or "")
         or os.environ.get("JWT_SECRET")
         or "CHANGE-ME-IN-PRODUCTION"
     )
@@ -377,6 +394,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Detection loop DISABLED (api-only mode)")
 
+    # ── FL participation poller ──────────────────────────────────────────────
+    # Promotes federated global models past their soak window (auto hot-reload
+    # as the live detector) and, in 'auto' mode, contributes the configured
+    # detector when opted in. Cheap when FL is unconfigured (each tick no-ops).
+    fl_task = None
+    if os.environ.get("FL_PARTICIPATION_ENABLED", "true").lower() == "true":
+        fl_task = asyncio.create_task(_fl_participation_loop(app))
+        logger.info("FL participation poller started")
+
     # ── Auto-retrain scheduler ──────────────────────────────────────────────
     # Disabled by default — set RETRAIN_ENABLED=true to opt in. Interval is
     # configurable at runtime via POST /admin/retrain/interval (this env var
@@ -434,7 +460,38 @@ async def lifespan(app: FastAPI):
             await detection_task
         except asyncio.CancelledError:
             pass
+    if fl_task:
+        fl_task.cancel()
+        try:
+            await fl_task
+        except asyncio.CancelledError:
+            pass
     logger.info("Platform shutdown complete")
+
+
+async def _fl_participation_loop(app):
+    """Background poller: auto-promote federated global models whose soak window
+    elapsed (hot-reload as the live detector), and run automatic participation
+    when the org opted into auto mode. No-ops cheaply when FL is unconfigured."""
+    from detection.model_store import ModelStore
+    from detection.registry import registry as _registry
+    from federated import participation as _fp
+
+    interval = int(os.environ.get("FL_PARTICIPATION_INTERVAL_SECONDS", "300"))
+    verify_hours = float(os.environ.get("FL_GLOBAL_MODEL_VERIFY_HOURS", "24"))
+    detectors = ("lateral_movement", "dns_exfiltration")
+    state = getattr(app.state, "fl_local_state", None)
+    while True:
+        try:
+            if state is not None:
+                store = ModelStore(
+                    base_dir=os.environ.get("MODEL_STORE_DIR", "detection/models"),
+                    signing_key=os.environ.get("MODEL_SIGNING_KEY", ""))
+                _fp.promote_due(store, _registry, detectors)
+                _fp.run_auto_cycle(state, store, verify_hours=verify_hours)
+        except Exception as e:
+            logger.error("FL participation loop tick failed", error=str(e))
+        await asyncio.sleep(interval)
 
 
 async def _detection_loop():

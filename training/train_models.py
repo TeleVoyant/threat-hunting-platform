@@ -41,16 +41,37 @@ from training.trainer             import train_model
 logger = get_logger("training.cli")
 
 
-def build_pipeline() -> FeaturePipeline:
+def build_pipeline(window_minutes: int = 5) -> FeaturePipeline:
     """Same six extractors as api/main.py — train/serve parity."""
     p = FeaturePipeline()
-    p.register_extractor(DnsFeatureExtractor())
-    p.register_extractor(AuthFeatureExtractor())
+    p.register_extractor(DnsFeatureExtractor(window_minutes=window_minutes))
+    p.register_extractor(AuthFeatureExtractor(window_minutes=window_minutes))
     p.register_extractor(ProcessFeatureExtractor())
     p.register_extractor(NetworkFeatureExtractor())
     p.register_extractor(TemporalFeatureExtractor())
     p.register_extractor(BehavioralFeatureExtractor())
     return p
+
+
+def load_feature_groups(config_dir: "str | None" = None) -> dict[str, list[str]]:
+    """Read per-detector `feature_groups` from config/detectors.yml.
+
+    Returns {detector_name: [namespaces]} for detectors that declare it.
+    Detectors without `feature_groups` are omitted (caller trains on all
+    features — legacy behaviour). Same inline yaml pattern api/main.py uses.
+    """
+    import yaml
+    cfg_dir = config_dir or os.environ.get("CONFIG_DIR", "config")
+    path = Path(cfg_dir) / "detectors.yml"
+    if not path.exists():
+        return {}
+    detectors = (yaml.safe_load(path.read_text()) or {}).get("detectors", {}) or {}
+    out: dict[str, list[str]] = {}
+    for name, cfg in detectors.items():
+        groups = (cfg or {}).get("feature_groups")
+        if isinstance(groups, list) and groups:
+            out[name] = [str(g) for g in groups]
+    return out
 
 
 def load_jsonl(path: str) -> list[tuple[NormalizedEvent, int]]:
@@ -111,6 +132,28 @@ def main() -> int:
                     help="Only generate synthetic data; don't train")
     ap.add_argument("--output", default="data/synthetic.jsonl",
                     help="Output path for --generate-only")
+    ap.add_argument("--only", choices=["lateral_movement", "dns_exfiltration"],
+                    help="Train only this detector (default: both). Use for a "
+                         "single-detector corpus, e.g. DNS-free auth-only data "
+                         "(OTRF lateral movement) so the DNS model isn't trained "
+                         "on it.")
+    ap.add_argument("--status", choices=["active", "staged"], default="active",
+                    help="Model lifecycle status when using the ModelStore. "
+                         "'active' (default) advances the 'latest' symlink "
+                         "(production). 'staged' saves the version WITHOUT "
+                         "promoting it — an admin must promote it later. Use "
+                         "'staged' when retraining on experimental data so the "
+                         "deployed model is left untouched.")
+    ap.add_argument("--all-features", action="store_true",
+                    help="Ignore config/detectors.yml feature_groups and train "
+                         "on ALL feature namespaces (legacy 156-feature behavior). "
+                         "By default each detector is restricted to its declared "
+                         "feature_groups.")
+    ap.add_argument("--benign-jsonl",
+                    help="Append a REAL-benign corpus (JSONL of NormalizedEvents, "
+                         "forced to label 0) as additional negatives — e.g. "
+                         "cic_pcap CIC-BENIGN output. Combines with synthetic/"
+                         "Mordor positives for real-negative training (#6).")
     args = ap.parse_args()
 
     setup_logging("INFO")
@@ -160,6 +203,21 @@ def main() -> int:
             seed=args.seed,
         )
 
+    # Real-benign corpus (#6): append as negatives (label forced 0). Lets a
+    # model train against real benign traffic instead of synthetic-only.
+    if args.benign_jsonl:
+        n0 = 0
+        with open(args.benign_jsonl) as bf:
+            for line in bf:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                obj.pop("_label", None)
+                labeled.append((NormalizedEvent(**obj), 0))
+                n0 += 1
+        logger.info("Real-benign corpus added", events=n0, path=args.benign_jsonl)
+
     pos = sum(1 for _, l in labeled if l == 1)
     logger.info("Dataset loaded",
                 events=len(labeled), positive_events=pos,
@@ -173,7 +231,7 @@ def main() -> int:
     # ── 2. Train each model with the SAME pipeline (train/serve parity) ──────
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    pipeline = build_pipeline()
+    pipeline = build_pipeline(window_minutes=args.window_minutes)
 
     # Load tuned params (if provided) — sklearn-style names map directly:
     #   learning_rate → eta (XGBoost native)
@@ -199,7 +257,14 @@ def main() -> int:
             )
         store = ModelStore(base_dir=str(out_dir), signing_key=signing_key)
 
+    # Per-detector feature-domain restriction (config/detectors.yml). Absent =>
+    # train on all features (legacy). --all-features overrides config to off.
+    feature_groups_map = {} if args.all_features else load_feature_groups()
+    if feature_groups_map:
+        logger.info("Feature groups loaded", groups=feature_groups_map)
+
     def _train(name: str, grouping: str) -> dict:
+        fg = feature_groups_map.get(name)
         if store:
             return train_model(
                 labeled_events=labeled, pipeline=pipeline,
@@ -207,6 +272,8 @@ def main() -> int:
                 window_minutes=args.window_minutes,
                 grouping=grouping, num_boost_round=args.num_boost_round,
                 extra_params=extra_params,
+                status=args.status,
+                feature_groups=fg,
             )
         return train_model(
             labeled_events=labeled, pipeline=pipeline,
@@ -214,31 +281,31 @@ def main() -> int:
             window_minutes=args.window_minutes,
             grouping=grouping, num_boost_round=args.num_boost_round,
             extra_params=extra_params,
+            feature_groups=fg,
         )
 
+    def _report(metrics: dict) -> None:
+        for k, v in metrics.items():
+            if k == "feature_names":
+                print(f"  {k:20s}: ({len(v)} features)")
+            else:
+                print(f"  {k:20s}: {v}")
+
     # Lateral movement: group per (hostname, user) — credential-centric
-    print()
-    print("═══════════════════════════════════════════════════════════════")
-    print("Training: lateral_movement")
-    print("═══════════════════════════════════════════════════════════════")
-    lat_metrics = _train("lateral_movement", "hostname_user")
-    for k, v in lat_metrics.items():
-        if k == "feature_names":
-            print(f"  {k:20s}: ({len(v)} features)")
-        else:
-            print(f"  {k:20s}: {v}")
+    if args.only in (None, "lateral_movement"):
+        print()
+        print("═══════════════════════════════════════════════════════════════")
+        print(f"Training: lateral_movement  (status={args.status})")
+        print("═══════════════════════════════════════════════════════════════")
+        _report(_train("lateral_movement", "hostname_user"))
 
     # DNS exfiltration: group per hostname (DNS rarely has user attribution)
-    print()
-    print("═══════════════════════════════════════════════════════════════")
-    print("Training: dns_exfiltration")
-    print("═══════════════════════════════════════════════════════════════")
-    dns_metrics = _train("dns_exfiltration", "hostname")
-    for k, v in dns_metrics.items():
-        if k == "feature_names":
-            print(f"  {k:20s}: ({len(v)} features)")
-        else:
-            print(f"  {k:20s}: {v}")
+    if args.only in (None, "dns_exfiltration"):
+        print()
+        print("═══════════════════════════════════════════════════════════════")
+        print(f"Training: dns_exfiltration  (status={args.status})")
+        print("═══════════════════════════════════════════════════════════════")
+        _report(_train("dns_exfiltration", "hostname"))
 
     print()
     print("═══════════════════════════════════════════════════════════════")

@@ -69,6 +69,26 @@ CREATE TABLE IF NOT EXISTS contributions (
     trust_after     REAL,
     reason          TEXT
 );
+
+-- How this org takes part in rounds. 'manual' = operator clicks Participate;
+-- 'auto' = a background poller contributes the chosen detector when opted-in.
+CREATE TABLE IF NOT EXISTS fl_settings (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    mode        TEXT NOT NULL DEFAULT 'manual',   -- manual | auto
+    detector    TEXT,                             -- detector to contribute in auto mode
+    epsilon     REAL NOT NULL DEFAULT 1.0,        -- DP budget applied before upload
+    updated_at  REAL,
+    updated_by  TEXT
+);
+
+-- Membership removal state (mutual-ack leave handshake). Single row.
+CREATE TABLE IF NOT EXISTS removal (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    state        TEXT NOT NULL DEFAULT 'none',   -- none | requested | completed
+    requested_at REAL,
+    completed_at REAL,
+    by_user      TEXT
+);
 """
 
 
@@ -185,6 +205,11 @@ class LocalFLState:
                  client_cert_pem, ca_cert_pem, coordinator_pub_pem,
                  time.time(), configured_by),
             )
+            # Fresh membership: clear any prior removal state.
+            self.conn.execute(
+                "INSERT OR REPLACE INTO removal(id, state, by_user) VALUES (1, 'none', ?)",
+                (configured_by,),
+            )
             self.conn.commit()
 
     def get_config(self) -> Optional[dict]:
@@ -213,6 +238,46 @@ class LocalFLState:
             "SELECT api_key_enc FROM coordinator_config WHERE id = 1"
         ).fetchone()
         return row["api_key_enc"] if row else None
+
+    def get_api_key(self) -> Optional[str]:
+        """Decrypted bootstrap API key — for the FL client's X-FL-API-Key header.
+        In-process use only; never surfaced to a REST response."""
+        enc = self.get_api_key_enc()
+        if not enc:
+            return None
+        return self._fernet().decrypt(base64.b64decode(enc)).decode()
+
+    def get_private_key_pem(self) -> Optional[str]:
+        """Decrypted Ed25519 private key PEM — for the FL client's mTLS keyfile.
+        In-process use only; written to a temp file by the client + deleted."""
+        enc = self.get_private_key_enc()
+        if not enc:
+            return None
+        return self._fernet().decrypt(base64.b64decode(enc)).decode()
+
+    # ── Participation settings (manual vs auto) ─────────────────────────────
+
+    def get_settings(self) -> dict:
+        row = self.conn.execute(
+            "SELECT mode, detector, epsilon, updated_at, updated_by "
+            "FROM fl_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {"mode": "manual", "detector": None, "epsilon": 1.0,
+                    "updated_at": None, "updated_by": None}
+        return dict(row)
+
+    def set_settings(self, *, mode: str, detector: Optional[str],
+                     epsilon: float, by_user: str) -> None:
+        if mode not in ("manual", "auto"):
+            raise ValueError(f"Invalid participation mode: {mode!r}")
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO fl_settings(id, mode, detector, epsilon, "
+                "updated_at, updated_by) VALUES (1, ?, ?, ?, ?, ?)",
+                (mode, detector, float(epsilon), time.time(), by_user),
+            )
+            self.conn.commit()
 
     # ── Opt-in ─────────────────────────────────────────────────────────────
 
@@ -270,3 +335,50 @@ class LocalFLState:
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Membership removal (mutual-ack leave) ───────────────────────────────
+
+    def get_removal_state(self) -> dict:
+        row = self.conn.execute("SELECT * FROM removal WHERE id = 1").fetchone()
+        if not row:
+            return {"state": "none", "requested_at": None,
+                    "completed_at": None, "by_user": None}
+        return dict(row)
+
+    def set_removal_state(self, state: str, by_user: str) -> None:
+        if state not in {"none", "requested", "completed"}:
+            raise ValueError(f"Invalid removal state: {state}")
+        now = time.time()
+        cur = self.get_removal_state()
+        requested_at = cur.get("requested_at") or (now if state == "requested" else None)
+        completed_at = now if state == "completed" else cur.get("completed_at")
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO removal(id, state, requested_at, "
+                "completed_at, by_user) VALUES (1, ?, ?, ?, ?)",
+                (state, requested_at, completed_at, by_user),
+            )
+            self.conn.commit()
+
+    def purge_membership(self, *, keep_contributions: bool = True) -> dict:
+        """Locally wipe this org's federation credentials + config: keypair,
+        coordinator config (URL, certs, api-key), opt-in, and participation
+        settings. By default KEEPS the `contributions` history (a separate
+        table) for the org's own audit. Marks removal state 'completed'.
+        Returns a summary of what was cleared."""
+        with self._lock:
+            self.conn.execute("DELETE FROM coordinator_config")
+            self.conn.execute("DELETE FROM keypair")
+            self.conn.execute("DELETE FROM opt_in")
+            self.conn.execute("DELETE FROM fl_settings")
+            if not keep_contributions:
+                self.conn.execute("DELETE FROM contributions")
+            self.conn.commit()
+        self.set_removal_state("completed", "purge")
+        purged = ["coordinator_config", "keypair", "opt_in", "fl_settings"]
+        if not keep_contributions:
+            purged.append("contributions")
+        return {
+            "purged": purged,
+            "contributions_kept": len(self.list_contributions()) if keep_contributions else 0,
+        }

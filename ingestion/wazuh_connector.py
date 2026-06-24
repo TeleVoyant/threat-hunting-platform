@@ -37,12 +37,23 @@ class WazuhConnector(HealthCheckable):
         timeout_seconds: int = 30,
         circuit_breaker_threshold: int = 5,
         circuit_breaker_reset_seconds: int = 60,
+        index_pattern: str = "wazuh-alerts-4.x-*",
+        time_field: str = "timestamp",
+        max_events: int = 10000,
     ):
+        # base_url points at the Wazuh Indexer (OpenSearch), e.g.
+        # https://wazuh.indexer:9200. Endpoint telemetry is read from
+        # index_pattern via _search; the Manager API (55000) has no /alerts
+        # endpoint and is not used. username/password are the indexer basic-auth
+        # creds, bound to the client below so every request is authenticated.
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self.max_retries = max_retries
         self.timeout = timeout_seconds
+        self.index_pattern = index_pattern
+        self.time_field = time_field
+        self.max_events = max_events
 
         # Circuit breaker state
         self._circuit_state = CircuitState.CLOSED
@@ -61,6 +72,7 @@ class WazuhConnector(HealthCheckable):
             base_url=self.base_url,
             timeout=self.timeout,
             verify=verify,
+            auth=(self.username, self.password),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
         self._token: Optional[str] = None
@@ -79,7 +91,8 @@ class WazuhConnector(HealthCheckable):
         self._auth_cooldown_seconds = 300  # 5 min after 3 consecutive auth fails
 
     async def fetch_recent_events(self, window_minutes: int = 5) -> list[dict]:
-        """Fetch events from Wazuh API with retry and circuit breaker."""
+        """Fetch recent events from the Wazuh Indexer (_search) with retry and
+        circuit breaker. Returns each hit's _source (the raw Wazuh event doc)."""
 
         # ── Circuit breaker check ──
         if self._circuit_state == CircuitState.OPEN:
@@ -94,15 +107,17 @@ class WazuhConnector(HealthCheckable):
         for attempt in range(self.max_retries):
             try:
                 start = time.time()
-                await self._ensure_token()
 
-                response = await self._client.get(
-                    "/alerts",
-                    headers={"Authorization": f"Bearer {self._token}"},
-                    params={
-                        "offset": 0,
-                        "limit": 10000,
-                        "q": f"timestamp>{window_minutes}m",
+                response = await self._client.post(
+                    f"/{self.index_pattern}/_search",
+                    json={
+                        "size": self.max_events,
+                        "sort": [{self.time_field: {"order": "desc"}}],
+                        "query": {
+                            "range": {
+                                self.time_field: {"gte": f"now-{window_minutes}m"}
+                            }
+                        },
                     },
                 )
                 response.raise_for_status()
@@ -111,8 +126,11 @@ class WazuhConnector(HealthCheckable):
                 self._total_requests += 1
                 self._on_success()
 
-                data = response.json()
-                return data.get("data", {}).get("affected_items", [])
+                hits = response.json().get("hits", {}).get("hits", [])
+                # Each _source is the full Wazuh event document (id, timestamp,
+                # agent, data.win.*), which is exactly what EventPreprocessor
+                # expects from normalize_batch().
+                return [h.get("_source", {}) for h in hits]
 
             except (httpx.HTTPError, httpx.TimeoutException) as e:
                 self._total_failures += 1
@@ -132,7 +150,8 @@ class WazuhConnector(HealthCheckable):
         return []
 
     async def _ensure_token(self):
-        """Get or refresh Wazuh API auth token."""
+        """Deprecated manager-API token auth. Unused since ingestion moved to
+        the Indexer (HTTP Basic auth); kept for reference, safe to delete."""
         if self._token and time.time() < self._token_expiry:
             return
         if time.time() < self._auth_cooldown_until:
@@ -192,16 +211,18 @@ class WazuhConnector(HealthCheckable):
             )
         try:
             start = time.time()
-            await self._ensure_token()
+            response = await self._client.get("/_cluster/health")
+            response.raise_for_status()
             latency = (time.time() - start) * 1000
             return ComponentHealth(
                 name="wazuh_connector",
                 status=(
                     HealthStatus.HEALTHY if latency < 2000 else HealthStatus.DEGRADED
                 ),
-                message=f"Connected, circuit {self._circuit_state.value}",
+                message=f"Indexer reachable, circuit {self._circuit_state.value}",
                 latency_ms=latency,
                 details={
+                    "index_pattern": self.index_pattern,
                     "total_requests": self._total_requests,
                     "total_failures": self._total_failures,
                 },

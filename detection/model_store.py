@@ -56,6 +56,16 @@ class ModelStore:
             raise ValueError(f"Invalid status: {status!r}")
         version = f"v{int(time.time())}"
         model_dir = self.base_dir / name / version
+        # Versions are second-granularity; two saves in the same second (e.g. a
+        # retrain and an FL global-model sync) would otherwise overwrite each
+        # other's directory. Suffix on collision so every save is a distinct,
+        # rollback-able version.
+        if model_dir.exists():
+            n = 1
+            while (self.base_dir / name / f"{version}_{n}").exists():
+                n += 1
+            version = f"{version}_{n}"
+            model_dir = self.base_dir / name / version
         model_dir.mkdir(parents=True, exist_ok=True)
 
         # Save model file

@@ -60,6 +60,29 @@
   </div>
 </div>
 
+<!-- Contamination guard: last cycle aborted because the benign pool was likely
+     poisoned by an ongoing intrusion (improvement #5). Security-relevant — make
+     it prominent, not a muted "skipped" string. -->
+<div class="card card-pad" x-show="status.last_status === 'skipped:suspected_active_intrusion'"
+     style="margin-bottom:14px; border-left:3px solid var(--critical, #d05050); background:var(--critical-bg, rgba(220,80,80,.08));">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <i data-lucide="shield-alert" style="color:var(--critical, #d05050);"></i>
+    <strong style="color:var(--critical, #d05050);">Retrain skipped — suspected active intrusion</strong>
+  </div>
+  <div class="apt-small" style="margin-top:8px; color:var(--fg-2);">
+    The contamination guard aborted the last cycle:
+    <strong x-text="(status.last_result?.excluded_pct ?? '?') + '%'"></strong>
+    of the benign training pool came from entities the model has already flagged at
+    high confidence. Training on it would teach the model that active-attack behaviour
+    is normal. Investigate these entities before the next cycle:
+  </div>
+  <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">
+    <template x-for="e in (status.last_result?.detected_entities || [])" :key="e">
+      <span class="badge mono" style="background:var(--bg-3);" x-text="e"></span>
+    </template>
+  </div>
+</div>
+
 <!-- Interval editor -->
 <div class="card card-pad" style="margin-bottom:14px;">
   <h2 class="apt-h3" style="margin-bottom:10px;">Change cadence</h2>
@@ -101,6 +124,10 @@
     <div><div class="eyebrow">Samples</div><div x-text="status.last_result?.total_samples || '—'"></div></div>
     <div><div class="eyebrow">Positives</div><div x-text="status.last_result?.positives || '—'"></div></div>
   </div>
+  <div style="margin-top:10px;" x-show="status.last_result?.data_source">
+    <span class="eyebrow">Data source</span>
+    <span class="mono" style="margin-left:8px; font-size:13px;" x-text="status.last_result?.data_source"></span>
+  </div>
   <template x-if="status.last_result?.versions">
     <div style="margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:14px;">
       <template x-for="(meta, name) in status.last_result.versions" :key="name">
@@ -111,6 +138,20 @@
             AUC <span x-text="meta.auc?.toFixed(4) || '—'"></span> ·
             logloss <span x-text="meta.logloss?.toFixed(4) || '—'"></span>
           </div>
+        </div>
+      </template>
+    </div>
+  </template>
+  <!-- Per-detector issues incl. AUC-regression auto-discards (improvement #6) -->
+  <template x-if="status.last_result?.errors && Object.keys(status.last_result.errors).length">
+    <div style="margin-top:12px; padding:10px 12px; background:var(--warning-bg, rgba(220,160,60,.08)); border-radius:6px;">
+      <div class="eyebrow" style="color:var(--warning);">Issues this cycle</div>
+      <template x-for="(err, dname) in status.last_result.errors" :key="dname">
+        <div class="apt-small" style="margin-top:4px; color:var(--fg-2);">
+          <strong x-text="dname"></strong>:
+          <span x-text="err === 'discarded:auc_regression'
+                        ? 'staged model auto-discarded — eval AUC regressed >5% vs the active model'
+                        : err"></span>
         </div>
       </template>
     </div>
@@ -144,12 +185,17 @@
           <div style="flex:1; min-width:0;">
             <div><code x-text="v.version"></code>
               <span class="badge" style="margin-left:8px;" x-text="v.status"></span>
+              <!-- Degenerate-model guard (#3): warn before promoting an overfit-risk model -->
+              <span class="badge" x-show="v.metadata?.auc_warning"
+                    style="margin-left:6px; background:var(--warning-bg); color:var(--warning);"
+                    title="Near-perfect training AUC — likely overfit/degenerate. Review the real-data evaluation before promoting.">&#9888; overfit risk</span>
             </div>
             <div style="margin-top:4px; font-size:12px; color:var(--muted);">
               created <span x-text="new Date((v.created_at||0)*1000).toLocaleString()"></span> ·
               AUC <span x-text="v.metadata?.eval_auc?.toFixed(4) || '--'"></span> ·
               logloss <span x-text="v.metadata?.eval_logloss?.toFixed(4) || '--'"></span> ·
-              positives <span x-text="v.metadata?.n_pos_train || '--'"></span>
+              positives <span x-text="v.metadata?.n_pos_train || '--'"></span> ·
+              <span x-text="(v.metadata?.feature_count || '?') + ' feats'"></span>
             </div>
           </div>
           <button class="btn btn-primary"

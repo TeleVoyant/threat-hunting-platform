@@ -49,6 +49,19 @@ _DETECTORS = (
     ("dns_exfiltration",  "hostname",      5),
 )
 
+# Benign-pool contamination guard (Fix 5):
+# If the fraction of benign events belonging to actively-detected entities
+# exceeds this threshold, skip the cycle — the collection window is likely
+# contaminated by an ongoing intrusion and training on it would teach the
+# model to treat attack behaviour as normal.
+_MAX_EXCLUDED_BENIGN_FRACTION = 0.30
+
+# AUC regression guard (Fix 6):
+# Discard a staged model whose eval_auc is more than this below the
+# currently-active model's recorded auc. Prevents a drift cycle where
+# a noisier benign pool degrades the model silently.
+_MAX_AUC_REGRESSION = 0.05
+
 
 class AutoRetrainScheduler:
 
@@ -221,14 +234,20 @@ class AutoRetrainScheduler:
         synth_benign    = [(e, 0) for e, lbl in synth_mixed if lbl == 0]
         synth_malicious = [(e, 1) for e, lbl in synth_mixed if lbl == 1]
 
-        if len(benign) < self.min_benign_samples:
-            logger.info("Insufficient real benign events — supplementing with synthetic benign",
-                        real=len(benign), synth=len(synth_benign))
-            labeled = benign + synth_benign + synth_malicious
-            data_source = "hybrid_with_synth_benign"
-        else:
-            labeled = [(e, 0) for e in benign] + synth_malicious
-            data_source = "real_benign_plus_synth_malicious"
+        # ── Benign-pool contamination guard (Fix 5) ───────────────────────
+        # Cross-reference AlertStore: remove any Wazuh events whose entity
+        # the current ML model has already flagged at high confidence.
+        # This prevents an ongoing undetected intrusion from poisoning the
+        # negative-class training data (all Wazuh telemetry — including attack
+        # events — flows into this pool unlabelled).
+        benign, data_source = self._filter_detected_entities(
+            benign, synth_benign, run_id, audit,
+        )
+        if benign is None:
+            # _filter_detected_entities returns None to signal cycle abort.
+            return self.last_result  # status already set inside helper
+
+        labeled = benign + synth_malicious
 
         pos = sum(1 for _, lbl in labeled if lbl == 1)
         logger.info("Retrain dataset assembled",
@@ -259,15 +278,18 @@ class AutoRetrainScheduler:
             return {"run_id": run_id, "status": self.last_status}
 
         from training.trainer import train_model
+        from training.train_models import load_feature_groups
+        feature_groups_map = load_feature_groups()
 
         # Training is CPU-heavy and synchronous — push to a thread so the
         # event loop (detection + dashboard) keeps serving.
         loop = asyncio.get_running_loop()
         for name, grouping, window_minutes in _DETECTORS:
             try:
+                fg = feature_groups_map.get(name)
                 metrics = await loop.run_in_executor(
                     None,
-                    lambda n=name, g=grouping, w=window_minutes: train_model(
+                    lambda n=name, g=grouping, w=window_minutes, f=fg: train_model(
                         labeled_events=labeled,
                         pipeline=pipeline,
                         model_name=n,
@@ -276,8 +298,21 @@ class AutoRetrainScheduler:
                         grouping=g,
                         num_boost_round=self.num_boost_round,
                         status="staged",
+                        feature_groups=f,
                     ),
                 )
+                # ── AUC regression guard (Fix 6) ──────────────────────────
+                # Discard the staged version if it regresses beyond the
+                # allowed threshold vs the currently-active model.
+                # Note: both AUCs are measured on synthetic data, so this is
+                # a consistency check, not a true generalisation measure.
+                discarded = self._maybe_discard_regression(
+                    store, name, metrics, run_id,
+                )
+                if discarded:
+                    errors[name] = "discarded:auc_regression"
+                    continue
+
                 versions[name] = {
                     "version": metrics.get("version"),
                     "auc": metrics.get("eval_auc"),
@@ -312,6 +347,160 @@ class AutoRetrainScheduler:
                       })
         return result
 
+    # ── Contamination guard helpers ────────────────────────────────────────
+
+    def _filter_detected_entities(
+        self,
+        raw_benign: list,
+        synth_benign: list,
+        run_id: str,
+        audit,
+    ):
+        """Remove events whose entity the current model has already detected.
+
+        Returns (filtered_labeled_list, data_source_str) or (None, None) to
+        signal that the cycle should be aborted due to excessive contamination.
+        """
+        alert_store = getattr(self.app.state, "alert_store", None)
+        detected_entities: set[str] = set()
+
+        if alert_store is not None:
+            try:
+                recent = alert_store.query_alerts(
+                    hours=self.benign_window_hours, limit=1000
+                )
+                for a in recent:
+                    if a.get("overall_confidence", 0.0) < 0.7:
+                        continue
+                    for det in a.get("detections", []):
+                        se = det.get("source_entity", "")
+                        if se:
+                            detected_entities.add(se)
+            except Exception as e:
+                logger.warning("Could not query AlertStore for contamination check",
+                               error=str(e))
+
+        if not detected_entities:
+            # No high-confidence detections in window — use full pool
+            if len(raw_benign) < self.min_benign_samples:
+                labeled = [(e, 0) for e in raw_benign] + synth_benign
+                return labeled, "hybrid_with_synth_benign"
+            return [(e, 0) for e in raw_benign], "real_benign_plus_synth_malicious"
+
+        # Filter: exclude events whose entity key matches a detected entity.
+        # Check both grouping keys (hostname and hostname:user) so the filter
+        # works regardless of which detector produced the alert.
+        def _matches(event) -> bool:
+            hn = getattr(event, "hostname", "") or ""
+            user = getattr(event, "user", "") or ""
+            if hn in detected_entities:
+                return True
+            if user and f"{hn}:{user}" in detected_entities:
+                return True
+            return False
+
+        before = len(raw_benign)
+        cleaned = [e for e in raw_benign if not _matches(e)]
+        excluded = before - len(cleaned)
+
+        logger.info(
+            "Contamination check complete",
+            run_id=run_id,
+            detected_entities=len(detected_entities),
+            excluded_events=excluded,
+            remaining_events=len(cleaned),
+        )
+
+        if before > 0 and excluded / before > _MAX_EXCLUDED_BENIGN_FRACTION:
+            # More than 30% of the benign pool came from suspected-attack
+            # entities — the window is too contaminated to train safely.
+            self.last_status = "skipped:suspected_active_intrusion"
+            result = {
+                "run_id": run_id,
+                "status": self.last_status,
+                "detected_entities": sorted(detected_entities),
+                "excluded_pct": round(excluded / before * 100, 1),
+            }
+            self.last_result = result
+            if audit:
+                audit.log(
+                    action="retrain.cycle.skipped", actor="scheduler",
+                    target=run_id,
+                    details={"reason": "suspected_active_intrusion",
+                             "excluded_pct": result["excluded_pct"],
+                             "detected_entities": sorted(detected_entities)},
+                )
+            logger.warning(
+                "Retrain cycle skipped — benign pool >30%% from detected entities",
+                run_id=run_id, excluded_pct=result["excluded_pct"],
+            )
+            return None, None
+
+        # Use cleaned benign pool; supplement with synthetic benign if sparse
+        if len(cleaned) < self.min_benign_samples:
+            labeled = [(e, 0) for e in cleaned] + synth_benign
+            src = "hybrid_filtered_plus_synth_benign"
+        else:
+            labeled = [(e, 0) for e in cleaned]
+            src = "real_benign_filtered_by_detections"
+
+        return labeled, src
+
+    def _maybe_discard_regression(
+        self,
+        store,
+        name: str,
+        metrics: dict,
+        run_id: str,
+    ) -> bool:
+        """Discard a newly staged version if its AUC regresses too far.
+
+        Returns True if the version was discarded, False otherwise.
+        """
+        new_auc = metrics.get("eval_auc")
+        new_version = metrics.get("version")
+        if new_auc is None or new_version is None:
+            return False
+
+        try:
+            versions = store.list_versions(name)
+            active = next(
+                (v for v in reversed(versions) if v.get("status") == "active"),
+                None,
+            )
+        except Exception as e:
+            logger.warning("Could not list versions for regression check",
+                           detector=name, error=str(e))
+            return False
+
+        if active is None:
+            return False  # no baseline to compare against
+
+        active_auc = (active.get("metadata") or {}).get("eval_auc")
+        if active_auc is None:
+            return False
+
+        delta = float(active_auc) - float(new_auc)
+        if delta > _MAX_AUC_REGRESSION:
+            try:
+                store.discard(name, new_version)
+            except Exception as e:
+                logger.error("Could not discard regressed model",
+                             detector=name, version=new_version, error=str(e))
+                return False
+            logger.warning(
+                "Staged model discarded — AUC regression exceeds threshold",
+                run_id=run_id,
+                detector=name,
+                active_auc=round(float(active_auc), 4),
+                staged_auc=round(float(new_auc), 4),
+                delta=round(delta, 4),
+                threshold=_MAX_AUC_REGRESSION,
+            )
+            return True
+
+        return False
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _model_store(self):
@@ -328,8 +517,13 @@ class AutoRetrainScheduler:
         from features.network_features import NetworkFeatureExtractor
         from features.temporal_features import TemporalFeatureExtractor
         from features.behavioral_features import BehavioralFeatureExtractor
+        # Use the configured window from _DETECTORS default (5 min). If the
+        # app exposed its pipeline via state, that one is already correctly
+        # configured — this fallback only runs when state is unavailable.
+        window_min = _DETECTORS[0][2]
         p = FeaturePipeline()
-        for ex in (DnsFeatureExtractor(), AuthFeatureExtractor(),
+        for ex in (DnsFeatureExtractor(window_minutes=window_min),
+                   AuthFeatureExtractor(window_minutes=window_min),
                    ProcessFeatureExtractor(), NetworkFeatureExtractor(),
                    TemporalFeatureExtractor(), BehavioralFeatureExtractor()):
             p.register_extractor(ex)

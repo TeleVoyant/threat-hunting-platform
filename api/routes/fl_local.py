@@ -13,7 +13,7 @@ The org admin CANNOT:
   - See aggregated weights, the global model details, or other clients
   - Manage rounds, block other orgs, or configure DP/trust
   - Authenticate to the FL coordinator's management API
-  (those require federated.fl_security.FLAdmin/Operator on a separate server)
+  (those live on the separate apt-fl-coordinator deployment, not here)
 
 All mutations require `manage_fl_local`. Audit-logged.
 """
@@ -27,6 +27,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from api.middleware import require_permission
+from detection.model_store import ModelStore
+from federated import participation
 from federated.attestation import (
     generate_keypair, private_key_to_pem, public_key_to_pem, public_key_from_pem,
 )
@@ -34,9 +36,29 @@ from shared.security import User
 
 router = APIRouter(prefix="/fl/local", tags=["fl-local"])
 
+# Detectors an org can contribute to a round (must match the coordinator's
+# feature space — all orgs share the platform's schema-pinned pipeline).
+_KNOWN_DETECTORS = ("lateral_movement", "dns_exfiltration")
+
 
 def _state(request: Request):
     return request.app.state.fl_local_state
+
+
+def _model_store() -> ModelStore:
+    return ModelStore(
+        base_dir=os.environ.get("MODEL_STORE_DIR", "detection/models"),
+        signing_key=os.environ.get("MODEL_SIGNING_KEY", ""),
+    )
+
+
+def _verify_hours() -> float:
+    """Soak window before a fetched global model auto-hot-reloads as the live
+    detector (default 24h). Admin can promote/reject earlier via /models/*."""
+    try:
+        return float(os.environ.get("FL_GLOBAL_MODEL_VERIFY_HOURS", "24"))
+    except ValueError:
+        return 24.0
 
 
 def _audit(request: Request):
@@ -238,6 +260,7 @@ async def status(
         "configured_by":   cfg["configured_by"] if cfg else None,
         "opted_in":        opt["opted_in"],
         "opted_at":        opt["set_at"],
+        "removal_state":   _state(request).get_removal_state().get("state"),
     }
 
 
@@ -280,89 +303,201 @@ async def list_own_contributions(
     return {"contributions": rows}
 
 
-# ── In-process FL demo (for Chapter 7 of the dissertation) ─────────────────
+# ── Round participation (contribute + sync the global model) ────────────────
 
-class FlDemoRequest(BaseModel):
-    num_rounds: int = Field(10, ge=2, le=50)
-    hours_per_org: int = Field(12, ge=1, le=72)
-    poison_round: int | None = Field(5, ge=2)
-    epsilon: float = Field(1.0, ge=0.1, le=10.0)
+class ParticipateRequest(BaseModel):
+    detector: str = Field(..., description="lateral_movement | dns_exfiltration")
+    round_id: Optional[int] = Field(None, description="Open round; null = join the latest")
+    epsilon:  float = Field(1.0, gt=0.0, le=10.0, description="DP budget before upload")
+    sync_after: bool = Field(False, description="Also fetch+stage the global model after")
 
 
-@router.post("/demo/run", status_code=202)
-async def run_fl_demo(
-    body: FlDemoRequest,
-    background: BackgroundTasks,
+@router.post("/participate")
+async def participate(
+    body: ParticipateRequest,
     request: Request,
     user: User = Depends(require_permission("manage_fl_local")),
 ):
-    """Kick off the in-process FL convergence demo."""
-    import os, uuid, time as _time
-    from pathlib import Path
-    job_id = f"fldemo_{int(_time.time())}_{uuid.uuid4().hex[:6]}"
-    demo_dir = Path(os.environ.get("DATA_DIR", "data")) / "fl_demo"
-    demo_dir.mkdir(parents=True, exist_ok=True)
-    job_path = demo_dir / f"{job_id}.json"
-    job_path.write_text(f'{{"status":"running","job_id":"{job_id}"}}')
-    _audit(request).log(
-        action="fl.demo.requested", actor=user.username, target=job_id,
-        details=body.model_dump(),
-    )
-    background.add_task(_run_fl_demo, body, job_id, job_path, user.username, request.app)
-    return {"job_id": job_id, "status": "running"}
-
-
-def _run_fl_demo(body, job_id, job_path, actor, app):
-    import subprocess, json, sys, time as _time, os
-    out_dir = job_path.parent / job_id
-    out_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        sys.executable, "-m", "federated.run_demo",
-        "--num-rounds", str(body.num_rounds),
-        "--hours-per-org", str(body.hours_per_org),
-        "--epsilon", str(body.epsilon),
-        "--output-dir", str(out_dir),
-    ]
-    if body.poison_round:
-        cmd += ["--poison-round", str(body.poison_round)]
-    started = _time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ))
-    duration = _time.time() - started
-    convergence = None
-    for p in sorted(out_dir.glob("convergence_*.json"), reverse=True):
-        try:
-            convergence = json.loads(p.read_text())
-            break
-        except Exception:
-            continue
-    summary = {
-        "job_id": job_id, "status": "ok" if proc.returncode == 0 else "failed",
-        "exit_code": proc.returncode, "duration_sec": round(duration, 2),
-        "stderr_tail": (proc.stderr or "")[-2000:],
-        "started_at": started, "params": body.model_dump(),
-        "output_dir": str(out_dir), "convergence": convergence,
-    }
-    job_path.write_text(json.dumps(summary, indent=2))
+    """
+    Contribute this org's ACTIVE detector model to a round: load the live model
+    (never a staged retrain), DP-noise it, sign + upload over the configured
+    transport. Records the attempt in this org's contribution history.
+    """
+    if body.detector not in _KNOWN_DETECTORS:
+        raise HTTPException(400, f"Unknown detector: {body.detector}")
+    if not _state(request).get_opt_in().get("opted_in"):
+        raise HTTPException(409, "Org is not opted in — POST /fl/local/opt-in first")
     try:
-        app.state.audit_trail.log(
-            action="fl.demo." + summary["status"],
-            actor=actor, target=job_id,
-            details={k: v for k, v in summary.items() if k != "convergence"},
-        )
-    except Exception:
-        pass
+        result = participation.contribute(
+            _state(request), _model_store(),
+            detector=body.detector, round_id=body.round_id, epsilon=body.epsilon)
+    except participation.FLParticipationError as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Coordinator contribution failed: {e}")
+
+    _audit(request).log(action="fl_local.participate", actor=user.username,
+                        target=body.detector,
+                        details={"round_id": result["round_id"],
+                                 "contribution_id": result["contribution_id"]})
+    if body.sync_after:
+        try:
+            result["sync"] = participation.sync_global(
+                _state(request), _model_store(), detector=body.detector,
+                verify_hours=_verify_hours())
+        except Exception as e:
+            result["sync_error"] = str(e)
+    return result
 
 
-@router.get("/demo/{job_id}")
-async def fl_demo_status(
-    job_id: str,
+@router.post("/sync-global")
+async def sync_global_model(
+    body: ParticipateRequest,
     request: Request,
     user: User = Depends(require_permission("manage_fl_local")),
 ):
-    import os, json
-    from pathlib import Path
-    from fastapi import HTTPException
-    p = Path(os.environ.get("DATA_DIR", "data")) / "fl_demo" / f"{job_id}.json"
-    if not p.exists():
-        raise HTTPException(404, "Job not found")
-    return json.loads(p.read_text())
+    """
+    Fetch the coordinator-signed global model, verify its signature + hash, and
+    stage it as a detector version. It soaks for FL_GLOBAL_MODEL_VERIFY_HOURS
+    then auto-hot-reloads as the live detector — or the admin promotes/rejects
+    it earlier via the normal /models/{detector}/versions/* endpoints.
+    """
+    if body.detector not in _KNOWN_DETECTORS:
+        raise HTTPException(400, f"Unknown detector: {body.detector}")
+    try:
+        result = participation.sync_global(
+            _state(request), _model_store(), detector=body.detector,
+            verify_hours=_verify_hours())
+    except participation.FLParticipationError as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Global-model sync failed: {e}")
+    _audit(request).log(action="fl_local.sync_global", actor=user.username,
+                        target=body.detector, details={k: v for k, v in result.items()
+                                                       if k != "model_bytes"})
+    return result
+
+
+# ── Membership removal (mutual-ack leave + force-purge) ─────────────────────
+
+def _require_org_confirm(request: Request, confirm_org_id: str) -> str:
+    """Accidental-removal guard: the caller must echo the configured org_id."""
+    cfg = _state(request).get_config()
+    if not cfg:
+        raise HTTPException(409, "FL coordinator not configured — nothing to leave")
+    if confirm_org_id != cfg["org_id"]:
+        raise HTTPException(
+            400, f"confirm_org_id does not match the configured org_id "
+                 f"('{cfg['org_id']}') — removal not performed")
+    return cfg["org_id"]
+
+
+class LeaveRequest(BaseModel):
+    confirm_org_id: str = Field(..., description="Must equal the configured org_id (typed confirmation)")
+    reason:         str = Field("", max_length=300)
+
+
+@router.post("/leave-request")
+async def leave_federation(
+    body: LeaveRequest,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """Mutual-ack removal step 1: send a SIGNED leave request to the coordinator.
+    Requires confirm_org_id to match the configured org (typed confirmation).
+    The org becomes 'leave_pending' on the coordinator; complete with
+    POST /fl/local/finalize-leave once the operator approves."""
+    org_id = _require_org_confirm(request, body.confirm_org_id)
+    try:
+        resp = participation.request_leave(_state(request), reason=body.reason)
+    except participation.FLParticipationError as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Coordinator leave-request failed: {e}")
+    _audit(request).log(action="fl_local.leave_requested", actor=user.username,
+                        target=org_id, details={"reason": body.reason[:200]})
+    return resp
+
+
+@router.post("/finalize-leave")
+async def finalize_leave(
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """Mutual-ack removal step 2: poll the coordinator; if the operator approved
+    (coordinator signature verified) WIPE local membership credentials (keypair,
+    config, certs, opt-in, settings) while KEEPING the contributions history.
+    No-op while still awaiting approval."""
+    if not _state(request).get_config():
+        raise HTTPException(409, "FL coordinator not configured — nothing to finalize")
+    try:
+        result = participation.finalize_leave(_state(request), keep_contributions=True)
+    except participation.FLParticipationError as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Finalize-leave failed: {e}")
+    if result.get("finalized"):
+        _audit(request).log(action="fl_local.removed", actor=user.username,
+                            target="federation", details=result.get("purge", {}))
+    return result
+
+
+class ForcePurgeRequest(BaseModel):
+    confirm_org_id:     str  = Field(..., description="Must equal the configured org_id (typed confirmation)")
+    keep_contributions: bool = Field(True, description="Keep the local contributions history")
+
+
+@router.post("/force-purge")
+async def force_purge(
+    body: ForcePurgeRequest,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """Escape hatch: wipe local FL membership WITHOUT coordinator coordination —
+    for when the coordinator is gone/unreachable. Requires confirm_org_id.
+    CAVEAT: the coordinator still lists this org as enrolled (its cert stays
+    valid) until an operator revokes it; prefer leave-request/finalize when the
+    coordinator is reachable."""
+    org_id = _require_org_confirm(request, body.confirm_org_id)
+    purge = _state(request).purge_membership(keep_contributions=body.keep_contributions)
+    _audit(request).log(action="fl_local.force_purged", actor=user.username,
+                        target=org_id, details=purge)
+    return {"force_purged": True, "org_id": org_id, **purge}
+
+
+# ── Participation settings (manual vs automatic) ────────────────────────────
+
+class SettingsRequest(BaseModel):
+    mode:     str = Field(..., description="manual | auto")
+    detector: Optional[str] = Field(None, description="detector to auto-contribute")
+    epsilon:  float = Field(1.0, gt=0.0, le=10.0)
+
+
+@router.get("/settings")
+async def get_settings(
+    request: Request,
+    user: User = Depends(require_permission("read_detections")),
+):
+    s = _state(request).get_settings()
+    s["global_model_verify_hours"] = _verify_hours()
+    return s
+
+
+@router.post("/settings")
+async def set_settings(
+    body: SettingsRequest,
+    request: Request,
+    user: User = Depends(require_permission("manage_fl_local")),
+):
+    """Choose manual (operator clicks Participate) or automatic (background poller
+    contributes the chosen detector when opted in) participation."""
+    if body.mode not in ("manual", "auto"):
+        raise HTTPException(400, "mode must be 'manual' or 'auto'")
+    if body.mode == "auto" and body.detector not in _KNOWN_DETECTORS:
+        raise HTTPException(400, "auto mode requires a valid detector")
+    _state(request).set_settings(mode=body.mode, detector=body.detector,
+                                 epsilon=body.epsilon, by_user=user.username)
+    _audit(request).log(action="fl_local.settings", actor=user.username,
+                        target=body.mode,
+                        details={"detector": body.detector, "epsilon": body.epsilon})
+    return _state(request).get_settings()

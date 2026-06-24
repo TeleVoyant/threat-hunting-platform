@@ -9,11 +9,39 @@
     <h1 class="apt-h1">Operations</h1>
     <div class="eyebrow" style="margin-top:4px;">Last 24h · all hosts</div>
   </div>
-  <div style="display:flex; gap:8px; align-items:center; font:500 12px var(--font-sans); color:var(--fg-3);">
-    <span class="heartbeat" style="width:7px; height:7px; border-radius:50%; background:var(--apt-teal); box-shadow:0 0 6px var(--apt-teal);"></span>
-    Detectors live · v1.0
+  {# Model-health pill — reflects the contamination guard (security) and the
+     degenerate-model AUC guard, computed server-side in dashboard.home. #}
+  {% set _mc = 'var(--critical)' if model_health.state == 'intrusion'
+               else ('var(--warning)' if model_health.state == 'warn' else 'var(--apt-teal)') %}
+  <div style="display:flex; gap:8px; align-items:center; font:500 12px var(--font-sans);
+              color:{{ 'var(--fg-3)' if model_health.state == 'ok' else _mc }};">
+    <span class="heartbeat" style="width:7px; height:7px; border-radius:50%; background:{{ _mc }}; box-shadow:0 0 6px {{ _mc }};"></span>
+    {{ model_health.label }}{% if model_health.state == 'ok' %} · v1.0{% endif %}
   </div>
 </div>
+
+{# Surfaced when a model-quality guard trips. Mirrors the retrain page's
+   contamination banner, condensed, with a link to the full model-ops view. #}
+{% if model_health.state != 'ok' %}
+<div class="card card-pad" style="margin-bottom:16px;
+     border-left:3px solid {{ 'var(--critical)' if model_health.state == 'intrusion' else 'var(--warning)' }};
+     background:{{ 'var(--critical-bg)' if model_health.state == 'intrusion' else 'var(--warning-bg)' }};">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <i data-lucide="{{ 'shield-alert' if model_health.state == 'intrusion' else 'alert-triangle' }}"
+       style="color:{{ 'var(--critical)' if model_health.state == 'intrusion' else 'var(--warning)' }};"></i>
+    <strong style="color:{{ 'var(--critical)' if model_health.state == 'intrusion' else 'var(--warning)' }};">{{ model_health.label }}</strong>
+    <a class="linkish apt-small" href="/dashboard/retrain" style="margin-left:auto;">Open model ops →</a>
+  </div>
+  <div class="apt-small" style="margin-top:6px; color:var(--fg-2);">{{ model_health.detail }}</div>
+  {% if model_health.entities %}
+  <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">
+    {% for e in model_health.entities %}
+    <span class="mono apt-small" style="background:var(--bg-3); padding:2px 8px; border-radius:6px;">{{ e }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 <div style="display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:20px;">
   {{ kpi('Total alerts', kpis.total) }}

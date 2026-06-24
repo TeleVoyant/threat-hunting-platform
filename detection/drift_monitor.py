@@ -99,6 +99,13 @@ class DriftMonitor:
         self.recent_total_count += 1
         if c > 0.5:
             self.recent_detection_count += 1
+        # Auto-initialize baseline the first time half the rolling window fills.
+        # Without this, drift detection is silently disabled in any deployment
+        # where an admin never calls POST /admin/drift/baseline manually.
+        # set_baseline() has its own >= 100 sample guard so early triggering is safe.
+        # The check fires at most once — once baseline_stats is set it stays set.
+        if self.baseline_stats is None and len(self.recent_confidences) >= self.window_size // 2:
+            self.set_baseline()
 
     def set_baseline(self):
         """Snapshot current metrics as baseline (global + per-hour)."""

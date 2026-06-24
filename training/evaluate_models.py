@@ -36,6 +36,7 @@ Usage:
 """
 
 import argparse
+import gc
 import json
 import os
 import sys
@@ -62,11 +63,13 @@ from training.trainer             import extract_training_matrix, window_events
 logger = get_logger("training.evaluate")
 
 
-def build_pipeline() -> FeaturePipeline:
+def build_pipeline(window_minutes: int = 5) -> FeaturePipeline:
     p = FeaturePipeline()
     for ex in [
-        DnsFeatureExtractor(), AuthFeatureExtractor(), ProcessFeatureExtractor(),
-        NetworkFeatureExtractor(), TemporalFeatureExtractor(), BehavioralFeatureExtractor(),
+        DnsFeatureExtractor(window_minutes=window_minutes),
+        AuthFeatureExtractor(window_minutes=window_minutes),
+        ProcessFeatureExtractor(), NetworkFeatureExtractor(),
+        TemporalFeatureExtractor(), BehavioralFeatureExtractor(),
     ]:
         p.register_extractor(ex)
     return p
@@ -278,7 +281,25 @@ def grade(metrics: dict) -> dict:
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
+def _load_benign_jsonl(path: str) -> list[tuple[NormalizedEvent, int]]:
+    """Load a real-benign corpus (improvement #6). Every event is forced to
+    label 0 regardless of any `_label` field — the file's contract is 'these
+    are negatives' (e.g. cic_pcap CIC-BENIGN output). Lets FPR be measured
+    against real traffic instead of synthetic benign."""
+    out = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            obj.pop("_label", None)
+            out.append((NormalizedEvent(**obj), 0))
+    return out
+
+
 def load_dataset(args) -> list[tuple[NormalizedEvent, int]]:
+    labeled: list[tuple[NormalizedEvent, int]] = []
     if args.mordor_dir:
         from training.loaders.mordor import MordorLoader
         loader = MordorLoader()
@@ -292,10 +313,8 @@ def load_dataset(args) -> list[tuple[NormalizedEvent, int]]:
                 seed=args.seed,
             )
             labeled.extend((e, 0) for e, _ in synth)
-        return labeled
 
-    if args.from_jsonl:
-        out = []
+    elif args.from_jsonl:
         with open(args.from_jsonl) as f:
             for line in f:
                 line = line.strip()
@@ -303,12 +322,11 @@ def load_dataset(args) -> list[tuple[NormalizedEvent, int]]:
                     continue
                 obj = json.loads(line)
                 lbl = int(obj.pop("_label", 0))
-                out.append((NormalizedEvent(**obj), lbl))
-        return out
+                labeled.append((NormalizedEvent(**obj), lbl))
 
-    if args.synthetic:
+    elif args.synthetic:
         from training.synthetic import generate_dataset
-        return generate_dataset(
+        labeled = generate_dataset(
             duration_hours=args.hours,
             hosts=[f"LAPTOP-{i:03d}" for i in range(1, args.hosts + 1)],
             lateral_attacks_per_day=args.lateral_attacks,
@@ -316,7 +334,15 @@ def load_dataset(args) -> list[tuple[NormalizedEvent, int]]:
             seed=args.seed,
         )
 
-    raise SystemExit("Provide one of: --mordor-dir, --from-jsonl, --synthetic")
+    # Real-benign corpus (#6): append as negatives for an honest FPR measure.
+    if getattr(args, "benign_jsonl", None):
+        benign = _load_benign_jsonl(args.benign_jsonl)
+        labeled.extend(benign)
+        print(f"Added {len(benign)} real-benign events from {args.benign_jsonl}")
+
+    if not labeled:
+        raise SystemExit("No events loaded — provide --mordor-dir, --from-jsonl, --synthetic, or --benign-jsonl")
+    return labeled
 
 
 def main() -> int:
@@ -337,6 +363,13 @@ def main() -> int:
     ap.add_argument("--dns-attacks", type=int, default=5)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--add-synthetic-benign-hours", type=int, default=0)
+    ap.add_argument("--benign-jsonl",
+                    help="Append a REAL-benign corpus (JSONL of NormalizedEvents, "
+                         "all forced to label 0) as negatives — e.g. cic_pcap "
+                         "CIC-BENIGN output. Lets FPR be measured against real "
+                         "traffic instead of synthetic benign (#6). DNS-only "
+                         "corpora suit dns_exfiltration; lateral needs a real "
+                         "Windows-Sysmon benign capture.")
     ap.add_argument("--window-minutes", type=int, default=5)
     ap.add_argument("--grouping", default=None,
                     help="hostname | hostname_user (default: matches detector convention)")
@@ -348,6 +381,14 @@ def main() -> int:
     args = ap.parse_args()
 
     setup_logging("INFO")
+
+    # This is a short-lived batch subprocess that builds a large synthetic
+    # dataset + feature matrix and then exits. With xgboost/numpy loaded, a
+    # cyclic-GC pass during any of those heavy allocation phases intermittently
+    # SIGSEGVs the native OpenMP runtime (observed on Parrot/py3.13). Refcounting
+    # still frees everything and the process exits immediately after, so we turn
+    # the cyclic collector off for the whole run. See training/synthetic.py.
+    gc.disable()
 
     grouping = args.grouping or (
         "hostname_user" if args.model_name == "lateral_movement" else "hostname"
@@ -364,7 +405,7 @@ def main() -> int:
     print(f"Windowed → {len(windowed)} samples ({pos_w} positive, "
           f"{len(windowed) - pos_w} negative)")
 
-    pipeline = build_pipeline()
+    pipeline = build_pipeline(window_minutes=args.window_minutes)
     X, y, feature_names = extract_training_matrix(pipeline, windowed)
     print(f"Feature matrix: shape={X.shape}, positive_rate={y.mean():.4f}")
 
@@ -375,6 +416,24 @@ def main() -> int:
     )
     booster = store.load_from_path(args.model_path)
     print(f"Loaded model from {args.model_path}")
+
+    # ── Restrict the feature matrix to THIS model's schema ────────────────────
+    # Feature-domain-restricted models (i) carry a subset of feature_names in
+    # their manifest. The extracted matrix has all 156 columns, so select the
+    # model's own columns (in its order) before predicting; otherwise a
+    # 44-feature dns model vs a 156-column DMatrix mismatches.
+    model_feats = list(booster.feature_names or [])
+    if model_feats and model_feats != feature_names:
+        name_to_idx = {n: i for i, n in enumerate(feature_names)}
+        missing = [f for f in model_feats if f not in name_to_idx]
+        if missing:
+            raise SystemExit(
+                f"Model expects features absent from the pipeline output: {missing[:5]}"
+            )
+        idx = [name_to_idx[f] for f in model_feats]
+        X = X[:, idx]
+        feature_names = model_feats
+        print(f"Restricted matrix to model schema: {X.shape[1]} features")
 
     # ── Predict ──────────────────────────────────────────────────────────────
     import xgboost as xgb
@@ -434,6 +493,13 @@ def main() -> int:
     print(f"  FPR                 : {metrics['fpr']:.4f}")
     print(f"  ROC-AUC             : {metrics['roc_auc']:.4f}")
     print(f"  PR-AUC              : {metrics['pr_auc']:.4f}")
+    # Degenerate-model advisory (improvement #3): near-perfect AUC usually means
+    # the eval set is trivially separable, not that the model generalizes.
+    _auc = metrics.get("roc_auc")
+    if isinstance(_auc, (int, float)) and not (_auc != _auc) and _auc >= 0.999:
+        metrics["auc_warning"] = True
+        print("  ⚠ ADVISORY: near-perfect AUC — confirm the eval set is "
+              "representative (real, varied) and not trivially separable.")
     print()
     print("  NFR-02 grading:")
     for metric, info in metrics["nfr_02_grade"].items():

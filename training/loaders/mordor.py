@@ -21,6 +21,24 @@ as `1` (positive), and ASSUME the caller has separately supplied a
 negative-class corpus (typically synthetic.generate_dataset() or the
 benign-only Mordor "empire_*_baseline" datasets).
 
+KNOWN LIMITATION — WHOLE-FILE LABELLING (improvement #5, documented not fixed):
+Mordor captures carry no per-event ground truth. A capture run while an
+attack executed also contains plenty of benign background telemetry (OS
+noise, routine logons), yet THIS loader labels EVERY event in an attack
+file as positive (label 1). After windowing (training.trainer.window_events
+uses OR-aggregation), every window from an attack capture is therefore a
+positive. Consequences to keep in mind:
+  * Precision/recall measured on Mordor are "within-capture" — they reflect
+    whether the model fires somewhere in an attack capture, NOT per-event
+    detection accuracy.
+  * The positive class is inflated with benign-looking events, which can
+    teach the model that ordinary background activity inside a capture is
+    malicious. Mitigate by mixing in an independent benign corpus (synthetic
+    or a real benign capture via train_models --benign-jsonl).
+Per-event labelling is deferred until datasets with attack-time metadata
+(labelled timelines) are available; `stats["by_label"]` reports how many
+events each path-inferred label contributed for transparency.
+
 The dataset taxonomy maps to our two detectors as follows. Folder name
 substring → which model treats it as positive:
 
@@ -84,7 +102,10 @@ logger = get_logger("training.loaders.mordor")
 
 _LABEL_PATTERNS_LATERAL_MOVEMENT = re.compile(
     r"(lateral_movement|^lm_|credential_access|^ca_|cred_dump|psexec|wmiexec|"
-    r"smbexec|kerberoast|mimikatz|lsass|pass[_-]?the[_-]?(hash|ticket))",
+    r"smbexec|kerberoast|mimikatz|lsass|pass[_-]?the[_-]?(hash|ticket)|"
+    # APT emulation campaigns (e.g. OTRF compound/apt29 — dmevals.local range):
+    # multi-host credential-abuse + lateral movement kill chains.
+    r"apt\d+|dmevals)",
     re.IGNORECASE,
 )
 _LABEL_PATTERNS_DNS_EXFIL = re.compile(

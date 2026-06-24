@@ -21,6 +21,9 @@ Permissions:
   - view_graphs        — attack graph page
 """
 
+import json
+import os
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -49,6 +52,69 @@ def _require_perm(request: Request, user: User, perm: str) -> None:
         raise HTTPException(403, f"Permission '{perm}' required")
 
 
+def _model_health(request: Request) -> dict:
+    """
+    Compact model-health summary for the Operations header. Surfaces the two
+    model-quality guards on the page operators look at first:
+
+      - retrain CONTAMINATION guard (security): auto-retrain aborts when the
+        benign training pool is poisoned by suspected active-intrusion entities
+        (scheduler last_status == "skipped:suspected_active_intrusion");
+      - degenerate-model AUC guard: the active model tripped the near-perfect
+        training-AUC warning (manifest metadata auc_warning).
+
+    Computed server-side so it works for any authenticated viewer without a
+    second permission-gated fetch (/retrain/status needs retrain_models). The
+    flagged entities are already visible to the same user via the alerts feed,
+    so no extra disclosure. Best-effort: any failure degrades to the neutral
+    "Detectors live" state — this is a header adornment, never a hard error.
+    """
+    # 1. Contamination guard takes priority — it is a security stop.
+    sched = getattr(request.app.state, "retrain_scheduler", None)
+    if sched is not None:
+        try:
+            st = sched.status()
+        except Exception:
+            st = {}
+        if st.get("last_status") == "skipped:suspected_active_intrusion":
+            lr = st.get("last_result") or {}
+            return {
+                "state": "intrusion",
+                "label": "Retrain halted - suspected intrusion",
+                "detail": (
+                    f'{lr.get("excluded_pct", "?")}% of the benign training pool '
+                    "came from already-flagged entities; auto-retrain is paused "
+                    "until they are reviewed."
+                ),
+                "entities": (lr.get("detected_entities") or [])[:8],
+            }
+    # 2. Degenerate-model AUC guard on the active (latest) models. Read each
+    #    detector's latest/manifest.json directly (one file each) rather than
+    #    enumerating every saved version.
+    base = Path(os.environ.get("MODEL_STORE_DIR", "detection/models"))
+    flagged = []
+    for name in ("lateral_movement", "dns_exfiltration"):
+        try:
+            meta = json.loads(
+                (base / name / "latest" / "manifest.json").read_text()
+            ).get("metadata") or {}
+        except Exception:
+            continue
+        if meta.get("auc_warning"):
+            flagged.append(name)
+    if flagged:
+        return {
+            "state": "warn",
+            "label": "Model needs validation",
+            "detail": (
+                "Active model tripped the near-perfect-AUC guard - validate on "
+                "real data before trusting detections: " + ", ".join(flagged)
+            ),
+            "entities": [],
+        }
+    return {"state": "ok", "label": "Detectors live", "detail": None, "entities": []}
+
+
 # ── Home ────────────────────────────────────────────────────────────────────
 
 
@@ -75,6 +141,7 @@ async def home(request: Request, user: User = Depends(require_user_cookie)):
         {"user": user, "active": "home",
          "kpis": kpis, "severity_counts": severity_counts,
          "recent": recent,
+         "model_health": _model_health(request),
          "can_ack": _has_perm(request, user, "acknowledge_alerts")},
     )
 

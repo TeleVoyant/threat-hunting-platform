@@ -12,11 +12,13 @@ import tz.apt.thp.AppGraph
 import tz.apt.thp.data.ApiResult
 import tz.apt.thp.data.DriftHistory
 import tz.apt.thp.data.ModelSummary
+import tz.apt.thp.data.ModelVersionMeta
 
 /**
  * Loads the detector inventory then, for each detector, fetches the drift
- * history so the list card can render a sparkline inline. Read-only — no
- * retrain / threshold edit from mobile.
+ * history (sparkline) and the latest version's manifest metadata (eval AUC,
+ * feature count, degenerate-model guard flag). Read-only — no retrain /
+ * threshold edit from mobile.
  */
 class ModelsViewModel(
     private val appGraph: AppGraph,
@@ -25,6 +27,7 @@ class ModelsViewModel(
     data class DetectorCard(
         val summary: ModelSummary,
         val drift: DriftHistory? = null,
+        val latestMeta: ModelVersionMeta? = null,
     )
 
     data class State(
@@ -57,14 +60,22 @@ class ModelsViewModel(
                 return@launch
             }
 
-            // Fetch drift in parallel — tolerate per-detector failure.
+            // Fetch drift + latest-version metadata — tolerate per-detector failure.
             val cards = list.map { summary ->
                 val driftRes = withContext(Dispatchers.IO) {
                     api.driftHistory(summary.name)
                 }
+                val versRes = withContext(Dispatchers.IO) {
+                    api.listVersions(summary.name)
+                }
+                val versions = (versRes as? ApiResult.Ok)?.value?.versions.orEmpty()
+                // Prefer the active version; else the newest by created_at.
+                val latest = versions.firstOrNull { it.status == "active" }
+                    ?: versions.maxByOrNull { it.created_at ?: 0.0 }
                 DetectorCard(
                     summary = summary,
                     drift = (driftRes as? ApiResult.Ok)?.value,
+                    latestMeta = latest?.metadata,
                 )
             }
             _state.value = _state.value.copy(cards = cards, refreshing = false)

@@ -528,14 +528,7 @@ $AgentConfig = @"
       <QueryList>
         <Query Id="0">
           <Select Path="Security">
-            *[System[(
-              EventID=4624 or EventID=4625 or EventID=4648 or
-              EventID=4672 or EventID=4768 or EventID=4769 or
-              EventID=4776 or EventID=4728 or EventID=4732 or
-              EventID=4698 or EventID=4657 or EventID=4673 or
-              EventID=4720 or EventID=4722 or EventID=4724 or
-              EventID=4725 or EventID=4726 or EventID=4738$ExtraSecEvents
-            )]]
+            *[System[(EventID=4624 or EventID=4625 or EventID=4648 or EventID=4672 or EventID=4768 or EventID=4769 or EventID=4776 or EventID=4728 or EventID=4732 or EventID=4698 or EventID=4657 or EventID=4673 or EventID=4720 or EventID=4722 or EventID=4724 or EventID=4725 or EventID=4726 or EventID=4738$ExtraSecEvents)]]
           </Select>
         </Query>
       </QueryList>

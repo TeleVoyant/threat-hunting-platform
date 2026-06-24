@@ -17,6 +17,7 @@ correlation window (default 5 minutes), with linkage by user where possible.
 Operates on ALL event types — it needs cross-type sequencing.
 """
 
+import bisect
 from datetime import timedelta
 from typing import Optional
 
@@ -140,13 +141,64 @@ class BehavioralFeatureExtractor(BaseFeatureExtractor):
 
         Linkage rule: if either side is missing the linkage field, fall back
         to time-only correlation (don't filter out the link).
+
+        Performance (improvement #4): the single-link-key case (the only case
+        used in practice) runs in O((C+E) log E) via timestamp-sorted buckets
+        and bisect, instead of the O(C*E) nested scan that stalled on dense
+        real telemetry (apt29 LSASS windows). Multi-key falls back to the
+        original nested loop (with a safety cap) — semantics are identical.
         """
         if not cause_events or not effect_events:
             return 0
 
         window = timedelta(seconds=_CHAIN_WINDOW_SEC)
-        count = 0
 
+        # ── Fast path: exactly one link key ──────────────────────────────────
+        if len(link_keys) == 1:
+            key = link_keys[0]
+            # Bucket effect timestamps by their link-key value. The None bucket
+            # holds effects whose key is missing (they match ANY cause via the
+            # fallback rule). `all_ts` is every effect timestamp (used when the
+            # cause's own key is missing → it matches ANY effect).
+            none_ts: list = []
+            by_val: dict = {}
+            all_ts: list = []
+            for e in effect_events:
+                ts = e.timestamp
+                all_ts.append(ts)
+                v = getattr(e, key, None)
+                if v is None:
+                    none_ts.append(ts)
+                else:
+                    by_val.setdefault(v, []).append(ts)
+            all_ts.sort()
+            none_ts.sort()
+            for lst in by_val.values():
+                lst.sort()
+
+            def _has_in_window(sorted_ts: list, lo, hi) -> bool:
+                # first timestamp strictly greater than lo, then check it's <= hi
+                i = bisect.bisect_right(sorted_ts, lo)
+                return i < len(sorted_ts) and sorted_ts[i] <= hi
+
+            count = 0
+            for cause in cause_events:
+                lo = cause.timestamp
+                hi = lo + window
+                cv = getattr(cause, key, None)
+                if cv is None:
+                    matched = _has_in_window(all_ts, lo, hi)
+                else:
+                    matched = (
+                        _has_in_window(by_val.get(cv, ()), lo, hi)
+                        or _has_in_window(none_ts, lo, hi)
+                    )
+                if matched:
+                    count += 1
+            return count
+
+        # ── General fallback: multiple link keys (not used in practice) ──────
+        count = 0
         for cause in cause_events:
             for effect in effect_events:
                 if effect.timestamp <= cause.timestamp:
@@ -156,7 +208,6 @@ class BehavioralFeatureExtractor(BaseFeatureExtractor):
                 if all(self._linked(cause, effect, k) for k in link_keys):
                     count += 1
                     break  # one chain per cause
-
         return count
 
     @staticmethod

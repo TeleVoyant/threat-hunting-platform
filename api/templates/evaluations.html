@@ -63,6 +63,18 @@
       </template>
     </div>
 
+    {# Degenerate-model advisory (#3): near-perfect AUC usually means the eval
+       set is trivially separable, not that the model generalizes. #}
+    <div x-show="latest && latest.report && latest.report.auc_warning"
+         class="card" style="padding:12px 16px; margin-bottom:14px;
+                background:var(--warning-bg); border-left:3px solid var(--warning);">
+      <span style="color:var(--warning); font-weight:600;">&#9888; Near-perfect AUC advisory</span>
+      <span class="apt-small" style="color:var(--fg-2);">
+        — this evaluation scored ROC-AUC ≥ 0.999. Confirm the eval set is real and
+        varied; trivially-separable data inflates AUC and can hide poor real-world
+        generalization (the trap that hid the DNS model's 0.057 real-data score).</span>
+    </div>
+
     {# Threshold scrubber (non-destructive) #}
     <div class="card" style="padding:14px 18px; margin-bottom:14px; display:flex; align-items:center; gap:14px;">
       <span class="eyebrow">Preview at threshold</span>
@@ -248,42 +260,103 @@
 {% if can_evaluate %}
 <div x-show="tab==='run'" x-cloak>
   <div class="card" style="padding:18px 20px;">
-    <div class="eyebrow" style="margin-bottom:8px;">Preset</div>
+    {# Data source: synthetic (generated) vs a real dataset under data/datasets #}
+    <div class="eyebrow" style="margin-bottom:8px;">Data source</div>
     <div style="display:flex; gap:8px; margin-bottom:18px;">
-      <template x-for="p in presets" :key="p.id">
-        <button class="btn" :class="runForm.preset===p.id ? 'btn-primary' : 'btn-secondary'"
-                x-on:click="applyPreset(p.id)" style="flex:1; flex-direction:column; align-items:flex-start; padding:12px 14px; gap:2px;">
-          <span style="font-weight:700;" x-text="p.label"></span>
-          <span class="apt-small" style="font-weight:400; opacity:0.85;" x-text="p.hint"></span>
-        </button>
-      </template>
+      <button class="btn" :class="evalSource==='synthetic' ? 'btn-primary' : 'btn-secondary'"
+              x-on:click="evalSource='synthetic'" style="flex:1;">Synthetic (generated)</button>
+      <button class="btn" :class="evalSource==='real' ? 'btn-primary' : 'btn-secondary'"
+              x-on:click="evalSource='real'" style="flex:1;">Real dataset</button>
     </div>
 
-    <div class="form-grid">
-      <div class="field"><label class="field-label">Hours</label>
-        <input class="input" type="number" x-model.number="runForm.hours" min="1" max="720"
-               :disabled="runForm.preset!=='custom'"></div>
-      <div class="field"><label class="field-label">Hosts</label>
-        <input class="input" type="number" x-model.number="runForm.hosts" min="1" max="50"
-               :disabled="runForm.preset!=='custom'"></div>
-      <div class="field"><label class="field-label">Lateral attacks/day</label>
-        <input class="input" type="number" x-model.number="runForm.lateral_attacks" min="0"
-               :disabled="runForm.preset!=='custom'"></div>
-      <div class="field"><label class="field-label">DNS attacks/day</label>
-        <input class="input" type="number" x-model.number="runForm.dns_attacks" min="0"
-               :disabled="runForm.preset!=='custom'"></div>
-      <div class="field"><label class="field-label">Seed</label>
-        <input class="input" type="number" x-model.number="runForm.seed"></div>
-      <div class="field"><label class="field-label">Threshold</label>
-        <input class="input" type="number" step="0.01" min="0" max="1" x-model.number="runForm.threshold"></div>
+    {# ── Synthetic source ── #}
+    <div x-show="evalSource==='synthetic'">
+      <div class="eyebrow" style="margin-bottom:8px;">Preset</div>
+      <div style="display:flex; gap:8px; margin-bottom:18px;">
+        <template x-for="p in presets" :key="p.id">
+          <button class="btn" :class="runForm.preset===p.id ? 'btn-primary' : 'btn-secondary'"
+                  x-on:click="applyPreset(p.id)" style="flex:1; flex-direction:column; align-items:flex-start; padding:12px 14px; gap:2px;">
+            <span style="font-weight:700;" x-text="p.label"></span>
+            <span class="apt-small" style="font-weight:400; opacity:0.85;" x-text="p.hint"></span>
+          </button>
+        </template>
+      </div>
+
+      <div class="form-grid">
+        <div class="field"><label class="field-label">Hours</label>
+          <input class="input" type="number" x-model.number="runForm.hours" min="1" max="720"
+                 :disabled="runForm.preset!=='custom'"></div>
+        <div class="field"><label class="field-label">Hosts</label>
+          <input class="input" type="number" x-model.number="runForm.hosts" min="1" max="50"
+                 :disabled="runForm.preset!=='custom'"></div>
+        <div class="field"><label class="field-label">Lateral attacks/day</label>
+          <input class="input" type="number" x-model.number="runForm.lateral_attacks" min="0"
+                 :disabled="runForm.preset!=='custom'"></div>
+        <div class="field"><label class="field-label">DNS attacks/day</label>
+          <input class="input" type="number" x-model.number="runForm.dns_attacks" min="0"
+                 :disabled="runForm.preset!=='custom'"></div>
+        <div class="field"><label class="field-label">Seed</label>
+          <input class="input" type="number" x-model.number="runForm.seed"></div>
+        <div class="field"><label class="field-label">Threshold</label>
+          <input class="input" type="number" step="0.01" min="0" max="1" x-model.number="runForm.threshold"></div>
+      </div>
+
+      <div class="apt-small" style="margin-top:12px; padding:10px 12px; background:var(--bg-2); border-radius:var(--r-2); color:var(--fg-2);">
+        <strong>Expected base rate:</strong> <span class="mono tabnum" x-text="(expectedBaseRate()*100).toFixed(3) + '%'"></span>
+        &nbsp;positive windows across <span class="mono tabnum" x-text="expectedWindowCount()"></span> total windows
+        <span x-show="runForm.preset==='realistic'" style="color:var(--warning); margin-left:8px;">
+          — close to real SOC noise floor; the FPR shown here is the one to quote
+        </span>
+      </div>
     </div>
 
-    <div class="apt-small" style="margin-top:12px; padding:10px 12px; background:var(--bg-2); border-radius:var(--r-2); color:var(--fg-2);">
-      <strong>Expected base rate:</strong> <span class="mono tabnum" x-text="(expectedBaseRate()*100).toFixed(3) + '%'"></span>
-      &nbsp;positive windows across <span class="mono tabnum" x-text="expectedWindowCount()"></span> total windows
-      <span x-show="runForm.preset==='realistic'" style="color:var(--warning); margin-left:8px;">
-        — close to real SOC noise floor; the FPR shown here is the one to quote
-      </span>
+    {# ── Real-dataset source ── #}
+    <div x-show="evalSource==='real'">
+      <div class="form-grid">
+        <div class="field" style="grid-column:1/-1;">
+          <label class="field-label">Dataset (under data/datasets)</label>
+          <select class="input" x-model="realForm.dataset_id">
+            <option value="">— select a dataset —</option>
+            <optgroup label="Labelled JSONL (--from-jsonl)">
+              <template x-for="d in datasets.jsonl" :key="'j'+d.id">
+                <option :value="'jsonl::'+d.id" x-text="d.label + ' · ' + d.size_mb + ' MB'"></option>
+              </template>
+            </optgroup>
+            <optgroup label="Mordor/Sysmon dir (--mordor-dir + synthetic benign)">
+              <template x-for="d in datasets.mordor" :key="'m'+d.id">
+                <option :value="'mordor::'+d.id" x-text="d.label"></option>
+              </template>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field" style="grid-column:1/-1;">
+          <label class="field-label">Real benign corpus (optional negatives)</label>
+          <select class="input" x-model="realForm.benign_dataset_id">
+            <option value="">— none (synthetic benign for Mordor) —</option>
+            <template x-for="d in datasets.jsonl" :key="'b'+d.id">
+              <option :value="d.id" x-text="d.label"></option>
+            </template>
+          </select>
+        </div>
+        <div class="field"><label class="field-label">Grouping</label>
+          <select class="input" x-model="realForm.grouping">
+            <option value="">auto (per detector)</option>
+            <option value="hostname">hostname</option>
+            <option value="hostname_user">hostname_user</option>
+          </select>
+        </div>
+        <div class="field" x-show="(realForm.dataset_id||'').startsWith('mordor::')">
+          <label class="field-label">Synthetic benign hours</label>
+          <input class="input" type="number" x-model.number="realForm.add_synthetic_benign_hours" min="0" max="168"></div>
+        <div class="field"><label class="field-label">Threshold</label>
+          <input class="input" type="number" step="0.01" min="0" max="1" x-model.number="runForm.threshold"></div>
+      </div>
+      <div class="apt-small" style="margin-top:12px; padding:10px 12px; background:var(--bg-2); border-radius:var(--r-2); color:var(--fg-2);">
+        Evaluates the deployed <span class="mono" x-text="detector"></span> model against real data.
+        Mordor dirs label every captured event positive (within-capture metrics); pair with a benign corpus or synthetic benign for negatives.
+        <span x-show="!datasets.jsonl.length && !datasets.mordor.length" style="color:var(--warning);">
+          No datasets found under data/datasets.</span>
+      </div>
     </div>
 
     <div style="display:flex; gap:8px; margin-top:18px;">
@@ -328,6 +401,11 @@ function evaluationsPage() {
     running: false,
     lastRunMsg: '',
 
+    // Real-dataset evaluation (data/datasets)
+    evalSource: 'synthetic',
+    datasets: { jsonl: [], mordor: [] },
+    realForm: { dataset_id: '', benign_dataset_id: '', grouping: '', add_synthetic_benign_hours: 24 },
+
     async init() {
       // Allow deep-link via ?detector=name
       const qp = new URLSearchParams(window.location.search);
@@ -335,6 +413,17 @@ function evaluationsPage() {
       if (det && this.detectors.includes(det)) this.detector = det;
       await this.loadDetector();
       this.applyPreset('saturated');
+      this.fetchDatasets();
+    },
+
+    async fetchDatasets() {
+      try {
+        const r = await fetch('/models/eval-datasets', { credentials: 'same-origin' });
+        if (r.ok) {
+          const d = await r.json();
+          this.datasets = { jsonl: d.jsonl || [], mordor: d.mordor || [] };
+        }
+      } catch (_) {}
     },
 
     async loadDetector() {
@@ -571,14 +660,31 @@ function evaluationsPage() {
     },
 
     async submitRun() {
+      let body;
+      if (this.evalSource === 'real') {
+        // dataset_id is encoded "kind::relpath" (kind = jsonl | mordor)
+        const sel = this.realForm.dataset_id || '';
+        const sep = sel.indexOf('::');
+        if (sep < 0) { this.lastRunMsg = 'Pick a dataset first.'; return; }
+        body = {
+          source: sel.slice(0, sep),
+          dataset_id: sel.slice(sep + 2),
+          benign_dataset_id: this.realForm.benign_dataset_id || null,
+          grouping: this.realForm.grouping || null,
+          add_synthetic_benign_hours: this.realForm.add_synthetic_benign_hours,
+          threshold: this.runForm.threshold,
+        };
+      } else {
+        body = {
+          source: 'synthetic',
+          hours: this.runForm.hours, hosts: this.runForm.hosts,
+          lateral_attacks: this.runForm.lateral_attacks,
+          dns_attacks:     this.runForm.dns_attacks,
+          seed: this.runForm.seed, threshold: this.runForm.threshold,
+        };
+      }
       this.running = true;
       this.lastRunMsg = 'Submitting…';
-      const body = {
-        hours: this.runForm.hours, hosts: this.runForm.hosts,
-        lateral_attacks: this.runForm.lateral_attacks,
-        dns_attacks:     this.runForm.dns_attacks,
-        seed: this.runForm.seed, threshold: this.runForm.threshold,
-      };
       let jobId = null;
       try {
         const r = await fetch('/models/' + this.detector + '/evaluate', {

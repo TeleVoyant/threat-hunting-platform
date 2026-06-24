@@ -9,7 +9,6 @@
 #     echo "your-jwt-secret" > secrets/jwt_secret.txt
 #     echo "your-wazuh-pass" > secrets/wazuh_api_password.txt
 #     echo "your-signing-key" > secrets/model_signing_key.txt
-#     echo "your-fl-key" > secrets/fl_server_key.txt
 #     docker compose up -d
 #
 #   View logs:
@@ -55,6 +54,12 @@ services:
       # and <logall_json> patched at rest, but kept so a future wipe-of-
       # config still produces a working setup.
       - ./scripts/wazuh-bootstrap-entrypoint.sh:/wazuh-bootstrap-entrypoint.sh:ro
+      # cont-init.d hook (runs after 1-config-filebeat, before the filebeat
+      # service starts) that enables filebeat's archives input so the FULL event
+      # stream ships to the indexer as wazuh-archives-4.x-*. Done here, not in
+      # the bootstrap wrapper, because filebeat.yml is generated during /init and
+      # restarting filebeat would halt the whole manager container.
+      - ./config/wazuh_cluster/enable-filebeat-archives.sh:/etc/cont-init.d/99-enable-filebeat-archives:ro
       # Source-of-truth ossec.conf — copied by cont-init.d into /var/ossec/etc/
       # on first boot. The two `<use_password>yes` + `<logall_json>yes` toggles
       # required by the AI pipeline are baked in (see file on host).
@@ -190,6 +195,11 @@ services:
       - DATA_DIR=data
       - LOG_LEVEL=INFO
       - DETECTION_LOOP_ENABLED=true
+      # Wazuh Indexer (OpenSearch) creds. Ingestion reads endpoint telemetry
+      # from the indexer, not the Manager API. Must match the indexer admin
+      # credentials (same values the manager/dashboard services use above).
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=SecretPassword
       # The host's LAN IP, injected by ./scripts/pair-up.sh. Used by the
       # companion-app QR endpoint so phones can reach the api over WiFi
       # without the operator hand-editing config/notifications.yml.
@@ -260,174 +270,6 @@ services:
     networks:
       - internal-net
 
-  # ── FEDERATED LEARNING COORDINATOR (REST + mTLS, separate auth) ──
-  # Hosted by a neutral consortium — NOT operated by any single org.
-  # See federated/coordinator_app.py + federated/fl_security.py for the
-  # separate trust boundary.
-  fl-coordinator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    hostname: fl-coordinator
-    user: "1000:1000"
-    read_only: true
-    ports:
-      - "8889:8889" # Coordinator REST + mTLS
-    command: >
-      python -m uvicorn federated.coordinator_app:app
-      --host 0.0.0.0 --port 8889
-      --ssl-certfile /app/data/ca/coordinator_cert.pem
-      --ssl-keyfile  /app/data/ca/coordinator_key.pem
-      --ssl-ca-certs /app/data/ca/ca_cert.pem
-      --ssl-cert-reqs 2
-    volumes:
-      - fl-coordinator-data:/app/data # CA + DB + audit (writable)
-      - ./config:/app/config:ro
-    tmpfs:
-      - /tmp:size=32M,mode=1777
-    environment:
-      - FL_DATA_DIR=/app/data
-      - FL_CA_DIR=/app/data/ca
-      - FL_USERS_FILE=/app/config/fl_users.yml
-    env_file:
-      - .env # FL_JWT_SECRET lives here
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: "1.0"
-    #pids_limit: 128
-    networks:
-      - fl-net # isolated from internal-net by intent
-
-  # ── LEGACY FL SERVER (Flower gRPC, used by the in-process demo simulator) ──
-  fl-server:
-    build:
-      context: .
-      dockerfile: federated/Dockerfile
-    hostname: fl-server
-    user: "1000:1000"
-    read_only: true
-    command:
-      [
-        "python",
-        "run_server.py",
-        "--mode",
-        "fl-server",
-        "--config-dir",
-        "config",
-      ]
-    volumes:
-      - ./config:/app/config:ro
-    tmpfs:
-      - /tmp:size=32M,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: "2.0"
-    #pids_limit: 128
-    networks:
-      - fl-net
-
-  # fl-client-udom:
-  #   build:
-  #     context: .
-  #     dockerfile: federated/Dockerfile
-  #   user: "1000:1000"
-  #   read_only: true
-  #   command: >
-  #     python run_server.py --mode fl-client
-  #     --fl-server-address fl-server:8888
-  #     --fl-client-name udom
-  #     --fl-data-path /data/partition_1/train.csv
-  #   volumes:
-  #     - ./training/data/partition_1:/data/partition_1:ro
-  #   tmpfs:
-  #     - /tmp:size=64M,mode=1777
-  #   depends_on:
-  #     - fl-server
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   cap_drop:
-  #     - ALL
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2G
-  #         cpus: "1.5"
-  #   #pids_limit: 128
-  #   networks:
-  #     - fl-net
-
-  # fl-client-hospital:
-  #   build:
-  #     context: .
-  #     dockerfile: federated/Dockerfile
-  #   user: "1000:1000"
-  #   read_only: true
-  #   command: >
-  #     python run_server.py --mode fl-client
-  #     --fl-server-address fl-server:8888
-  #     --fl-client-name hospital
-  #     --fl-data-path /data/partition_2/train.csv
-  #   volumes:
-  #     - ./training/data/partition_2:/data/partition_2:ro
-  #   tmpfs:
-  #     - /tmp:size=64M,mode=1777
-  #   depends_on:
-  #     - fl-server
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   cap_drop:
-  #     - ALL
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2G
-  #         cpus: "1.5"
-  #   #pids_limit: 128
-  #   networks:
-  #     - fl-net
-
-  # fl-client-bank:
-  #   build:
-  #     context: .
-  #     dockerfile: federated/Dockerfile
-  #   user: "1000:1000"
-  #   read_only: true
-  #   command: >
-  #     python run_server.py --mode fl-client
-  #     --fl-server-address fl-server:8888
-  #     --fl-client-name bank
-  #     --fl-data-path /data/partition_3/train.csv
-  #   volumes:
-  #     - ./training/data/partition_3:/data/partition_3:ro
-  #   tmpfs:
-  #     - /tmp:size=64M,mode=1777
-  #   depends_on:
-  #     - fl-server
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   cap_drop:
-  #     - ALL
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2G
-  #         cpus: "1.5"
-  #   #pids_limit: 128
-  #   networks:
-  #     - fl-net
-
 volumes:
   wazuh-data:
   wazuh-etc:
@@ -435,13 +277,9 @@ volumes:
   wazuh-dashboard-config:
   wazuh-dashboard-custom:
   platform-data:
-  fl-coordinator-data:
 
 networks:
   internal-net:
     driver: bridge
   agent-net:
     driver: bridge
-  fl-net:
-    driver: bridge
-    internal: true

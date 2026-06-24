@@ -59,12 +59,11 @@ _LOGON_REMOTE_INTERACTIVE = 10  # RDP
 
 class AuthFeatureExtractor(BaseFeatureExtractor):
 
-    # Fixed denominator for rate features so they're scale-invariant across
-    # poll cadences (c). Matches event_window_minutes from platform config —
-    # if the platform changes the window, also change this. Five-minute
-    # default tracks both the trainer (window_minutes=5) and the running
-    # detection loop.
-    WINDOW_SECONDS = 5 * 60
+    def __init__(self, window_minutes: int = 5):
+        # Instance attribute so all callers can pass event_window_minutes from
+        # PlatformConfig instead of relying on a hardcoded class constant.
+        # Default preserves the previous behaviour when no arg is supplied.
+        self.WINDOW_SECONDS = window_minutes * 60
 
     def name(self) -> str:
         return "auth"

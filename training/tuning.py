@@ -70,11 +70,13 @@ from training.trainer             import extract_training_matrix, window_events
 logger = get_logger("training.tuning")
 
 
-def build_pipeline() -> FeaturePipeline:
+def build_pipeline(window_minutes: int = 5) -> FeaturePipeline:
     p = FeaturePipeline()
     for ex in [
-        DnsFeatureExtractor(), AuthFeatureExtractor(), ProcessFeatureExtractor(),
-        NetworkFeatureExtractor(), TemporalFeatureExtractor(), BehavioralFeatureExtractor(),
+        DnsFeatureExtractor(window_minutes=window_minutes),
+        AuthFeatureExtractor(window_minutes=window_minutes),
+        ProcessFeatureExtractor(), NetworkFeatureExtractor(),
+        TemporalFeatureExtractor(), BehavioralFeatureExtractor(),
     ]:
         p.register_extractor(ex)
     return p
@@ -242,7 +244,19 @@ def main() -> int:
     grouping = ("hostname_user" if args.model_name == "lateral_movement"
                 else "hostname")
     windowed = window_events(labeled, args.window_minutes, grouping)
-    X, y, feature_names = extract_training_matrix(build_pipeline(), windowed)
+    X, y, feature_names = extract_training_matrix(build_pipeline(window_minutes=args.window_minutes), windowed)
+
+    # Match the production feature-domain restriction (i) so tuned params
+    # reflect the schema the deployed model actually trains on.
+    from training.train_models import load_feature_groups
+    fg = load_feature_groups().get(args.model_name)
+    if fg:
+        allowed = set(fg)
+        keep = [i for i, n in enumerate(feature_names) if n.split("__")[0] in allowed]
+        X = X[:, keep]
+        feature_names = [feature_names[i] for i in keep]
+        print(f"Feature domain restricted to {sorted(allowed)}: {len(feature_names)} features")
+
     print(f"Tuning matrix: shape={X.shape}, "
           f"positives={int(y.sum())}, negatives={int((1-y).sum())}")
 

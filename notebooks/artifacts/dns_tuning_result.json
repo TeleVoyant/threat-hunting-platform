@@ -1,0 +1,117 @@
+{
+  "best_params": {
+    "learning_rate": 0.05,
+    "max_depth": 4,
+    "min_child_weight": 1,
+    "subsample": 0.8
+  },
+  "best_score": 0.8636516759568009,
+  "scoring": "roc_auc",
+  "n_splits": 4,
+  "n_candidates": 8,
+  "elapsed_seconds": 8.02,
+  "feature_count": 55,
+  "n_samples": 1152,
+  "n_positive": 17,
+  "scale_pos_weight": 66.76470588235294,
+  "cv_results": [
+    {
+      "params": {
+        "learning_rate": 0.05,
+        "max_depth": 4,
+        "min_child_weight": 1,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8636516759568009,
+      "std_score": 0.08020734457730565,
+      "rank": 1,
+      "fit_time": 0.2965705990791321
+    },
+    {
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 4,
+        "min_child_weight": 5,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8583421465186882,
+      "std_score": 0.09437611398756074,
+      "rank": 2,
+      "fit_time": 0.13482171297073364
+    },
+    {
+      "params": {
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "min_child_weight": 1,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8566559249489872,
+      "std_score": 0.07916640700175705,
+      "rank": 3,
+      "fit_time": 0.36257481575012207
+    },
+    {
+      "params": {
+        "learning_rate": 0.05,
+        "max_depth": 4,
+        "min_child_weight": 5,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8549729694420943,
+      "std_score": 0.09877912590664807,
+      "rank": 4,
+      "fit_time": 0.21046465635299683
+    },
+    {
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 4,
+        "min_child_weight": 1,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8549697033792862,
+      "std_score": 0.10303540255380067,
+      "rank": 5,
+      "fit_time": 0.21136027574539185
+    },
+    {
+      "params": {
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "min_child_weight": 5,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8425095182401832,
+      "std_score": 0.11281629435791073,
+      "rank": 6,
+      "fit_time": 0.2400979995727539
+    },
+    {
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 6,
+        "min_child_weight": 1,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8417343726670978,
+      "std_score": 0.10539717631056239,
+      "rank": 7,
+      "fit_time": 0.2330346703529358
+    },
+    {
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 6,
+        "min_child_weight": 5,
+        "subsample": 0.8
+      },
+      "mean_score": 0.8416662519285323,
+      "std_score": 0.10139531873234603,
+      "rank": 8,
+      "fit_time": 0.19553405046463013
+    }
+  ],
+  "model_name": "dns_exfiltration",
+  "window_minutes": 5
+}

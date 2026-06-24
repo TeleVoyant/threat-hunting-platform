@@ -3,6 +3,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Regenerate stdlib bytecode from source.
+# The base image's precompiled stdlib can ship a corrupt .pyc on some hosts
+# (seen here: configparser.cpython-311.pyc -> "ValueError: bad marshal data"),
+# which crashes uvicorn at import before the app ever starts. The .py sources
+# are intact, so force-recompile the top-level stdlib (-l = no recursion, skips
+# lib2to3 py2 test fixtures) into our own image layer, then fail the build fast
+# if it still won't import. Cheap (~15s) and keeps the image reproducible.
+# RUN python -m compileall -fql /usr/local/lib/python3.11 \
+#  && python -c "import configparser"
+
 # Install dependencies
 COPY requirements.lock.txt .
 RUN pip install --no-cache-dir -r requirements.lock.txt

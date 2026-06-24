@@ -71,9 +71,10 @@ def _max_run(text: str, predicate) -> int:
 
 class DnsFeatureExtractor(BaseFeatureExtractor):
 
-    # Same fixed-window principle as AuthFeatureExtractor: rate denominator
-    # is the configured analytic window, not the event span (d).
-    WINDOW_SECONDS = 5 * 60
+    def __init__(self, window_minutes: int = 5):
+        # Instance attribute threaded from PlatformConfig.event_window_minutes.
+        # Default preserves the previous behaviour when no arg is supplied.
+        self.WINDOW_SECONDS = window_minutes * 60
 
     def name(self) -> str:
         return "dns"

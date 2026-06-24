@@ -28,6 +28,35 @@
   </div>
 
   <div>
+    <div class="panel mb-4">
+      <h3 class="text-xs uppercase text-slate-400 tracking-wide mb-2">Legend</h3>
+      <div class="text-xs text-slate-300 space-y-2">
+        <div>
+          <div class="text-slate-400 mb-1">Node colour = worst severity</div>
+          <div class="flex flex-wrap gap-2">
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#dc2626;"></span> critical</span>
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ea580c;"></span> high</span>
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#d97706;"></span> medium</span>
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#65a30d;"></span> low</span>
+          </div>
+        </div>
+        <div>
+          <div class="text-slate-400 mb-1">Shape</div>
+          <div>● host / entity &nbsp;·&nbsp; ◆ external domain (DNS exfil target)</div>
+        </div>
+        <div>
+          <div class="text-slate-400 mb-1">Edge colour = confidence</div>
+          <div>
+            <span style="color:#ef4444;">━</span> &gt; 70% &nbsp;·&nbsp;
+            <span style="color:#fbbf24;">━</span> ≤ 70%
+          </div>
+        </div>
+        <div class="text-slate-400 pt-1 border-t border-slate-700">
+          Hover an edge for MITRE technique, confidence, and the top SHAP
+          feature that drove the detection.
+        </div>
+      </div>
+    </div>
     <div class="panel">
       <h3 class="text-xs uppercase text-slate-400 tracking-wide mb-2">Snapshots</h3>
       <ul class="text-sm space-y-1">

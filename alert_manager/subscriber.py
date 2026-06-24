@@ -30,6 +30,7 @@ import time
 from collections import defaultdict
 from typing import Optional
 
+from alert_manager.alert_engine  import AlertEngine
 from alert_manager.store         import AlertStore
 from alert_manager.wazuh_publisher import WazuhPublisher
 from observability.audit         import AuditTrail
@@ -50,6 +51,7 @@ class AlertSubscriber:
         store:     AlertStore,
         publisher: WazuhPublisher,
         audit:     Optional[AuditTrail] = None,
+        engine:    Optional[AlertEngine] = None,
         dedup_window_minutes: int = 30,
         correlation_window_seconds: int = 300,
     ):
@@ -57,6 +59,7 @@ class AlertSubscriber:
         self.store    = store
         self.publisher = publisher
         self.audit    = audit
+        self.engine   = engine
         self.dedup_window = dedup_window_minutes
         # Per-entity recent detections for kill-chain correlation (z). Tuple
         # of (timestamp, detector_name, detection_id). When ≥2 distinct
@@ -114,6 +117,13 @@ class AlertSubscriber:
         corr_id = data.get("correlation_id") or det.correlation_id
         if corr_id and not alert.correlation_id:
             alert.correlation_id = corr_id
+
+        # ── 2b. Engine gate ───────────────────────────────────────────────────
+        # AlertEngine.process() returns None to suppress below-threshold alerts.
+        if self.engine is not None:
+            alert = self.engine.process(alert)
+            if alert is None:
+                return
 
         # ── 3. Persist ────────────────────────────────────────────────────────
         try:

@@ -3,7 +3,7 @@
 wazuh:
   manager:
     # Central server address — change this to your Wazuh Manager IP/hostname
-    host: "localhost" # docker-compose service name; resolved to container IP on internal-net
+    host: "wazuh.manager" # docker network alias on internal-net (see docker-compose.yml). Bare-metal/host runs: set to "localhost" or the manager's LAN IP.
     api_port: 55000
     api_protocol: "https"
     # Agent registration port (for laptops connecting to this server)
@@ -20,6 +20,20 @@ wazuh:
     max_retries: 3
     circuit_breaker_threshold: 5 # Open circuit after 5 consecutive failures
     circuit_breaker_reset_seconds: 60 # Try again after 60s
+
+  # Wazuh Indexer (OpenSearch) -- where the platform reads endpoint telemetry.
+  # The Manager API (55000) has no /alerts endpoint; events live in the indexer.
+  # index_pattern selects the source:
+  #   wazuh-alerts-4.x-*    rule-matched events only (no auth/dns/network EIDs)
+  #   wazuh-archives-4.x-*  full event stream (enable filebeat archives first)
+  indexer:
+    host: "wazuh.indexer" # docker network alias on internal-net
+    port: 9200
+    scheme: "https"
+    username: "admin"
+    password: "${INDEXER_PASSWORD}" # docker-compose sets this (SecretPassword)
+    index_pattern: "wazuh-archives-4.x-*"
+    time_field: "timestamp"
 
   # Dashboard (for alert viewing by SOC analysts)
   dashboard:
