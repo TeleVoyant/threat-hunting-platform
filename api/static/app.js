@@ -234,12 +234,29 @@ document.addEventListener('htmx:responseError', (e) => {
 
 // ── Clipboard helper ────────────────────────────────────────────────────────
 window.aptCopy = async function (text, label = 'Copied to clipboard') {
-  try {
-    await navigator.clipboard.writeText(text);
-    if (window.Alpine) Alpine.store('toast').push(label, 'ok', 2200);
-  } catch (e) {
-    if (window.Alpine) Alpine.store('toast').push('Copy failed: ' + e.message, 'error');
+  const ok   = () => { if (window.Alpine) Alpine.store('toast').push(label, 'ok', 2200); };
+  const fail = (e) => { if (window.Alpine) Alpine.store('toast').push('Copy failed: ' + ((e && e.message) || e), 'error'); };
+  // Modern API only works in a secure context (HTTPS or http://localhost).
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); ok(); return; }
+    catch (_) { /* fall through to the legacy path below */ }
   }
+  // Legacy fallback: works over plain HTTP (deprecated execCommand, but reliable).
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text == null ? '' : String(text);
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(ta);
+    copied ? ok() : fail(new Error('clipboard blocked by the browser — select + copy manually'));
+  } catch (e) { fail(e); }
 };
 
 // ── ⌘K palette opener ───────────────────────────────────────────────────────

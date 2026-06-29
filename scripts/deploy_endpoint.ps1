@@ -524,15 +524,7 @@ $AgentConfig = @"
   <localfile>
     <location>Security</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="Security">
-            *[System[(EventID=4624 or EventID=4625 or EventID=4648 or EventID=4672 or EventID=4768 or EventID=4769 or EventID=4776 or EventID=4728 or EventID=4732 or EventID=4698 or EventID=4657 or EventID=4673 or EventID=4720 or EventID=4722 or EventID=4724 or EventID=4725 or EventID=4726 or EventID=4738$ExtraSecEvents)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=4624 or EventID=4625 or EventID=4648 or EventID=4672 or EventID=4768 or EventID=4769 or EventID=4776 or EventID=4728 or EventID=4732 or EventID=4698 or EventID=4657 or EventID=4673 or EventID=4720 or EventID=4722 or EventID=4724 or EventID=4725 or EventID=4726 or EventID=4738$ExtraSecEvents]</query>
   </localfile>
 
   <!-- == POWERSHELL LOGS ================================== -->
@@ -541,15 +533,7 @@ $AgentConfig = @"
   <localfile>
     <location>Microsoft-Windows-PowerShell/Operational</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="Microsoft-Windows-PowerShell/Operational">
-            *[System[(EventID=4103 or EventID=4104)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=4103 or EventID=4104]</query>
   </localfile>
 
   <!-- == SYSTEM LOG ======================================= -->
@@ -558,15 +542,7 @@ $AgentConfig = @"
   <localfile>
     <location>System</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="System">
-            *[System[(EventID=7045 or EventID=7040)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=7045 or EventID=7040]</query>
   </localfile>
 
 "@
@@ -587,15 +563,7 @@ if ($Profile -ne "Lean") {
   <localfile>
     <location>Microsoft-Windows-DNS-Client/Operational</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="Microsoft-Windows-DNS-Client/Operational">
-            *[System[(EventID=3006 or EventID=3008 or EventID=3020)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=3006 or EventID=3008 or EventID=3020]</query>
   </localfile>
 
   <!-- == WINDOWS DEFENDER OPERATIONAL ==================== -->
@@ -612,15 +580,7 @@ if ($Profile -ne "Lean") {
   <localfile>
     <location>Microsoft-Windows-Windows Defender/Operational</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="Microsoft-Windows-Windows Defender/Operational">
-            *[System[(EventID=1006 or EventID=1007 or EventID=1116 or EventID=1117 or EventID=5001)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=1006 or EventID=1007 or EventID=1116 or EventID=1117 or EventID=5001]</query>
   </localfile>
 
   <!-- == WMI ACTIVITY OPERATIONAL ======================== -->
@@ -635,15 +595,7 @@ if ($Profile -ne "Lean") {
   <localfile>
     <location>Microsoft-Windows-WMI-Activity/Operational</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="Microsoft-Windows-WMI-Activity/Operational">
-            *[System[(EventID=5857 or EventID=5858 or EventID=5860 or EventID=5861)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=5857 or EventID=5858 or EventID=5860 or EventID=5861]</query>
   </localfile>
 
   <!-- == TASK SCHEDULER OPERATIONAL ====================== -->
@@ -659,15 +611,7 @@ if ($Profile -ne "Lean") {
   <localfile>
     <location>Microsoft-Windows-TaskScheduler/Operational</location>
     <log_format>eventchannel</log_format>
-    <query>
-      <QueryList>
-        <Query Id="0">
-          <Select Path="Microsoft-Windows-TaskScheduler/Operational">
-            *[System[(EventID=106 or EventID=140 or EventID=141)]]
-          </Select>
-        </Query>
-      </QueryList>
-    </query>
+    <query>Event/System[EventID=106 or EventID=140 or EventID=141]</query>
   </localfile>
 
   <!-- == WINDOWS FIREWALL CONNECTION LOG ================ -->
