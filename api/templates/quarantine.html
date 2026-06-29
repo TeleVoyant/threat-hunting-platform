@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Training quarantine — APT Platform{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <a href="/dashboard/alerts" class="text-sm">← back to alerts</a>
+  <h2 class="text-xl font-semibold text-slate-100 mt-2">Training quarantine</h2>
+  <p class="text-sm text-slate-400">
+    Entities (hostname or host:user) excluded from the retrain benign pool so a confirmed
+    intrusion can't be learned as normal. Releasing an entity lets its telemetry re-enter on
+    the next cycle. The automatic &gt;30%-contamination skip still applies on top of this list.
+  </p>
+</div>
+
+<div class="panel">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-left text-slate-400 border-b border-slate-700">
+        <th class="py-2 pr-3">Entity</th><th class="pr-3">State</th><th class="pr-3">Reason</th>
+        <th class="pr-3">Alert</th><th class="pr-3">By</th><th class="pr-3">Added (epoch)</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for q in quarantine %}
+      <tr class="border-t border-slate-800">
+        <td class="py-2 pr-3 font-mono text-slate-200">{{ q.entity }}</td>
+        <td class="pr-3">
+          {% if q.active %}<span class="text-red-400 font-semibold">active</span>
+          {% else %}<span class="text-slate-500">released</span>{% endif %}
+        </td>
+        <td class="pr-3 text-slate-300">{{ q.reason or '—' }}</td>
+        <td class="pr-3 font-mono text-xs">
+          {% if q.alert_id %}<a href="/dashboard/alerts/{{ q.alert_id }}" class="linkish">{{ q.alert_id[:12] }}</a>{% else %}—{% endif %}
+        </td>
+        <td class="pr-3">{{ q.added_by or '—' }}</td>
+        <td class="pr-3 text-slate-400 tabnum">{{ q.added_at | int if q.added_at else '—' }}</td>
+        <td>
+          {% if q.active and can_manage %}
+          <form method="post" action="/dashboard/quarantine/{{ q.entity | urlencode }}/release">
+            <button type="submit" class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100">Release</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="py-6 text-center text-slate-500">No entities quarantined.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

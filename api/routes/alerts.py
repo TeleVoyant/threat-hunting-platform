@@ -337,6 +337,90 @@ async def acknowledge_alert(
             "acknowledged_by": user.username}
 
 
+# ── Triage lifecycle / verdict / quarantine (JSON API) ──────────────────────
+
+from pydantic import BaseModel as _BMAction
+
+
+class _StatusBody(_BMAction):
+    status: str
+
+
+class _VerdictBody(_BMAction):
+    verdict: str
+
+
+def _alert_or_404(store, alert_id: str) -> dict:
+    alert = next((a for a in store.query_alerts(hours=720, limit=500)
+                  if a.get("alert_id") == alert_id), None)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    return alert
+
+
+@router.post("/{alert_id}/status")
+async def set_alert_status(
+    alert_id: str, body: _StatusBody, request: Request,
+    user: User = Depends(require_permission("acknowledge_alerts")),
+):
+    """Triage lifecycle: open -> acknowledged -> investigating -> resolved."""
+    store = _store(request)
+    _alert_or_404(store, alert_id)
+    try:
+        store.set_status(alert_id, body.status, user.username)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    _audit(request).log(action="alert.status", actor=user.username,
+                        target=alert_id, details={"status": body.status})
+    return {"alert_id": alert_id, "status": body.status}
+
+
+@router.post("/{alert_id}/verdict")
+async def set_alert_verdict(
+    alert_id: str, body: _VerdictBody, request: Request,
+    user: User = Depends(require_permission("acknowledge_alerts")),
+):
+    """Analyst verdict. confirmed_malicious QUARANTINES the alert's source
+    entities from the retrain pool; false_positive keeps them in."""
+    store = _store(request)
+    alert = _alert_or_404(store, alert_id)
+    if body.verdict not in ("false_positive", "confirmed_malicious"):
+        raise HTTPException(400, "verdict must be false_positive or confirmed_malicious")
+    store.set_verdict(alert_id, body.verdict, user.username)
+    quarantined: list[str] = []
+    if body.verdict == "confirmed_malicious":
+        quarantined = sorted({d.get("source_entity", "") for d in alert.get("detections", [])
+                              if d.get("source_entity")})
+        for ent in quarantined:
+            store.quarantine_entity(ent, f"confirmed via alert {alert_id[:14]}",
+                                    alert_id, user.username)
+        _audit(request).log(action="alert.quarantine", actor=user.username,
+                            target=alert_id, details={"entities": quarantined})
+    _audit(request).log(action="alert.verdict", actor=user.username, target=alert_id,
+                        details={"verdict": body.verdict, "quarantined": quarantined})
+    return {"alert_id": alert_id, "verdict": body.verdict, "quarantined": quarantined}
+
+
+@router.get("/quarantine/list")
+async def list_quarantine(
+    request: Request,
+    user: User = Depends(require_permission("read_alerts")),
+):
+    """Entities excluded from the retrain pool (active + released history)."""
+    return {"quarantine": _store(request).list_quarantine(active_only=False)}
+
+
+@router.post("/quarantine/{entity:path}/release")
+async def release_quarantine(
+    entity: str, request: Request,
+    user: User = Depends(require_permission("acknowledge_alerts")),
+):
+    _store(request).release_entity(entity, user.username)
+    _audit(request).log(action="alert.quarantine.release", actor=user.username,
+                        target=entity, details={})
+    return {"entity": entity, "released": True}
+
+
 # ── Investigation notes ────────────────────────────────────────────────────
 
 

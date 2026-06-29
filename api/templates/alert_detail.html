@@ -4,6 +4,8 @@
 
 <div class="mb-4">
   <a href="/dashboard/alerts" class="text-sm">← back to alerts</a>
+  <span class="text-slate-600">·</span>
+  <a href="/dashboard/quarantine" class="text-sm linkish">Training quarantine →</a>
 </div>
 
 <div class="flex items-start justify-between mb-4">
@@ -16,15 +18,36 @@
       Confidence: <strong class="text-slate-200">{{ "%.1f%%"|format(alert.overall_confidence * 100) }}</strong>
       &middot;
       Status: <span class="status-{{ alert.status or 'open' }}">●</span> {{ alert.status or 'open' }}
+      {% if alert.verdict %}&middot; Verdict: <strong class="text-slate-200">{{ alert.verdict|replace('_',' ') }}</strong>{% endif %}
       &middot;
       Time: {{ alert.timestamp[:19] }} UTC
     </div>
   </div>
-  <div class="flex gap-2">
-    {% if can_ack and (alert.status or 'open') == 'open' %}
-    <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/ack">
-      <button type="submit">Acknowledge</button>
-    </form>
+  <div class="flex gap-2 flex-wrap items-center">
+    {% set _bc = "text-xs px-2 py-1 rounded text-slate-100" %}
+    {% if can_ack %}
+      {% if (alert.status or 'open') == 'open' %}
+      <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/ack">
+        <button type="submit" class="{{ _bc }} bg-blue-700 hover:bg-blue-600">Acknowledge</button></form>
+      {% endif %}
+      {% if (alert.status or 'open') != 'investigating' %}
+      <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/status">
+        <input type="hidden" name="status" value="investigating">
+        <button type="submit" class="{{ _bc }} bg-slate-700 hover:bg-slate-600">Investigating</button></form>
+      {% endif %}
+      {% if (alert.status or 'open') != 'resolved' %}
+      <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/status">
+        <input type="hidden" name="status" value="resolved">
+        <button type="submit" class="{{ _bc }} bg-slate-700 hover:bg-slate-600">Resolve</button></form>
+      {% endif %}
+      <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/verdict"
+            onsubmit="return confirm('Mark FALSE POSITIVE? Keeps the source entity in the retraining pool.')">
+        <input type="hidden" name="verdict" value="false_positive">
+        <button type="submit" class="{{ _bc }} bg-slate-700 hover:bg-slate-600">False positive</button></form>
+      <form method="post" action="/dashboard/alerts/{{ alert.alert_id }}/verdict"
+            onsubmit="return confirm('Confirm MALICIOUS? This QUARANTINES the source entity from retraining.')">
+        <input type="hidden" name="verdict" value="confirmed_malicious">
+        <button type="submit" class="{{ _bc }} bg-red-800 hover:bg-red-700">Confirm malicious + quarantine</button></form>
     {% endif %}
   </div>
 </div>

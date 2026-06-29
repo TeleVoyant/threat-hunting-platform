@@ -235,6 +235,86 @@ async def ack_alert(
     return RedirectResponse(url=f"/dashboard/alerts/{alert_id}", status_code=303)
 
 
+@router.post("/alerts/{alert_id}/status")
+async def set_alert_status_dash(
+    alert_id: str, request: Request,
+    status: str = Form(...),
+    user: User = Depends(require_user_cookie),
+):
+    """Triage lifecycle: acknowledged -> investigating -> resolved."""
+    _require_perm(request, user, "acknowledge_alerts")
+    store = request.app.state.alert_store
+    if not any(a.get("alert_id") == alert_id for a in store.query_alerts(hours=720, limit=500)):
+        raise HTTPException(404, "Alert not found")
+    try:
+        store.set_status(alert_id, status, user.username)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    request.app.state.audit_trail.log(
+        action="alert.status", actor=user.username, target=alert_id,
+        details={"status": status, "via": "dashboard"})
+    return RedirectResponse(url=f"/dashboard/alerts/{alert_id}", status_code=303)
+
+
+@router.post("/alerts/{alert_id}/verdict")
+async def set_alert_verdict_dash(
+    alert_id: str, request: Request,
+    verdict: str = Form(...),
+    user: User = Depends(require_user_cookie),
+):
+    """Analyst verdict. confirmed_malicious also QUARANTINES the alert's source
+    entities from the retrain pool; false_positive keeps them in."""
+    _require_perm(request, user, "acknowledge_alerts")
+    store = request.app.state.alert_store
+    alert = next((a for a in store.query_alerts(hours=720, limit=500)
+                  if a.get("alert_id") == alert_id), None)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    if verdict not in ("false_positive", "confirmed_malicious"):
+        raise HTTPException(400, "verdict must be false_positive or confirmed_malicious")
+    store.set_verdict(alert_id, verdict, user.username)
+    details = {"verdict": verdict, "via": "dashboard"}
+    if verdict == "confirmed_malicious":
+        entities = sorted({d.get("source_entity", "") for d in alert.get("detections", [])
+                           if d.get("source_entity")})
+        for ent in entities:
+            store.quarantine_entity(ent, f"confirmed via alert {alert_id[:14]}",
+                                    alert_id, user.username)
+        details["quarantined"] = entities
+        request.app.state.audit_trail.log(
+            action="alert.quarantine", actor=user.username, target=alert_id,
+            details={"entities": entities, "via": "dashboard"})
+    request.app.state.audit_trail.log(
+        action="alert.verdict", actor=user.username, target=alert_id, details=details)
+    return RedirectResponse(url=f"/dashboard/alerts/{alert_id}", status_code=303)
+
+
+@router.get("/quarantine", response_class=HTMLResponse)
+async def quarantine_view(request: Request, user: User = Depends(require_user_cookie)):
+    """Operator view of entities excluded from retraining (with Release)."""
+    _require_perm(request, user, "read_alerts")
+    store = request.app.state.alert_store
+    return _templates(request).TemplateResponse(
+        request, "quarantine.html",
+        {"user": user, "active": "alerts",
+         "quarantine": store.list_quarantine(active_only=False),
+         "can_manage": _has_perm(request, user, "acknowledge_alerts")},
+    )
+
+
+@router.post("/quarantine/{entity:path}/release")
+async def quarantine_release_dash(
+    entity: str, request: Request,
+    user: User = Depends(require_user_cookie),
+):
+    _require_perm(request, user, "acknowledge_alerts")
+    request.app.state.alert_store.release_entity(entity, user.username)
+    request.app.state.audit_trail.log(
+        action="alert.quarantine.release", actor=user.username, target=entity,
+        details={"via": "dashboard"})
+    return RedirectResponse(url="/dashboard/quarantine", status_code=303)
+
+
 # ── Fleet ───────────────────────────────────────────────────────────────────
 
 

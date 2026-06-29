@@ -111,6 +111,7 @@ class AutoRetrainScheduler:
         self.last_run_at: Optional[float] = None
         self.last_status: str = "never_ran"
         self.last_result: Optional[dict[str, Any]] = None
+        self.last_excluded: dict[str, list] = {"auto": [], "quarantined": []}
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -363,6 +364,8 @@ class AutoRetrainScheduler:
         """
         alert_store = getattr(self.app.state, "alert_store", None)
         detected_entities: set[str] = set()
+        auto_entities: set[str] = set()          # auto-excluded from high-confidence alerts
+        quarantined_entities: set[str] = set()   # operator-quarantined (always excluded)
 
         if alert_store is not None:
             try:
@@ -372,13 +375,31 @@ class AutoRetrainScheduler:
                 for a in recent:
                     if a.get("overall_confidence", 0.0) < 0.7:
                         continue
+                    if a.get("verdict") == "false_positive":
+                        # Analyst cleared it -> keep this entity's events in the pool.
+                        continue
                     for det in a.get("detections", []):
                         se = det.get("source_entity", "")
                         if se:
-                            detected_entities.add(se)
+                            auto_entities.add(se)
             except Exception as e:
                 logger.warning("Could not query AlertStore for contamination check",
                                error=str(e))
+            # Operator-quarantined entities are ALWAYS excluded, regardless of confidence.
+            try:
+                for q in alert_store.list_quarantine(active_only=True):
+                    ent = q.get("entity", "")
+                    if ent:
+                        quarantined_entities.add(ent)
+            except Exception as e:
+                logger.warning("Could not read training quarantine list", error=str(e))
+
+        detected_entities = auto_entities | quarantined_entities
+        # Surfaced on the retrain status (dashboard) so operators see WHY events were excluded.
+        self.last_excluded = {
+            "auto": sorted(auto_entities),
+            "quarantined": sorted(quarantined_entities),
+        }
 
         if not detected_entities:
             # No high-confidence detections in window — use full pool
@@ -419,6 +440,8 @@ class AutoRetrainScheduler:
                 "run_id": run_id,
                 "status": self.last_status,
                 "detected_entities": sorted(detected_entities),
+                "auto_excluded": sorted(auto_entities),
+                "quarantined": sorted(quarantined_entities),
                 "excluded_pct": round(excluded / before * 100, 1),
             }
             self.last_result = result

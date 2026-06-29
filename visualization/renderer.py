@@ -70,6 +70,11 @@ class AttackGraphRenderer:
             directed=True,
             bgcolor="#1e1e1e",
             font_color="white",
+            # Embed vis.js directly in the HTML instead of writing a local lib/
+            # folder. The api container runs read_only=true, so pyvis's default
+            # local-assets mode fails with "Read-only file system: 'lib'" and the
+            # graph never renders. Inlining is also air-gap friendly.
+            cdn_resources="in_line",
         )
 
         for node_id, data in builder.graph.nodes(data=True):
